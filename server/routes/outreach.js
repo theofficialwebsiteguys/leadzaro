@@ -1,16 +1,20 @@
 const router = require('express').Router();
 const { body } = require('express-validator');
-const { getActivities, addActivity, deleteActivity } = require('../controllers/outreachController');
+const { getActivities, addActivity, archiveActivity, restoreActivity } = require('../controllers/outreachController');
 const { authenticate } = require('../middleware/auth');
+const { resolveContext, requirePermission } = require('../core/authorization/context');
 const { validate } = require('../middleware/validate');
 
-router.use(authenticate);
+router.use(authenticate, resolveContext());
 
-router.get('/', getActivities);
-router.post('/', [
+router.get('/', requirePermission('outreach.read'), getActivities);
+router.post('/', requirePermission('outreach.create'), [
   body('leadId').notEmpty().withMessage('leadId required'),
   body('type').isIn(['email', 'call', 'visit', 'message', 'linkedin', 'other']).withMessage('Invalid type'),
 ], validate, addActivity);
-router.delete('/:id', deleteActivity);
+router.post('/:id/archive', requirePermission('outreach.archive'), archiveActivity);
+router.post('/:id/restore', requirePermission('outreach.archive'), restoreActivity);
+// Deprecated alias: archives instead of hard-deleting (see savedLeads.js).
+router.delete('/:id', requirePermission('outreach.archive'), archiveActivity);
 
 module.exports = router;

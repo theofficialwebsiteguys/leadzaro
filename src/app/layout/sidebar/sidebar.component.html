@@ -11,9 +11,17 @@
     </div>
   </div>
 
+  <!-- Organization -->
+  @if (org.organization(); as organization) {
+    <div class="org-row">
+      <lz-icon name="globe" [size]="14" />
+      <span class="org-name">{{ organization.name }}</span>
+    </div>
+  }
+
   <!-- Navigation -->
   <nav class="sidebar-nav">
-    @for (item of nav; track item.route) {
+    @for (item of nav(); track item.route) {
       <a
         [routerLink]="item.route"
         routerLinkActive="active"
@@ -26,16 +34,36 @@
         <span class="nav-label">{{ item.label }}</span>
       </a>
     }
+
+    @if (showAdminLink()) {
+      <a
+        routerLink="/app/admin"
+        routerLinkActive="active"
+        class="nav-item"
+        (click)="closeMobile.emit()"
+      >
+        <span class="nav-icon"><lz-icon name="users" [size]="17" /></span>
+        <span class="nav-label">Administration</span>
+      </a>
+    }
   </nav>
 
   <!-- User section -->
   <div class="sidebar-footer">
+    <div class="notif-row">
+      <lz-icon name="bell" [size]="16" />
+      <span>Notifications</span>
+      @if (notifications.unreadCount() > 0) {
+        <span class="notif-badge">{{ notifications.unreadCount() }}</span>
+      }
+    </div>
+
     @if (auth.currentUser(); as user) {
       <div class="user-row">
         <div class="user-avatar">{{ user.name[0].toUpperCase() }}</div>
         <div class="user-info">
           <div class="user-name">{{ user.name }}</div>
-          <div class="user-type">{{ user.salespersonType }}</div>
+          <div class="user-type">{{ org.membership()?.membershipType === 'client' ? 'Client' : user.salespersonType }}</div>
         </div>
       </div>
     }

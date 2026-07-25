@@ -7,8 +7,8 @@ import { OutreachActivity, OutreachType, PaginatedResponse } from '../models/lea
 export class OutreachService {
   private http = inject(HttpClient);
 
-  getAll(leadId?: string, page = 1, limit = 20): Observable<{ data: PaginatedResponse<OutreachActivity> }> {
-    let params = new HttpParams().set('page', page).set('limit', limit);
+  getAll(leadId?: string, page = 1, limit = 20, archived = false): Observable<{ data: PaginatedResponse<OutreachActivity> }> {
+    let params = new HttpParams().set('page', page).set('limit', limit).set('archived', String(archived));
     if (leadId) params = params.set('leadId', leadId);
     return this.http.get<{ data: PaginatedResponse<OutreachActivity> }>('/api/outreach', { params });
   }
@@ -17,7 +17,11 @@ export class OutreachService {
     return this.http.post<{ data: { activity: OutreachActivity } }>('/api/outreach', { leadId, type, note });
   }
 
-  delete(id: string): Observable<unknown> {
-    return this.http.delete(`/api/outreach/${id}`);
+  archive(id: string): Observable<unknown> {
+    return this.http.post(`/api/outreach/${id}/archive`, {});
+  }
+
+  restore(id: string): Observable<unknown> {
+    return this.http.post(`/api/outreach/${id}/restore`, {});
   }
 }

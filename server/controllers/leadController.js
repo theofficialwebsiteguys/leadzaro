@@ -11,9 +11,9 @@ async function search(req, res, next) {
 
     const results = await searchLeads({ keyword, location, radius, minRating, minReviews, demo, page, limit });
 
-    // Mark which results the user has already saved
+    // Mark which results the organization has already saved
     const savedLeads = await SavedLead.findAll({
-      where: { userId: req.user.id },
+      where: { organizationId: req.context.organization.id, archivedAt: null, deletedAt: null },
       include: [{ model: Lead, as: 'lead', attributes: ['googlePlaceId'] }],
     });
     const savedPlaceIds = new Set(savedLeads.map((sl) => sl.lead?.googlePlaceId).filter(Boolean));
@@ -35,7 +35,7 @@ async function getById(req, res, next) {
     if (!lead) return notFound(res, 'Lead not found');
 
     const savedLead = await SavedLead.findOne({
-      where: { userId: req.user.id, leadId: lead.id },
+      where: { organizationId: req.context.organization.id, leadId: lead.id, deletedAt: null },
     });
 
     return success(res, { lead: { ...lead.toJSON(), savedLead } });

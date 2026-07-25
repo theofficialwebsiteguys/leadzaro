@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard, noAuthGuard } from './core/guards/auth.guard';
+import { requireAnyPermissionGuard } from './core/guards/permission.guard';
 
 export const routes: Routes = [
   {
@@ -15,6 +16,12 @@ export const routes: Routes = [
     path: 'register',
     canActivate: [noAuthGuard],
     loadComponent: () => import('./features/auth/register/register.component').then((m) => m.RegisterComponent),
+  },
+  {
+    // Reachable while logged out (new invitee) or logged in (existing
+    // user accepting an additional membership) — no auth guard.
+    path: 'accept-invite',
+    loadComponent: () => import('./features/invitation-accept/invitation-accept.component').then((m) => m.InvitationAcceptComponent),
   },
   {
     path: 'app',
@@ -49,6 +56,11 @@ export const routes: Routes = [
       {
         path: 'settings',
         loadComponent: () => import('./features/settings/settings.component').then((m) => m.SettingsComponent),
+      },
+      {
+        path: 'admin',
+        canActivate: [requireAnyPermissionGuard(['memberships.manage', 'invitations.manage', 'roles.manage', 'audit.view'])],
+        loadComponent: () => import('./features/administration/administration.component').then((m) => m.AdministrationComponent),
       },
     ],
   },

@@ -1,12 +1,13 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
+import { OrganizationContextService } from '../../../core/services/organization-context.service';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule],
   templateUrl: './login.component.html',
   styleUrl: './login.component.scss',
 })
@@ -14,6 +15,8 @@ export class LoginComponent {
   private fb = inject(FormBuilder);
   private auth = inject(AuthService);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  private orgContext = inject(OrganizationContextService);
 
   loading = signal(false);
   errorMsg = signal('');
@@ -33,7 +36,16 @@ export class LoginComponent {
     this.errorMsg.set('');
 
     this.auth.login({ email: this.email.value!, password: this.password.value! }).subscribe({
-      next: () => this.router.navigate(['/app/dashboard']),
+      next: () => {
+        const inviteToken = this.route.snapshot.queryParamMap.get('inviteToken');
+        this.orgContext.load().subscribe(() => {
+          if (inviteToken) {
+            this.router.navigate(['/accept-invite'], { queryParams: { token: inviteToken } });
+          } else {
+            this.router.navigate(['/app/dashboard']);
+          }
+        });
+      },
       error: (err) => {
         this.errorMsg.set(err.error?.message || 'Login failed. Please try again.');
         this.loading.set(false);

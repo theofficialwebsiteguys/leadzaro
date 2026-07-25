@@ -27,12 +27,18 @@ export class SavedLeadsComponent implements OnInit {
 
   statusFilter = signal('All');
   searchQuery = signal('');
+  showArchived = signal(false);
 
   ngOnInit() {
     this.route.queryParams.subscribe((params) => {
       if (params['status']) this.statusFilter.set(params['status']);
       this.loadLeads();
     });
+  }
+
+  toggleArchived() {
+    this.showArchived.set(!this.showArchived());
+    this.loadLeads(1);
   }
 
   loadLeads(p = 1) {
@@ -42,6 +48,7 @@ export class SavedLeadsComponent implements OnInit {
     this.savedLeadService.getAll({
       status: this.statusFilter() === 'All' ? undefined : this.statusFilter(),
       search: this.searchQuery() || undefined,
+      archived: this.showArchived(),
       page: p,
       limit: 20,
     }).subscribe({
@@ -71,11 +78,21 @@ export class SavedLeadsComponent implements OnInit {
     });
   }
 
-  removeLead(id: string) {
-    if (!confirm('Remove this lead from your saved list?')) return;
-    this.savedLeadService.delete(id).subscribe(() => {
+  archiveLead(id: string) {
+    if (!confirm('Archive this lead? You can restore it later from the Archived view.')) return;
+    this.savedLeadService.archive(id).subscribe(() => {
       this.leads.set(this.leads().filter((l) => l.id !== id));
       this.total.set(this.total() - 1);
+    });
+  }
+
+  restoreLead(id: string) {
+    this.savedLeadService.restore(id).subscribe({
+      next: () => {
+        this.leads.set(this.leads().filter((l) => l.id !== id));
+        this.total.set(this.total() - 1);
+      },
+      error: (err) => alert(err.error?.message || 'Could not restore this lead.'),
     });
   }
 

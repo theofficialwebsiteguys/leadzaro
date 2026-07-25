@@ -22,6 +22,9 @@
         [(ngModel)]="searchQuery" (keyup.enter)="applySearch()" />
       <button class="btn btn-ghost btn-sm" (click)="applySearch()">Search</button>
     </div>
+    <button class="btn btn-ghost btn-sm" [class.active]="showArchived()" (click)="toggleArchived()">
+      {{ showArchived() ? 'Showing Archived' : 'Show Archived' }}
+    </button>
   </div>
 
   @if (loading()) {
@@ -91,11 +94,15 @@
                 </td>
                 <td>
                   <div class="row-actions">
-                    <a [routerLink]="['/app/leads', item.id]" class="btn btn-ghost btn-sm">View</a>
-                    <a [routerLink]="['/app/leads', item.id]" [fragment]="'log'" class="btn btn-primary btn-sm">Log</a>
-                    <button class="btn btn-ghost btn-sm danger-btn" (click)="removeLead(item.id)" title="Remove lead">
-                      <lz-icon name="x" [size]="13" />
-                    </button>
+                    @if (showArchived()) {
+                      <button class="btn btn-primary btn-sm" (click)="restoreLead(item.id)">Restore</button>
+                    } @else {
+                      <a [routerLink]="['/app/leads', item.id]" class="btn btn-ghost btn-sm">View</a>
+                      <a [routerLink]="['/app/leads', item.id]" [fragment]="'log'" class="btn btn-primary btn-sm">Log</a>
+                      <button class="btn btn-ghost btn-sm danger-btn" (click)="archiveLead(item.id)" title="Archive lead">
+                        <lz-icon name="x" [size]="13" />
+                      </button>
+                    }
                   </div>
                 </td>
               </tr>

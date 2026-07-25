@@ -1,0 +1,83 @@
+.admin-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border-light);
+  padding-bottom: 4px;
+
+  .tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border: none;
+    background: none;
+    border-radius: var(--radius-sm);
+    font-size: .875rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+
+    &.active {
+      background: var(--primary-100);
+      color: var(--primary-dark);
+      font-weight: 500;
+    }
+  }
+}
+
+.role-fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+
+  legend {
+    padding: 0;
+    margin-bottom: 6px;
+    font-size: .8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+}
+
+.role-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.role-chip {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-light);
+  background: none;
+  font-size: .78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+
+  &.selected {
+    background: var(--primary-100);
+    border-color: var(--primary-dark);
+    color: var(--primary-dark);
+    font-weight: 500;
+  }
+}
+
+.invite-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 480px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 16px;
+}

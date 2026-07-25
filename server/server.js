@@ -1,24 +1,32 @@
 require('dotenv').config();
+const { validateEnv, env } = require('./core/config/env');
+
+validateEnv();
+
 const app = require('./app');
 const { sequelize } = require('./models');
 const { seedPlans } = require('./controllers/subscriptionController');
-
-const PORT = process.env.PORT || 3000;
 
 async function start() {
   try {
     await sequelize.authenticate();
     console.log('✅ Database connected');
 
-    await sequelize.sync({ alter: process.env.NODE_ENV !== 'production' });
-    console.log('✅ Database synced');
+    const [tables] = await sequelize.query(
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'SequelizeMeta'"
+    );
+    if (tables.length === 0) {
+      console.error('❌ No migrations have been run against this database yet.');
+      console.error('   Run `npm run migrate` (and `npm run db:seed` if applicable), then start the server again.');
+      process.exit(1);
+    }
 
-    // Seed subscription plans if not present
+    // Seed subscription plans if not present (legacy, idempotent reference data)
     await seedPlans();
     console.log('✅ Subscription plans ready');
 
-    app.listen(PORT, () => {
-      console.log(`🚀 Leadzaro API running at http://localhost:${PORT}`);
+    app.listen(env.PORT, () => {
+      console.log(`🚀 Leadzaro API running at http://localhost:${env.PORT}`);
     });
   } catch (err) {
     console.error('❌ Server failed to start:', err.message);

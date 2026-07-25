@@ -1,6 +1,9 @@
 <div class="page">
   <div class="page-header">
     <div><h2>Outreach Log</h2><p>All your logged calls, emails, and visits.</p></div>
+    <button class="btn btn-ghost btn-sm" [class.active]="showArchived()" (click)="toggleArchived()">
+      {{ showArchived() ? 'Showing Archived' : 'Show Archived' }}
+    </button>
   </div>
 
   @if (loading()) {
@@ -29,7 +32,13 @@
                 <td><span class="type-badge">{{ activityIcon(act.type) }} {{ act.type | titlecase }}</span></td>
                 <td class="text-sm text-muted">{{ act.note || '—' }}</td>
                 <td class="text-sm text-muted">{{ act.createdAt | date:'MMM d, y' }}</td>
-                <td><button class="btn btn-ghost btn-sm danger" (click)="delete(act.id)">✕</button></td>
+                <td>
+                  @if (showArchived()) {
+                    <button class="btn btn-primary btn-sm" (click)="restore(act.id)">Restore</button>
+                  } @else {
+                    <button class="btn btn-ghost btn-sm danger" (click)="archive(act.id)">✕</button>
+                  }
+                </td>
               </tr>
             }
           </tbody>

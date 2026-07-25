@@ -19,13 +19,19 @@ export class OutreachComponent implements OnInit {
   total = signal(0);
   page = signal(1);
   totalPages = signal(1);
+  showArchived = signal(false);
 
   ngOnInit() { this.load(); }
+
+  toggleArchived() {
+    this.showArchived.set(!this.showArchived());
+    this.load(1);
+  }
 
   load(p = 1) {
     this.loading.set(true);
     this.page.set(p);
-    this.outreachService.getAll(undefined, p).subscribe({
+    this.outreachService.getAll(undefined, p, 20, this.showArchived()).subscribe({
       next: (res) => {
         this.activities.set(res.data.items);
         this.total.set(res.data.pagination.total);
@@ -41,9 +47,15 @@ export class OutreachComponent implements OnInit {
     return icons[type] || '📝';
   }
 
-  delete(id: string) {
-    if (!confirm('Delete this activity log?')) return;
-    this.outreachService.delete(id).subscribe(() => {
+  archive(id: string) {
+    if (!confirm('Archive this activity log? You can restore it later.')) return;
+    this.outreachService.archive(id).subscribe(() => {
+      this.activities.set(this.activities().filter((a) => a.id !== id));
+    });
+  }
+
+  restore(id: string) {
+    this.outreachService.restore(id).subscribe(() => {
       this.activities.set(this.activities().filter((a) => a.id !== id));
     });
   }

@@ -1,0 +1,61 @@
+<div class="auth-page">
+  <div class="auth-card">
+
+    <div class="auth-logo">⚡ Leadzaro</div>
+
+    @if (loading()) {
+      <div class="loading-state"><div class="spinner"></div><span>Loading invitation…</span></div>
+    } @else if (loadError()) {
+      <h2>Invitation unavailable</h2>
+      <div class="alert alert-error">{{ loadError() }}</div>
+      <p class="auth-footer"><a routerLink="/login">Back to login</a></p>
+    } @else {
+      @if (info(); as info) {
+        <h2>You're invited to {{ info.organizationName }}</h2>
+        <p class="auth-sub">as a {{ info.membershipType }} — {{ info.email }}</p>
+
+        @if (submitError()) {
+          <div class="alert alert-error">{{ submitError() }}</div>
+        }
+
+        @if (info.requiresPassword) {
+          <form [formGroup]="form" (ngSubmit)="submitNewAccount()" novalidate>
+            <div class="form-group">
+              <label class="form-label" for="name">Your name</label>
+              <input id="name" type="text" class="form-control" formControlName="name" placeholder="Jane Smith" />
+            </div>
+            <div class="form-group mt-4">
+              <label class="form-label" for="password">Create a password</label>
+              <input id="password" type="password" class="form-control" formControlName="password" placeholder="••••••••" autocomplete="new-password" />
+              @if (form.get('password')?.invalid && form.get('password')?.touched) {
+                <span class="form-error">Password must be at least 8 characters</span>
+              }
+            </div>
+            <button type="submit" class="btn btn-primary btn-full mt-4" [disabled]="submitting() || form.invalid">
+              @if (submitting()) {
+                <span class="spinner spinner-sm"></span> Creating account…
+              } @else {
+                Accept Invitation
+              }
+            </button>
+          </form>
+        } @else if (isLoggedInAsInviteeEmail) {
+          <p>You're logged in as {{ info.email }}. Accept this invitation to join {{ info.organizationName }}.</p>
+          <button class="btn btn-primary btn-full" [disabled]="submitting()" (click)="acceptAsCurrentUser()">
+            @if (submitting()) {
+              <span class="spinner spinner-sm"></span> Joining…
+            } @else {
+              Accept Invitation
+            }
+          </button>
+        } @else {
+          <div class="alert alert-info">
+            An account already exists for {{ info.email }}. Log in with that account, then open this invitation link again to accept it.
+          </div>
+          <a [routerLink]="['/login']" [queryParams]="{ inviteToken: token }" class="btn btn-primary btn-full mt-4">Log In</a>
+        }
+      }
+    }
+
+  </div>
+</div>

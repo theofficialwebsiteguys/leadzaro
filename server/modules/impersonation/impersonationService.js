@@ -10,6 +10,25 @@ function invalid(message, statusCode = 422) {
   return err;
 }
 
+async function listCandidates() {
+  const memberships = await OrganizationMembership.findAll({
+    where: { membershipType: 'client', status: 'active', deletedAt: null },
+    include: [
+      { model: Organization, as: 'organization', where: { type: 'client', status: 'active' } },
+      { model: User, as: 'user', attributes: ['id', 'name', 'email'] },
+    ],
+    order: [['createdAt', 'ASC']],
+  });
+
+  return memberships.map((m) => ({
+    membershipId: m.id,
+    organizationName: m.organization.name,
+    userName: m.user.name,
+    userEmail: m.user.email,
+    title: m.title,
+  }));
+}
+
 async function startImpersonation({ membershipId, reason, actorUserId }) {
   const membership = await OrganizationMembership.findOne({
     where: { id: membershipId, status: 'active', deletedAt: null },
@@ -33,4 +52,4 @@ async function startImpersonation({ membershipId, reason, actorUserId }) {
   };
 }
 
-module.exports = { startImpersonation };
+module.exports = { startImpersonation, listCandidates };

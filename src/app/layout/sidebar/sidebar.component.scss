@@ -62,6 +62,46 @@
   text-transform: uppercase;
 }
 
+/* Active organization */
+.org-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  color: var(--sidebar-text);
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.org-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Notifications */
+.notif-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: .8125rem;
+  color: var(--sidebar-text);
+}
+
+.notif-badge {
+  margin-left: auto;
+  background: #DC2626;
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
 /* Navigation */
 .sidebar-nav {
   flex: 1;

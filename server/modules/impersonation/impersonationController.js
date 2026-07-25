@@ -1,7 +1,19 @@
-const { startImpersonation } = require('./impersonationService');
+const { startImpersonation, listCandidates } = require('./impersonationService');
 const { recordAudit } = require('../../core/audit/auditService');
 const { sanitizeUser } = require('../../services/authService');
 const { success, error } = require('../../utils/response');
+
+async function candidates(req, res, next) {
+  try {
+    if (req.context.organization.type !== 'agency') {
+      return error(res, 'Impersonation is only available to agency administrators', 403);
+    }
+    const items = await listCandidates();
+    return success(res, { candidates: items });
+  } catch (err) {
+    next(err);
+  }
+}
 
 async function start(req, res, next) {
   try {
@@ -57,4 +69,4 @@ async function end(req, res, next) {
   }
 }
 
-module.exports = { start, end };
+module.exports = { candidates, start, end };

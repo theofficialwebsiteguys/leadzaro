@@ -41,6 +41,29 @@
   overflow: hidden;
 }
 
+/* Impersonation banner */
+.impersonation-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: #7C2D12;
+  color: #FED7AA;
+  font-size: .8125rem;
+  flex-shrink: 0;
+
+  .btn {
+    background: #FED7AA;
+    color: #7C2D12;
+    border: none;
+    padding: 4px 12px;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    cursor: pointer;
+  }
+}
+
 /* Mobile header */
 .mobile-header {
   display: none;

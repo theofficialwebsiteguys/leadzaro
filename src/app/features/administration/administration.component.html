@@ -1,0 +1,219 @@
+<div class="page">
+
+  <div class="page-header">
+    <div>
+      <h2>Administration</h2>
+      <p>Manage {{ org.organization()?.name }} members, invitations, sessions, and audit history.</p>
+    </div>
+  </div>
+
+  @if (actionMessage()) {
+    <div class="alert alert-info mb-4">{{ actionMessage() }}</div>
+  }
+
+  <div class="admin-tabs">
+    <button class="tab-btn" [class.active]="tab() === 'members'" (click)="setTab('members')">
+      <lz-icon name="users" [size]="15" /> Members
+    </button>
+    <button class="tab-btn" *hasPermission="'invitations.manage'" [class.active]="tab() === 'invitations'" (click)="setTab('invitations')">
+      <lz-icon name="mail" [size]="15" /> Invitations
+    </button>
+    <button class="tab-btn" [class.active]="tab() === 'sessions'" (click)="setTab('sessions')">
+      <lz-icon name="settings" [size]="15" /> Sessions
+    </button>
+    <button class="tab-btn" *hasPermission="'audit.view'" [class.active]="tab() === 'audit'" (click)="setTab('audit')">
+      <lz-icon name="chart-bar" [size]="15" /> Audit Log
+    </button>
+    <button class="tab-btn" *hasPermission="'impersonation.use'" [class.active]="tab() === 'impersonation'" (click)="setTab('impersonation')">
+      <lz-icon name="user" [size]="15" /> View As Client
+    </button>
+  </div>
+
+  @if (tab() === 'members') {
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Email</th><th>Type</th><th>Status</th><th>Roles</th><th></th></tr>
+          </thead>
+          <tbody>
+            @for (m of members(); track m.id) {
+              <tr>
+                <td class="font-medium">{{ m.user?.name }}</td>
+                <td class="text-sm text-muted">{{ m.user?.email }}</td>
+                <td><span class="badge badge-new">{{ m.membershipType }}</span></td>
+                <td><span class="badge" [class.badge-interested]="m.status === 'active'" [class.badge-not-interested]="m.status !== 'active'">{{ m.status }}</span></td>
+                <td>
+                  @if (editingMemberId() === m.id) {
+                    <div class="role-chip-list">
+                      @for (r of rolesForType(m.membershipType); track r.key) {
+                        <button type="button" class="role-chip" [class.selected]="editingRoleKeys.has(r.key)" (click)="toggleEditingRole(r.key)">
+                          {{ r.name }}
+                        </button>
+                      }
+                    </div>
+                    <button class="btn btn-primary btn-sm mt-2" (click)="saveRoles(m)">Save Roles</button>
+                  } @else {
+                    <div class="text-sm">{{ (m.roles || []).length ? (m.roles || [])[0].name : '—' }}{{ (m.roles || []).length > 1 ? ' +' + ((m.roles || []).length - 1) : '' }}</div>
+                    <button class="btn btn-ghost btn-sm" *hasPermission="'roles.manage'" (click)="startEditRoles(m)">Edit</button>
+                  }
+                </td>
+                <td>
+                  <div class="row-actions" *hasPermission="'memberships.manage'">
+                    <button class="btn btn-ghost btn-sm" (click)="toggleMemberStatus(m)">
+                      {{ m.status === 'active' ? 'Suspend' : 'Reactivate' }}
+                    </button>
+                    <button class="btn btn-ghost btn-sm" *hasPermission="'sessions.manage_others'" (click)="revokeAllSessions(m)">
+                      Sign Out
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  @if (tab() === 'invitations') {
+    <div class="card mb-4">
+      <div class="card-header"><strong>Invite a new member</strong></div>
+      <div class="card-body">
+        @if (inviteError()) {
+          <div class="alert alert-error mb-4">{{ inviteError() }}</div>
+        }
+        <div class="invite-form">
+          <div class="form-group">
+            <label class="form-label" for="invite-email">Email</label>
+            <input id="invite-email" type="email" class="form-control" [(ngModel)]="inviteEmail" placeholder="name@company.com" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="invite-type">Type</label>
+            <select id="invite-type" class="form-select" [(ngModel)]="inviteMembershipType">
+              <option value="employee">Employee</option>
+              <option value="client">Client</option>
+            </select>
+          </div>
+          <fieldset class="form-group role-fieldset">
+            <legend class="form-label">Roles</legend>
+            <div class="role-chip-list">
+              @for (r of rolesForType(inviteMembershipType); track r.key) {
+                <button type="button" class="role-chip" [class.selected]="inviteRoleKeys.has(r.key)" (click)="toggleInviteRole(r.key)">
+                  {{ r.name }}
+                </button>
+              }
+            </div>
+          </fieldset>
+          <button class="btn btn-primary" [disabled]="inviteSubmitting()" (click)="sendInvitation()">Send Invitation</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Email</th><th>Type</th><th>Status</th><th>Expires</th><th></th></tr></thead>
+          <tbody>
+            @for (inv of invitations(); track inv.id) {
+              <tr>
+                <td>{{ inv.email }}</td>
+                <td><span class="badge badge-new">{{ inv.membershipType }}</span></td>
+                <td>{{ inv.status }}</td>
+                <td class="text-sm text-muted">{{ inv.expiresAt | date:'MMM d, y' }}</td>
+                <td>
+                  @if (inv.status === 'pending') {
+                    <div class="row-actions">
+                      <button class="btn btn-ghost btn-sm" (click)="resendInvitation(inv.id)">Resend</button>
+                      <button class="btn btn-ghost btn-sm danger-btn" (click)="revokeInvitation(inv.id)">Revoke</button>
+                    </div>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  @if (tab() === 'sessions') {
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Device</th><th>IP</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            @for (s of sessions(); track s.id) {
+              <tr>
+                <td class="text-sm">{{ s.userAgent || 'Unknown device' }} @if (s.isCurrent) { <span class="badge badge-interested">This device</span> }</td>
+                <td class="text-sm text-muted">{{ s.ipAddress || '—' }}</td>
+                <td class="text-sm text-muted">{{ s.lastSeenAt | date:'MMM d, y, h:mm a' }}</td>
+                <td>{{ s.revokedAt ? 'Revoked' : 'Active' }}</td>
+                <td>
+                  @if (!s.revokedAt && !s.isCurrent) {
+                    <button class="btn btn-ghost btn-sm danger-btn" (click)="revokeSession(s.id)">Revoke</button>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  @if (tab() === 'impersonation') {
+    <div class="alert alert-info mb-4">
+      Use this to see the app exactly as a client member sees it — for support and troubleshooting only.
+      A reason is required and every session is audited. You can exit at any time from the banner shown while viewing as another member.
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Client</th><th>Member</th><th></th></tr></thead>
+          <tbody>
+            @for (c of impersonationCandidates(); track c.membershipId) {
+              <tr>
+                <td class="font-medium">{{ c.organizationName }}</td>
+                <td class="text-sm text-muted">{{ c.userName }} ({{ c.userEmail }})</td>
+                <td>
+                  <button class="btn btn-primary btn-sm" [disabled]="impersonationStarting()" (click)="viewAs(c)">View As</button>
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="3" class="text-sm text-muted">No client members available yet.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  @if (tab() === 'audit') {
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Action</th><th>Actor</th><th>Target</th><th>When</th></tr></thead>
+          <tbody>
+            @for (a of auditEntries(); track a.id) {
+              <tr>
+                <td class="text-sm font-medium">{{ a.action }}</td>
+                <td class="text-sm text-muted">{{ a.actor?.name || 'System' }}</td>
+                <td class="text-sm text-muted">{{ a.targetType }}</td>
+                <td class="text-sm text-muted">{{ a.createdAt | date:'MMM d, y, h:mm a' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+    @if (auditTotalPages() > 1) {
+      <div class="pagination">
+        <button class="btn btn-ghost btn-sm" [disabled]="auditPage() <= 1" (click)="loadAudit(auditPage() - 1)">← Prev</button>
+        <span class="text-sm text-muted">Page {{ auditPage() }} of {{ auditTotalPages() }}</span>
+        <button class="btn btn-ghost btn-sm" [disabled]="auditPage() >= auditTotalPages()" (click)="loadAudit(auditPage() + 1)">Next →</button>
+      </div>
+    }
+  }
+
+</div>

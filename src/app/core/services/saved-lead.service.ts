@@ -7,7 +7,7 @@ import { Lead, LeadNote, OutreachActivity, PaginatedResponse, SavedLead } from '
 export class SavedLeadService {
   private http = inject(HttpClient);
 
-  getAll(filters?: { status?: string; priority?: string; search?: string; page?: number; limit?: number }): Observable<{ data: PaginatedResponse<SavedLead> }> {
+  getAll(filters?: { status?: string; priority?: string; search?: string; page?: number; limit?: number; archived?: boolean }): Observable<{ data: PaginatedResponse<SavedLead> }> {
     let params = new HttpParams();
     if (filters) {
       Object.entries(filters).forEach(([k, v]) => {
@@ -29,8 +29,12 @@ export class SavedLeadService {
     return this.http.put<{ data: { savedLead: SavedLead } }>(`/api/saved-leads/${id}`, updates);
   }
 
-  delete(id: string): Observable<unknown> {
-    return this.http.delete(`/api/saved-leads/${id}`);
+  archive(id: string): Observable<unknown> {
+    return this.http.post(`/api/saved-leads/${id}/archive`, {});
+  }
+
+  restore(id: string): Observable<unknown> {
+    return this.http.post(`/api/saved-leads/${id}/restore`, {});
   }
 
   addNote(savedLeadId: string, content: string): Observable<{ data: { note: LeadNote } }> {

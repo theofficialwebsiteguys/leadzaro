@@ -44,8 +44,9 @@ const DASHBOARD_CONFIG = {
 
 async function getDashboard(req, res, next) {
   try {
-    const userId = req.user.id;
+    const organizationId = req.context.organization.id;
     const now = new Date();
+    const activeScope = { organizationId, archivedAt: null, deletedAt: null };
 
     const [
       totalSaved,
@@ -56,17 +57,17 @@ async function getDashboard(req, res, next) {
       noWebsiteLeads,
       recentActivity,
     ] = await Promise.all([
-      SavedLead.count({ where: { userId } }),
-      SavedLead.count({ where: { userId, status: 'Contacted' } }),
-      SavedLead.count({ where: { userId, nextFollowUpAt: { [Op.lte]: now }, status: { [Op.notIn]: ['Closed', 'Archived'] } } }),
-      SavedLead.count({ where: { userId, status: 'Interested' } }),
-      SavedLead.count({ where: { userId, status: 'Closed' } }),
+      SavedLead.count({ where: activeScope }),
+      SavedLead.count({ where: { ...activeScope, status: 'Contacted' } }),
+      SavedLead.count({ where: { ...activeScope, nextFollowUpAt: { [Op.lte]: now }, status: { [Op.notIn]: ['Closed', 'Archived'] } } }),
+      SavedLead.count({ where: { ...activeScope, status: 'Interested' } }),
+      SavedLead.count({ where: { ...activeScope, status: 'Closed' } }),
       SavedLead.count({
-        where: { userId },
+        where: activeScope,
         include: [{ model: Lead, as: 'lead', where: { hasWebsite: false }, required: true }],
       }),
       OutreachActivity.findAll({
-        where: { userId },
+        where: { organizationId, deletedAt: null },
         include: [{ model: Lead, as: 'lead', attributes: ['id', 'name', 'city'] }],
         order: [['createdAt', 'DESC']],
         limit: 5,
