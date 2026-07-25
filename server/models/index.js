@@ -8,7 +8,44 @@ const OutreachActivity = require('./OutreachActivity')(sequelize);
 const SubscriptionPlan = require('./SubscriptionPlan')(sequelize);
 const UserSubscription = require('./UserSubscription')(sequelize);
 
-const models = { User, Lead, SavedLead, LeadNote, OutreachActivity, SubscriptionPlan, UserSubscription };
+const Organization = require('./Organization')(sequelize);
+const OrganizationMembership = require('./OrganizationMembership')(sequelize);
+const Role = require('./Role')(sequelize);
+const Permission = require('./Permission')(sequelize);
+const RolePermission = require('./RolePermission')(sequelize);
+const MembershipRole = require('./MembershipRole')(sequelize);
+const MembershipPermissionOverride = require('./MembershipPermissionOverride')(sequelize);
+const Invitation = require('./Invitation')(sequelize);
+const AuthSession = require('./AuthSession')(sequelize);
+const AuditLog = require('./AuditLog')(sequelize);
+const Notification = require('./Notification')(sequelize);
+const NotificationPreference = require('./NotificationPreference')(sequelize);
+const PasswordResetToken = require('./PasswordResetToken')(sequelize);
+const EmailVerificationToken = require('./EmailVerificationToken')(sequelize);
+
+const models = {
+  User,
+  Lead,
+  SavedLead,
+  LeadNote,
+  OutreachActivity,
+  SubscriptionPlan,
+  UserSubscription,
+  Organization,
+  OrganizationMembership,
+  Role,
+  Permission,
+  RolePermission,
+  MembershipRole,
+  MembershipPermissionOverride,
+  Invitation,
+  AuthSession,
+  AuditLog,
+  Notification,
+  NotificationPreference,
+  PasswordResetToken,
+  EmailVerificationToken,
+};
 
 // Run associations
 Object.values(models).forEach((model) => {

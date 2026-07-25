@@ -10,6 +10,11 @@ module.exports = (sequelize) => {
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
+    organizationId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: { model: 'Organizations', key: 'id' },
+    },
     userId: {
       type: DataTypes.UUID,
       allowNull: false,
@@ -40,11 +45,28 @@ module.exports = (sequelize) => {
       type: DataTypes.DATE,
       allowNull: true,
     },
+    archivedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    deletedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    deletedByUserId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
+  }, {
+    indexes: [
+      { unique: true, fields: ['organizationId', 'leadId'] },
+    ],
   });
 
   SavedLead.associate = (models) => {
     SavedLead.belongsTo(models.User, { foreignKey: 'userId', as: 'user' });
     SavedLead.belongsTo(models.Lead, { foreignKey: 'leadId', as: 'lead' });
+    SavedLead.belongsTo(models.Organization, { foreignKey: 'organizationId', as: 'organization' });
   };
 
   return SavedLead;

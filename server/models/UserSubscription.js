@@ -12,6 +12,14 @@ module.exports = (sequelize) => {
       allowNull: false,
       unique: true,
     },
+    // Nullable during Phase 1: legacy subscriptions are backfilled to the
+    // Website Guys organization, but true billing authority moves to a
+    // client organization/billing account in Phase 3 — this column is a
+    // documented temporary association, not the final billing model.
+    organizationId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
     planId: {
       type: DataTypes.UUID,
       allowNull: false,
@@ -49,6 +57,7 @@ module.exports = (sequelize) => {
   UserSubscription.associate = (models) => {
     UserSubscription.belongsTo(models.User, { foreignKey: 'userId', as: 'user' });
     UserSubscription.belongsTo(models.SubscriptionPlan, { foreignKey: 'planId', as: 'plan' });
+    UserSubscription.belongsTo(models.Organization, { foreignKey: 'organizationId', as: 'organization' });
   };
 
   return UserSubscription;

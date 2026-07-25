@@ -55,6 +55,10 @@ module.exports = (sequelize) => {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
     },
+    emailVerifiedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   });
 
   User.associate = (models) => {
@@ -62,6 +66,9 @@ module.exports = (sequelize) => {
     User.hasMany(models.LeadNote, { foreignKey: 'userId', as: 'notes' });
     User.hasMany(models.OutreachActivity, { foreignKey: 'userId', as: 'outreachActivities' });
     User.hasOne(models.UserSubscription, { foreignKey: 'userId', as: 'subscription' });
+    User.hasMany(models.OrganizationMembership, { foreignKey: 'userId', as: 'memberships' });
+    User.hasMany(models.AuthSession, { foreignKey: 'userId', as: 'authSessions' });
+    User.hasMany(models.Notification, { foreignKey: 'userId', as: 'notifications' });
   };
 
   return User;
