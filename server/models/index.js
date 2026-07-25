@@ -23,6 +23,10 @@ const NotificationPreference = require('./NotificationPreference')(sequelize);
 const PasswordResetToken = require('./PasswordResetToken')(sequelize);
 const EmailVerificationToken = require('./EmailVerificationToken')(sequelize);
 
+const Opportunity = require('./Opportunity')(sequelize);
+const Contact = require('./Contact')(sequelize);
+const Location = require('./Location')(sequelize);
+
 const models = {
   User,
   Lead,
@@ -45,6 +49,9 @@ const models = {
   NotificationPreference,
   PasswordResetToken,
   EmailVerificationToken,
+  Opportunity,
+  Contact,
+  Location,
 };
 
 // Run associations

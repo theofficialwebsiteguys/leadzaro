@@ -178,3 +178,80 @@ test('organization-scope migration safely merges a legacy duplicate SavedLead co
     await verify.end();
   }
 });
+
+test('Phase 2 Opportunity backfill creates exactly one prospect Organization per (organization, lead) pair, even when an active and an archived SavedLead both exist for it', async () => {
+  runCli(['db:migrate:undo:all']);
+  // Must include migration 007 (the corrected partial-unique index that
+  // excludes archived rows, not just deleted ones) before inserting the
+  // fixture below — under the original migration-5 index, an archived
+  // and an active SavedLead for the same (org, lead) would collide at
+  // the DB level, which is exactly the bug 007 fixed.
+  runCli(['db:migrate', '--to', '20260725120007-fix-saved-lead-active-unique-index.js']);
+
+  const client = await dbClient();
+  const orgId = crypto.randomUUID();
+  const userId = crypto.randomUUID();
+  const leadId = crypto.randomUUID();
+  const savedLeadArchived = crypto.randomUUID();
+  const savedLeadActive = crypto.randomUUID();
+  const now = new Date();
+  const earlier = new Date(now.getTime() - 120000);
+
+  await client.query(
+    `INSERT INTO "Organizations" (id, name, slug, type, status, "createdAt", "updatedAt")
+     VALUES ($1, 'Fixture Agency', 'fixture-agency-crm-test', 'agency', 'active', $2, $2)`,
+    [orgId, now]
+  );
+  await client.query(
+    `INSERT INTO "Users" (id, name, email, "passwordHash", role, "isActive", "createdAt", "updatedAt")
+     VALUES ($1,'Fixture Rep','rep@crmfixture.test','x','user',true,$2,$2)`,
+    [userId, now]
+  );
+  await client.query(
+    `INSERT INTO "Leads" (id, name, "googlePlaceId", "createdAt", "updatedAt") VALUES ($1,'Same Business Twice','demo_crm_collision', $2, $2)`,
+    [leadId, now]
+  );
+  // One archived SavedLead (an earlier pursuit that was archived) and one
+  // active SavedLead (re-saved later) for the exact same (org, lead) pair
+  // — a state directly reachable today via the archive-then-resave flow
+  // this repository's own Phase 1 tests exercise.
+  await client.query(
+    `INSERT INTO "SavedLeads" (id, "organizationId", "userId", "leadId", status, priority, "archivedAt", "createdAt", "updatedAt")
+     VALUES ($1,$2,$3,$4,'Not Interested','Medium',$5,$5,$5)`,
+    [savedLeadArchived, orgId, userId, leadId, earlier]
+  );
+  await client.query(
+    `INSERT INTO "SavedLeads" (id, "organizationId", "userId", "leadId", status, priority, "createdAt", "updatedAt")
+     VALUES ($1,$2,$3,$4,'Interested','High',$5,$5)`,
+    [savedLeadActive, orgId, userId, leadId, now]
+  );
+  await client.end();
+
+  runCli(['db:migrate']);
+
+  const verify = await dbClient();
+  try {
+    const { rows: prospects } = await verify.query(
+      `SELECT o.id, o.name FROM "Organizations" o
+       JOIN "Opportunities" op ON op."organizationId" = o.id
+       WHERE op."sourceLeadId" = $1`,
+      [leadId]
+    );
+    expect(prospects).toHaveLength(1);
+
+    const { rows: opportunities } = await verify.query(
+      `SELECT stage, "archivedAt", "agencyOrganizationId", "assignedToUserId" FROM "Opportunities" WHERE "sourceLeadId" = $1`,
+      [leadId]
+    );
+    expect(opportunities).toHaveLength(1);
+    // The active SavedLead ('Interested') drives the stage, not the
+    // archived one ('Not Interested') — and the resulting Opportunity is
+    // itself active (not archived), matching its active source row.
+    expect(opportunities[0].stage).toBe('Qualified');
+    expect(opportunities[0].archivedAt).toBeNull();
+    expect(opportunities[0].agencyOrganizationId).toBe(orgId);
+    expect(opportunities[0].assignedToUserId).toBe(userId);
+  } finally {
+    await verify.end();
+  }
+});

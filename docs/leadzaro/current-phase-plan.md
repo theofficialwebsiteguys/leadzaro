@@ -1,81 +1,88 @@
-# Phase 1 Implementation Plan — Platform Foundation and Safe Migration
+# Phase 2 Implementation Plan — Lead Generation, Inbound Acquisition, and CRM
 
 ## 1. Repository evidence audit
 
-### Stack confirmed
-- Angular 19.2 standalone frontend, Express 4 + Sequelize 6 + PostgreSQL backend, shared root `package.json`.
-- Node v24.11.1, npm 11.6.2, Docker 29.3.1 with Compose available locally.
-- `docker-compose.yml` provides a disposable local Postgres (`leadzaro_db`, db `leadzaro`, user `leadzaro_user`).
+### What Phase 1 left in place (verified against actual code, not assumed)
 
-### Secrets / sanitation
-- `.env` exists locally and is already git-ignored (`git check-ignore` confirms); it has never been committed (`git log --all -- .env` is empty).
-- `.env.example` already contains placeholders only (no real credentials found).
-- `.claude/settings.local.json` is currently **untracked and not ignored** — must be added to `.gitignore` before any commit (local permission grants are machine-specific, not shared config). `.claude/agents/fable-phase-reviewer.md` should remain tracked (shared operating config referenced by `CLAUDE.md`).
-- **Action:** still advise credential rotation in the completion report per audit item #1, since the audit indicates a ZIP containing populated `.env` was shared outside this working copy at some point; this repo's own history is clean.
+- `Lead` (`server/models/Lead.js`) remains the canonical, globally-deduplicated-by-`googlePlaceId` Google Places business record. Unchanged this phase.
+- `SavedLead` (`server/models/SavedLead.js`) is organization-scoped (`organizationId`, `userId` as author, `status`/`priority` enums, `archivedAt`/`deletedAt` soft-delete, unique-while-active per `(organizationId, leadId)`). This is today's entire "CRM" — a single flat bookmark-with-status per business per organization.
+- **`Organization.type` already includes `'prospect'`** (`server/models/Organization.js`, confirmed live: `Organization.TYPES → ['agency', 'client', 'prospect']`). This was deliberately anticipated in Phase 1 and is the single biggest architectural fact shaping this plan: prospect organizations are not a new tenant concept requiring a parallel model — they reuse the exact `Organization`/`OrganizationMembership` infrastructure already built, audited, tested, and permission-checked in Phase 1.
+- Full RBAC foundation (`server/core/authorization/{catalog,context}.js`), audit (`server/core/audit/auditService.js`), notifications (`server/core/notifications/notificationService.js`), and sessions are all reusable as-is.
+- Test infrastructure: `server/tests/helpers/{factory,globalSetup}.js` — reuse directly.
+- No prior CRM entities exist: no Contact, Opportunity, Location, Campaign, Territory, Score, Assignment, WebsiteAudit, or public inbound-form model of any kind. This phase is greenfield for all of them.
 
-### No trustworthy baseline commit
-- Confirmed: `git log` shows one `initial commit` (bare Angular scaffold). Nearly everything — `server/`, `src/app/core|features|layout|shared`, `docs/`, `.claude/`, `docker-compose.yml`, `proxy.conf.json` — is untracked or modified.
-- **Action:** commit the current working application as-is (sanitized `.gitignore` only) as an explicit baseline checkpoint before any Phase 1 domain change, so regressions can be diffed against real prior behavior.
+### Key architectural decision: what is a "prospect organization"?
 
-### package-lock.json
-- Deleted from the working tree relative to the initial commit (which only had the bare Angular lockfile). Current `package.json` already includes backend deps (express, sequelize, jsonwebtoken, bcryptjs, etc.) added after that commit.
-- **Action:** run `npm install` to regenerate a lockfile that matches the current `package.json` (cannot `npm ci` — no matching lock exists yet), then commit the regenerated lockfile as part of the baseline.
+The master architecture (`docs/planning/02_MASTER_PRODUCT_SYSTEM_ARCHITECTURE.md` § 7) describes:
 
-### Existing backend behavior (read in full)
-- `server/models`: `User` (role enum user/admin, salespersonType enum, isActive), `Lead` (canonical business, unique `googlePlaceId`), `SavedLead` (`userId`+`leadId`, status/priority enums, no DB-level unique constraint — dedupe only enforced in `savedLeadController`), `LeadNote`, `OutreachActivity`, `SubscriptionPlan`, `UserSubscription`. All user-owned, no org concept.
-- `server/config/database.js` builds a raw `Sequelize` instance from env vars directly (no `config.js` for sequelize-cli). `server/server.js` calls `sequelize.sync({ alter: ... })` — must be replaced by migrations for non-test environments.
-- `server/middleware/auth.js`: bearer-only `authenticate` + `requireAdmin` (single global role, no membership/permission concept).
-- `server/controllers/authController.js` + `server/services/authService.js`: register/login issue a long-lived (7d) JWT; no session table, no revocation, no refresh.
-- Routes are flat under `/api/...` with no versioning; all existing routes (`leads`, `savedLeads`, `outreach`, `dashboard`, `subscriptions`) filter by `req.user.id` only — no organization scoping exists anywhere.
-- `leadSearchService.js` already implements sensible caching/cost-control (geocode cache, search cache, on-demand contact reveal) — preserved unchanged.
-- Frontend `AuthService` persists both JWT and serialized user in `localStorage` permanently; `authGuard`/`noAuthGuard` gate on `isAuthenticated()` signal only; `authInterceptor` attaches bearer token and force-logs-out on 401. Public `/register` route is open or a `noAuthGuard`-gated marketing flow with automatic Free Trial subscription creation.
-- No test infrastructure exists beyond the generated `app.component.spec.ts`.
+```
+Organization (prospect)
+├── Locations
+├── Contacts
+├── Opportunities
+├── Search Campaign Memberships
+├── Activities
+├── Notes
+├── Website Audits
+├── Scores
+├── Assignments
+└── Conversion History
+```
 
-## 2. Decisions for this phase (why, given the evidence)
+Given `Organization.type: 'prospect'` already exists, the only reasonable reading is: **a prospect organization is an `Organization` row**, and Phase 2's new entities (`Contact`, `Opportunity`, `Location`, campaign membership, score, assignment) are new tables that hang off `organizationId`, exactly the way Phase 1's `SavedLead`/`OutreachActivity`/`LeadNote` already do. This is not a new tenant/membership concept — a prospect organization typically has **no** `OrganizationMembership` rows at all (nobody logs in as a prospect) until/unless it converts to a client in Phase 3.
 
-1. **Migrations tool:** adopt `sequelize-cli` (`.sequelizerc` + `server/config/config.js`) rather than a bespoke runner — it is the standard reversible-migration tool for this exact stack and needs no new database driver. The existing `server/config/database.js` (used by `models/index.js` at runtime) is left as the single source of truth for the app's live connection; `config.js` mirrors the same env vars for the CLI only.
-2. **Idempotent-safe baseline migration:** because a legacy dev database may already have the 7 existing tables created via `sync({alter:true})`, the first migration checks `queryInterface.showAllTables()` and only creates tables that are missing. This lets the exact same migration set run cleanly against both an empty DB and a representative legacy DB, satisfying acceptance criterion #6 without a separate "assume already synced" flag.
-3. **New tables stay flat in `server/models/`** (matching the existing convention) rather than moving everything into `server/modules/*/models` immediately — avoids a big-bang restructure of working code. New *routes/controllers/services* for genuinely new domains (organizations, membership admin, invitations, sessions, audit, notifications) are added under `server/modules/<domain>/` and mounted at `/api/v1/...`, per the versioning rule in the controller prompt. Existing `/api/...` routes are kept and updated internally to call the new authorization/org-context layer rather than being replaced.
-4. **Roles/permissions as validated reference tables, not enums** — per the master architecture's explicit instruction to avoid PostgreSQL enum churn for workflow-configurable concepts. `Role`/`Permission` are rows seeded by migration, not `DataTypes.ENUM`.
-5. **Session model:** short-lived in-memory access token (returned in the API response body, held in an Angular signal, attached via the existing bearer interceptor) + a `HttpOnly`/`SameSite=Lax` refresh cookie backing a real `AuthSession` row (hashed token, revocable, last-seen, device metadata). A CSRF-only cookie cannot mutate state by itself since all mutating requests still require the bearer header the cookie cannot supply cross-site — this removes the long-lived privileged token from `localStorage` while keeping the frontend's existing interceptor pattern. Documented as an ADR.
-6. **Backfill lives inside a migration**, not a re-runnable seeder, for the one-time legacy-user/organization-scope backfill (it must run exactly once, transactionally, against real existing rows). Pure reference-data seeding (permissions/roles/role-permissions/Website Guys org) is idempotent (`findOrCreate`) and safe to also invoke via an explicit `db:seed` script for fresh environments.
-7. **SavedLead uniqueness becomes `(organizationId, leadId)`** at the DB level (added as a real unique index in the alter migration) instead of the current app-level-only `(userId, leadId)` check.
-8. **Soft delete/archive** replaces hard `destroy()` for `SavedLead` and `OutreachActivity`: add `archivedAt`, `deletedAt`, `deletedByUserId`; existing `DELETE` endpoints become archive actions (audited), with a separate administrator-only permanent-delete path that does not get broad UI in this phase.
-9. **Impersonation** is demonstrated using a seeded test client organization + seeded client member (not fake project UI), gated behind a new `impersonation.use` permission, fully audited, with an explicit banner/context surfaced to the frontend and an easy exit — no password change, no billing exposure, no permanent deletion while impersonating.
-10. **Public registration** is disabled by default behind a `FEATURE_PUBLIC_REGISTRATION` flag (default `false`); the route/controller/service remain in place (not deleted) for the possible future external-SaaS scenario the architecture explicitly keeps open, but the Angular `/register` route is removed from primary navigation and redirects to login with an explanatory message when the flag is off.
+This directly resolves what would otherwise be the single biggest open architecture question for this phase, and is why the plan below does not need to invent a parallel "prospect" concept next to `Organization`.
 
-## 3. Acceptance matrix
+### The remaining design question: how does a canonical `Lead`/`SavedLead` become a prospect `Organization`+`Opportunity`?
 
-| # | Phase 1 requirement | Implementation location | DB impact | API impact | UI impact | Permission | Tests | Backfill | Status |
-|---|---|---|---|---|---|---|---|---|---|
-|1| Secret sanitation, baseline checkpoint | `.gitignore`, git history | — | — | — | — | manual verify | — | done in Step 0 |
-|2| Explicit migrations replace `sync({alter})` | `server/config/config.js`, `.sequelizerc`, `server/migrations/*`, `server/server.js` | new | — | — | — | migration up/down tests | — | pending |
-|3| Organization + RBAC schema | `server/migrations/*-create-org-rbac.js`, `server/models/{Organization,OrganizationMembership,Role,Permission,RolePermission,MembershipRole,MembershipPermissionOverride}.js` | new tables | new v1 routes | Admin UI | `memberships.manage`, `roles.manage` | RBAC combine/override tests | — | pending |
-|4| Seed Website Guys + predefined roles/permissions | migration seed step + `server/seeders` reference | data | — | — | — | seed idempotency test | seed | pending |
-|5| Legacy user backfill into Website Guys org | same migration (transactional) | data | — | — | — | legacy-db migration test | backfill | pending |
-|6| Org-scope existing operational tables | alter migration on SavedLead/LeadNote/OutreachActivity/UserSubscription | altered tables + unique index | updated controllers | unchanged UX, clearer archive wording | org-scoped queries | org isolation tests | backfill | pending |
-|7| Active organization context (backend + frontend) | `server/core/authorization/*`, Angular `OrganizationContextService` | — | new context resolution on every protected route | org switcher shell (hidden if 1 membership) | `requireOrganizationAccess` | cross-org access test | — | pending |
-|8| Multiple roles + permission overrides enforced server-side | `server/core/authorization/authorize.js` | uses RBAC tables | `requirePermission`/`requireAnyPermission` applied to all protected routes | disabled/hidden nav by permission | full catalog | grant/deny precedence tests | — | pending |
-|9| Invitation-only onboarding | `server/modules/invitations/*`, Angular invite-accept flow, `/register` gated | new `Invitation` table | `/api/v1/invitations/*` | invite-accept page, admin invite UI | `invitations.manage` | invite new-user / existing-user tests | — | pending |
-|10| Revocable sessions, no privileged localStorage token | `server/modules/sessions/*`, `AuthSession` model, cookie refresh flow, Angular `AuthService` rewrite | new `AuthSession` table | `/api/v1/auth/refresh`, `/sessions` | session list/revoke UI | `sessions.manage`, `sessions.manage_others` | session revoke tests | — | pending |
-|11| Impersonation foundation | `server/modules/impersonation/*` | uses AuditLog | admin-only endpoints | banner + exit control | `impersonation.use` | impersonation restriction tests | seeded client org | pending |
-|12| Audit history | `server/core/audit/auditService.js`, `AuditLog` model | new table | audit view endpoint | admin Audit tab | `audit.view` | audit-recorded-on-action tests | — | pending |
-|13| Soft deletion / archive | SavedLead/OutreachActivity controllers | new columns | delete endpoints become archive | wording update, restore action | existing perms | soft delete/restore tests | — | pending |
-|14| Notification foundation | `server/modules/notifications/*`, `Notification`/`NotificationPreference` models, console email adapter | new tables | `/api/v1/notifications/*` | notification center + bell | `notifications.view/manage` | notification CRUD tests | — | pending |
-|15| Frontend shell/navigation permission-aware | Angular layout/sidebar | — | — | filtered nav, Administration area | permission service | nav filtering test | — | pending |
-|16| API versioning + compatibility | new `/api/v1` routers, legacy `/api` delegates | — | both live | — | — | legacy route regression tests | — | pending |
-|17| Backend test foundation | Jest + supertest, `server/tests/*` | test DB | — | — | — | (this row) | — | pending |
-|18| Documentation | `README.md`, `docs/leadzaro/adr/*` | — | — | — | — | — | — | pending |
+Two materially different approaches exist:
 
-## 4. Non-goals reaffirmed for this phase
-Normalized CRM entities, public inbound forms, Stripe, projects/tasks/requests/messaging, GCS files, website builder, GitHub/cPanel deployment, analytics/SEO, AI — none of these are touched.
+**Option A — One canonical Lead maps to one prospect Organization globally.** A `Lead.organizationId` (nullable, unique) FK is added; the first agency to save a Lead creates its prospect `Organization`; every other organization's `SavedLead`/`Opportunity` for that same `Lead` points at the *same* prospect `Organization`. This mirrors `Lead`'s existing global-canonical-record semantics.
 
-## 5. Validation commands planned
-- `npm install` (regenerate lockfile)
-- `npx ng build` (production build)
-- `npx tsc -p tsconfig.app.json --noEmit` (strict type check)
-- `node --check` across new/changed backend files
-- `npx sequelize-cli db:migrate` / `db:migrate:status` / `db:migrate:undo:all` against an empty disposable DB
-- A second run against a **legacy-simulated** DB (seeded with pre-Phase-1-shaped rows) to prove backfill correctness
-- `npm run test:backend` (Jest + supertest)
-- `npx ng test` (Karma/Jasmine) if a headless Chrome is available in this environment; otherwise documented as a known sandbox limitation
+**Option B — Each organization gets its own prospect Organization per Lead it has saved (no sharing).** A prospect `Organization` is really "how *this* agency organization sees this business," created fresh per (agency, Lead) pair; `Lead` stays a pure search-result cache with no reverse link.
+
+**Recommendation: Option B — confirmed by `fable-phase-reviewer` (escalated per CLAUDE.md's rule for major architecture/migration decisions before writing any migration code).** The reviewer's justification is stronger than my original one: multi-agency SaaS is explicitly out of initial scope (`02_MASTER_PRODUCT_SYSTEM_ARCHITECTURE.md` § 3), so today there is exactly one agency organization and the cross-agency-collision argument is nearly moot. The decisive reason is the **prospect→client conversion state machine**: `Organization.type` is a single scalar field on one row, and the architecture requires "an organization may transition from prospect to client without losing activity history" (§5). Under Option A, one shared prospect `Organization` can only hold one `type` — if one agency converts it to `client`, every other agency's still-open pursuit of the same row would have its type silently changed underneath it. Option B has no such problem: each agency's prospect `Organization` converts independently, exactly like the seeded demo client already does via `managingAgencyOrganizationId`.
+
+The review also surfaced three required corrections to the plan below (now incorporated): (1) the backfill must group by `(organizationId, leadId)`, not iterate `SavedLead` rows independently — Phase 1's archive/restore feature means a single organization can already have both an archived and an active `SavedLead` for the same business today, and a naive per-row migration would manufacture two prospect Organizations for one real prospect, directly violating this phase's "no duplicate prospect records" gate; (2) a real DB-level partial-unique constraint is needed going forward (not just correctness at migration time); (3) `Contact`/`Opportunity`/`Location` need a denormalized `agencyOrganizationId` column so their authorization/query pattern matches the one already reviewed and tested three times in this codebase (`where: { agencyOrganizationId: req.context.organization.id }`), rather than relying on an untested join through `managingAgencyOrganizationId` that the current single-real-agency test suite could not catch if built wrong.
+
+## 2. Proposed data model (corrected per review)
+
+New tables. Each carries **two** organization references, matching the reviewer's required correction: `organizationId` (the prospect `Organization` it belongs to) and a denormalized **`agencyOrganizationId`** (copied from the prospect org's `managingAgencyOrganizationId` at creation time). All authorization/query scoping uses `agencyOrganizationId`, exactly matching the already-reviewed-and-tested `where: { organizationId: req.context.organization.id }` pattern `SavedLead`/`LeadNote`/`OutreachActivity` use today — never a join through `managingAgencyOrganizationId`, which nothing in a single-real-agency test suite would catch if wrong.
+
+- `Location` — a prospect can have multiple physical locations (address, phone, hours later). One is primary.
+- `Contact` — person(s) at the prospect (name, title, email, phone, source).
+- `Opportunity` — the actual pipeline object: `stage` (validated string, not enum — reference table like Phase 1's role/permission catalog, since the architecture explicitly wants a "configurable in the future" pipeline), `assignedToUserId`, `sourceLeadId` (nullable FK back to the canonical `Lead`), `score`, `scoreReason`, timestamps per stage transition. **`sourceLeadId` + `agencyOrganizationId` get a partial unique index (`WHERE "deletedAt" IS NULL`)** — the DB-level guarantee that prevents a duplicate prospect from ever being created for the same business by the same agency again, mirroring `SavedLeads`' own `(organizationId, leadId)` partial unique index from Phase 1.
+- `SearchCampaign` / `SearchCampaignMembership` — saved search definitions (private/shared) and which prospects came from which campaign.
+- `Territory` (optional per roadmap — build the column/table but no enforcement UI yet if time-constrained).
+- `WebsiteAudit` — one per prospect, generated report data + shareable-link token (reuse the hashed-token pattern from Phase 1's invitations).
+- Assignment/claim history reuses `AuditLog` (already real, tested, queryable) rather than a parallel table.
+
+### Migration from `Lead`/`SavedLead` (the major gate)
+
+Grouped by `(organizationId, leadId)` — **not** iterated per `SavedLead` row, per the review finding: an organization can already hold both an archived and an active `SavedLead` for the same business today (Phase 1's archive/restore feature), and a naive per-row migration would manufacture two prospect Organizations for one real prospect.
+
+For each `(organizationId, leadId)` group in `SavedLeads`:
+1. Create exactly one prospect `Organization` (`type: 'prospect'`, `managingAgencyOrganizationId: organizationId`, name from `Lead.name`, a disambiguated slug — plain name-slugs will collide across unrelated businesses sharing a name, since `Organization.slug` is globally unique).
+2. Create exactly one `Opportunity` under it, with `agencyOrganizationId: organizationId`, `sourceLeadId: leadId`. If the group has an active (non-archived, non-deleted) `SavedLead`, its `status` drives `Opportunity.stage` and its `userId` drives `assignedToUserId`. If the group has only archived rows (no active one), the `Opportunity` is created in a closed/inactive stage reflecting that — archived rows never spawn a second `Opportunity` or `Organization`, they're historical trail only.
+3. Preserve `SavedLead` itself, unchanged, as a compatibility record (strangler pattern, per ADR 0005) — **do not delete or stop writing to `SavedLead` in this phase**; existing lead-search-save-note-outreach-dashboard UI keeps working exactly as Phase 1 left it while the new CRM UI is built against `Opportunity`. Removal of `SavedLead` is a future phase's decision.
+4. `LeadNote`/`OutreachActivity` stay as-is (already organization-scoped); the new CRM UI queries them by `organizationId` (the agency org — unchanged meaning) + `leadId` (shared with `Opportunity.sourceLeadId`), avoiding a data migration for every historical note/activity.
+
+### Testing requirement added per review
+
+A second, fixture-only agency organization must be added to the relevant Phase 2 test suite(s) specifically to exercise agency-to-agency isolation for `Contact`/`Opportunity`/`Location` — the same technique Phase 1's independent review used to catch the impersonation tenant-boundary bug. A single-agency test suite cannot prove this boundary holds.
+
+## 3. Sequencing given the size of this phase
+
+Per the roadmap, Phase 2 also includes public landing pages/inbound forms, assisted outreach sequences, enrichment adapters, and a sales dashboard — each independently substantial. Implementation order, safest/highest-value first:
+
+1. Data model + migration/backfill for `Location`/`Contact`/`Opportunity` (the major gate — get this reviewed and correct before anything else).
+2. Pipeline stage reference table + assignment (claim/manager-assign/round-robin) + activity timeline reusing existing audit/notes/outreach.
+3. Duplicate detection/merge preview/audit/undo for prospect organizations (the second-highest-risk item — reuses the exact archive-not-delete + audit pattern Phase 1's migration 5 already established and tested).
+4. Opportunity/engagement scoring with manual override + reason.
+5. Sales dashboard.
+6. Website audits.
+7. Public landing pages + inbound forms + UTM/source attribution (lowest technical risk, but a genuinely separate surface — public-facing Angular routes with no auth, feeding the same CRM).
+8. Enrichment adapter (external API — interface + mock/disabled mode only, per the standing external-services rule).
+9. Assisted outreach sequences requiring employee approval.
+
+Items 6–9 will be deferred to a documented backlog if this phase runs out of safe stopping room before reaching them — the phase will not be declared complete with a broken or half-built item 1–3, but a coherent stop after item 3 or 4 (data model + pipeline + dedup, the actual "major gate") with 5–9 clearly documented as deferred is preferable to a rushed, unreviewed attempt at all nine.

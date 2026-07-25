@@ -68,6 +68,9 @@ module.exports = (sequelize) => {
     Organization.hasMany(models.LeadNote, { foreignKey: 'organizationId', as: 'leadNotes' });
     Organization.belongsTo(models.Organization, { foreignKey: 'managingAgencyOrganizationId', as: 'managingAgency' });
     Organization.hasMany(models.Organization, { foreignKey: 'managingAgencyOrganizationId', as: 'managedClients' });
+    Organization.hasMany(models.Opportunity, { foreignKey: 'organizationId', as: 'opportunities' });
+    Organization.hasMany(models.Contact, { foreignKey: 'organizationId', as: 'contacts' });
+    Organization.hasMany(models.Location, { foreignKey: 'organizationId', as: 'locations' });
   };
 
   return Organization;
