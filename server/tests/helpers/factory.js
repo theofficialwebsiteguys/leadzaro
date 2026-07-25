@@ -12,10 +12,10 @@ function uniqueSlug(prefix) {
   return `${prefix}-${crypto.randomBytes(4).toString('hex')}`;
 }
 
-async function createOrganization(models, { type = 'agency', name } = {}) {
+async function createOrganization(models, { type = 'agency', name, managingAgencyOrganizationId = null } = {}) {
   const slug = uniqueSlug(type);
   return models.Organization.create({
-    name: name || slug, slug, type, status: 'active',
+    name: name || slug, slug, type, status: 'active', managingAgencyOrganizationId,
   });
 }
 

@@ -1,6 +1,6 @@
 const { verifyAccessToken } = require('../core/authentication/sessionService');
 const { unauthorized } = require('../utils/response');
-const { User } = require('../models');
+const { User, AuthSession } = require('../models');
 
 async function loadUserFromBearerToken(req) {
   const authHeader = req.headers.authorization;
@@ -14,7 +14,17 @@ async function loadUserFromBearerToken(req) {
   });
   if (!user || !user.isActive) return null;
 
-  return { user, impersonation: decoded.imp ? { byUserId: decoded.imp.by, reason: decoded.imp.reason } : null };
+  if (decoded.imp) {
+    // Impersonation is checked against its backing AuthSession on every
+    // request (unlike a normal access token, which only re-validates on
+    // refresh) so an administrator can forcibly end another admin's
+    // in-progress impersonation rather than waiting out the token's TTL.
+    const session = decoded.imp.sessionId ? await AuthSession.findByPk(decoded.imp.sessionId) : null;
+    if (!session || session.revokedAt || session.expiresAt < new Date()) return null;
+    return { user, impersonation: { byUserId: decoded.imp.by, reason: decoded.imp.reason, sessionId: decoded.imp.sessionId } };
+  }
+
+  return { user, impersonation: null };
 }
 
 async function authenticate(req, res, next) {

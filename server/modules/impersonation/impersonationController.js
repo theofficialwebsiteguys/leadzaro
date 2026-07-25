@@ -1,14 +1,16 @@
 const { startImpersonation, listCandidates } = require('./impersonationService');
 const { recordAudit } = require('../../core/audit/auditService');
+const { revokeSession } = require('../../core/authentication/sessionService');
 const { sanitizeUser } = require('../../services/authService');
 const { success, error } = require('../../utils/response');
+const { AuthSession } = require('../../models');
 
 async function candidates(req, res, next) {
   try {
     if (req.context.organization.type !== 'agency') {
       return error(res, 'Impersonation is only available to agency administrators', 403);
     }
-    const items = await listCandidates();
+    const items = await listCandidates(req.context.organization.id);
     return success(res, { candidates: items });
   } catch (err) {
     next(err);
@@ -24,7 +26,9 @@ async function start(req, res, next) {
     const { membershipId, reason } = req.body;
     const {
       token, user, membership, organization,
-    } = await startImpersonation({ membershipId, reason, actorUserId: req.user.id });
+    } = await startImpersonation({
+      membershipId, reason, actorUserId: req.user.id, agencyOrganizationId: req.context.organization.id,
+    });
 
     await recordAudit({
       organizationId: organization.id,
@@ -51,6 +55,13 @@ async function end(req, res, next) {
   try {
     if (!req.impersonation) {
       return error(res, 'Not currently impersonating', 400);
+    }
+
+    if (req.impersonation.sessionId) {
+      const session = await AuthSession.findByPk(req.impersonation.sessionId);
+      if (session && !session.revokedAt) {
+        await revokeSession(session, { revokedByUserId: req.impersonation.byUserId, reason: 'impersonation_ended' });
+      }
     }
 
     await recordAudit({

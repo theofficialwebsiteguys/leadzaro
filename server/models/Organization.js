@@ -46,6 +46,15 @@ module.exports = (sequelize) => {
       type: DataTypes.UUID,
       allowNull: true,
     },
+    // Which agency organization manages this one — populated for
+    // client/prospect organizations at conversion time. Required for any
+    // agency-scoped action (e.g. impersonation) to know which client
+    // organizations a given agency is actually allowed to touch; without
+    // it, "type: 'client'" alone doesn't express ownership.
+    managingAgencyOrganizationId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
   });
 
   Organization.TYPES = TYPES;
@@ -57,6 +66,8 @@ module.exports = (sequelize) => {
     Organization.hasMany(models.SavedLead, { foreignKey: 'organizationId', as: 'savedLeads' });
     Organization.hasMany(models.OutreachActivity, { foreignKey: 'organizationId', as: 'outreachActivities' });
     Organization.hasMany(models.LeadNote, { foreignKey: 'organizationId', as: 'leadNotes' });
+    Organization.belongsTo(models.Organization, { foreignKey: 'managingAgencyOrganizationId', as: 'managingAgency' });
+    Organization.hasMany(models.Organization, { foreignKey: 'managingAgencyOrganizationId', as: 'managedClients' });
   };
 
   return Organization;

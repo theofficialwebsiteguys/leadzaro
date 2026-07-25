@@ -44,6 +44,14 @@ module.exports = (sequelize) => {
       type: DataTypes.STRING(255),
       allowNull: true,
     },
+    // Set only for a session created by /impersonation/start — marks
+    // this row as an impersonation grant rather than a real login, and
+    // lets it be found/revoked as part of the impersonated user's normal
+    // session list.
+    impersonatedByUserId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
   });
 
   AuthSession.associate = (models) => {

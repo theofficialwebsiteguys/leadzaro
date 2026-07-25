@@ -12,7 +12,7 @@ afterAll(async () => {
 describe('impersonation foundation', () => {
   test('an agency administrator can view as a client member, with audit start/end and a required reason', async () => {
     const agencyOrg = await createOrganization(sequelize.models, { type: 'agency' });
-    const clientOrg = await createOrganization(sequelize.models, { type: 'client' });
+    const clientOrg = await createOrganization(sequelize.models, { type: 'client', managingAgencyOrganizationId: agencyOrg.id });
 
     const { user: admin, password: adminPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: agencyOrg.id, roleKeys: ['administrator'] });
     const { user: clientUser, membership: clientMembership } = await createRoleAssignedMember(sequelize.models, {
@@ -56,6 +56,34 @@ describe('impersonation foundation', () => {
     expect(endAudit).toBeTruthy();
     expect(endAudit.actorUserId).toBe(admin.id);
     expect(endAudit.targetId).toBe(clientUser.id);
+
+    // The token is now backed by a revoked AuthSession, so it's rejected
+    // on the very next request rather than remaining valid until its TTL.
+    const afterEnd = await request(app).get('/api/v1/organizations/current').set('Authorization', `Bearer ${impersonationToken}`);
+    expect(afterEnd.status).toBe(401);
+  });
+
+  test('an agency cannot impersonate a client organization managed by a different agency', async () => {
+    const agencyA = await createOrganization(sequelize.models, { type: 'agency' });
+    const agencyB = await createOrganization(sequelize.models, { type: 'agency' });
+    const clientOfB = await createOrganization(sequelize.models, { type: 'client', managingAgencyOrganizationId: agencyB.id });
+
+    const { user: adminA, password: adminAPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: agencyA.id, roleKeys: ['administrator'] });
+    const { membership: clientMembership } = await createRoleAssignedMember(sequelize.models, {
+      organizationId: clientOfB.id, roleKeys: ['client_owner'], membershipType: 'client',
+    });
+
+    const adminALogin = await loginAs(app, adminA.email, adminAPassword);
+
+    // Not offered as a candidate...
+    const candidates = await request(app).get('/api/v1/impersonation/candidates').set('Authorization', `Bearer ${adminALogin.token}`);
+    expect(candidates.body.data.candidates.find((c) => c.membershipId === clientMembership.id)).toBeUndefined();
+
+    // ...and rejected even if the membership id is known/guessed directly.
+    const start = await request(app).post('/api/v1/impersonation/start')
+      .set('Authorization', `Bearer ${adminALogin.token}`)
+      .send({ membershipId: clientMembership.id, reason: 'trying to reach the wrong agency\'s client' });
+    expect(start.status).toBe(403);
   });
 
   test('impersonation is rejected for a non-client membership and for a non-administrator', async () => {

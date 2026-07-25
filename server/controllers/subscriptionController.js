@@ -16,7 +16,7 @@ async function getPlans(req, res, next) {
 async function getCurrentSubscription(req, res, next) {
   try {
     const subscription = await UserSubscription.findOne({
-      where: { userId: req.user.id },
+      where: { userId: req.user.id, organizationId: req.context.organization.id },
       include: [{ model: SubscriptionPlan, as: 'plan' }],
     });
 
