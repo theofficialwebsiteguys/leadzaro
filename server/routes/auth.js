@@ -1,7 +1,11 @@
 const router = require('express').Router();
 const { body } = require('express-validator');
-const { registerUser, loginUser, getMe, updateProfile, changePassword } = require('../controllers/authController');
-const { authenticate } = require('../middleware/auth');
+const {
+  registerUser, loginUser, refreshSession, logoutUser, getMe, updateProfile, changePassword,
+  requestPasswordResetHandler, confirmPasswordResetHandler,
+  requestEmailVerificationHandler, confirmEmailVerificationHandler,
+} = require('../controllers/authController');
+const { authenticate, blockDuringImpersonation } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { authLimiter } = require('../middleware/rateLimiter');
 
@@ -25,11 +29,26 @@ const loginRules = [
 
 router.post('/register', authLimiter, registerRules, validate, registerUser);
 router.post('/login', authLimiter, loginRules, validate, loginUser);
+router.post('/refresh', refreshSession);
+router.post('/logout', logoutUser);
 router.get('/me', authenticate, getMe);
 router.put('/profile', authenticate, updateProfile);
-router.put('/password', authenticate, [
+router.put('/password', authenticate, blockDuringImpersonation, [
   body('currentPassword').notEmpty(),
   body('newPassword').isLength({ min: 8 }),
 ], validate, changePassword);
+
+router.post('/password-reset/request', authLimiter, [
+  body('email').trim().isEmail().withMessage('Valid email required').normalizeEmail(),
+], validate, requestPasswordResetHandler);
+router.post('/password-reset/confirm', authLimiter, [
+  body('token').notEmpty(),
+  body('newPassword').isLength({ min: 8 }),
+], validate, confirmPasswordResetHandler);
+
+router.post('/email-verification/request', authenticate, requestEmailVerificationHandler);
+router.post('/email-verification/confirm', [
+  body('token').notEmpty(),
+], validate, confirmEmailVerificationHandler);
 
 module.exports = router;

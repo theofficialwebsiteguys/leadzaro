@@ -83,6 +83,7 @@ const env = {
   ACCESS_TOKEN_SECRET: process.env.JWT_SECRET || 'dev_secret_replace_in_production',
   ACCESS_TOKEN_TTL: process.env.ACCESS_TOKEN_TTL || '15m',
   REFRESH_TOKEN_TTL_DAYS: parseInt(process.env.REFRESH_TOKEN_TTL_DAYS, 10) || 30,
+  IMPERSONATION_TOKEN_TTL: process.env.IMPERSONATION_TOKEN_TTL || '30m',
 
   SESSION_COOKIE_NAME: process.env.SESSION_COOKIE_NAME || 'lz_session',
   SESSION_COOKIE_SECURE: IS_PRODUCTION ? process.env.SESSION_COOKIE_SECURE !== 'false' : process.env.SESSION_COOKIE_SECURE === 'true',

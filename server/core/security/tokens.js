@@ -18,12 +18,4 @@ function hashToken(rawToken) {
   return crypto.createHash('sha256').update(rawToken).digest('hex');
 }
 
-function tokensMatch(rawToken, hash) {
-  const candidate = hashToken(rawToken);
-  const a = Buffer.from(candidate, 'hex');
-  const b = Buffer.from(hash, 'hex');
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
-}
-
-module.exports = { generateRawToken, hashToken, tokensMatch };
+module.exports = { generateRawToken, hashToken };

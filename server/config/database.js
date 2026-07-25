@@ -1,14 +1,20 @@
 require('dotenv').config();
 const { Sequelize } = require('sequelize');
+const config = require('./config.js')[process.env.NODE_ENV || 'development'];
 
+// Built from the same per-environment config sequelize-cli uses (see
+// config.js), so the running app and `sequelize-cli db:migrate` always
+// agree on which database they're talking to — critical for
+// NODE_ENV=test to actually hit the disposable test database rather than
+// silently falling back to the development one.
 const sequelize = new Sequelize(
-  process.env.DB_NAME || 'leadzaro',
-  process.env.DB_USER || 'leadzaro_user',
-  process.env.DB_PASS || 'leadzaro_pass',
+  config.database,
+  config.username,
+  config.password,
   {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT) || 5432,
-    dialect: 'postgres',
+    host: config.host,
+    port: config.port,
+    dialect: config.dialect,
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
     pool: {
       max: 10,

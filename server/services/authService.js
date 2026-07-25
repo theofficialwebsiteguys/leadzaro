@@ -1,11 +1,19 @@
 const bcrypt = require('bcryptjs');
-const { signToken } = require('../config/jwt');
-const { User, SubscriptionPlan, UserSubscription } = require('../models');
+const { User } = require('../models');
 
 const SALT_ROUNDS = 10;
 
+/**
+ * Public self-registration. Only reachable when FEATURE_PUBLIC_REGISTRATION
+ * is enabled (enforced by the route/controller) — Phase 1's primary
+ * onboarding path is invitation acceptance (see modules/invitations).
+ * No subscription/trial is created here; that was the old public-SaaS
+ * behavior and is out of scope for the Website Guys operating platform.
+ */
 async function register(data) {
-  const { name, email, password, companyName, salespersonType, targetIndustry, serviceArea } = data;
+  const {
+    name, email, password, companyName, salespersonType, targetIndustry, serviceArea,
+  } = data;
 
   const existing = await User.findOne({ where: { email: email.toLowerCase() } });
   if (existing) {
@@ -26,22 +34,7 @@ async function register(data) {
     serviceArea,
   });
 
-  // Assign free trial subscription
-  const freePlan = await SubscriptionPlan.findOne({ where: { name: 'Free Trial' } });
-  if (freePlan) {
-    const trialEnd = new Date();
-    trialEnd.setDate(trialEnd.getDate() + 14);
-    await UserSubscription.create({
-      userId: user.id,
-      planId: freePlan.id,
-      status: 'trialing',
-      currentPeriodStart: new Date(),
-      currentPeriodEnd: trialEnd,
-    });
-  }
-
-  const token = signToken({ id: user.id, email: user.email, role: user.role });
-  return { token, user: sanitizeUser(user) };
+  return sanitizeUser(user);
 }
 
 async function login(email, password) {
@@ -65,8 +58,7 @@ async function login(email, password) {
     throw err;
   }
 
-  const token = signToken({ id: user.id, email: user.email, role: user.role });
-  return { token, user: sanitizeUser(user) };
+  return user;
 }
 
 function sanitizeUser(user) {
@@ -75,4 +67,6 @@ function sanitizeUser(user) {
   return safe;
 }
 
-module.exports = { register, login, sanitizeUser };
+module.exports = {
+  register, login, sanitizeUser, SALT_ROUNDS,
+};
