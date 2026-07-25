@@ -8,5 +8,6 @@ router.use('/sessions', require('../../modules/sessions/routes'));
 router.use('/audit', require('../../modules/audit/routes'));
 router.use('/notifications', require('../../modules/notifications/routes'));
 router.use('/impersonation', require('../../modules/impersonation/routes'));
+router.use('/crm', require('../../modules/crm/routes'));
 
 module.exports = router;
