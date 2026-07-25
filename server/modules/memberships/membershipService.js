@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  OrganizationMembership, User, Role, MembershipRole, Permission, MembershipPermissionOverride,
+  sequelize, OrganizationMembership, User, Role, MembershipRole, Permission, MembershipPermissionOverride,
 } = require('../../models');
 
 function listForOrganization(organizationId) {
@@ -43,10 +43,14 @@ async function replaceRoles(membershipId, organizationId, roleKeys, assignedByUs
     throw err;
   }
 
-  await MembershipRole.destroy({ where: { membershipId } });
-  await MembershipRole.bulkCreate(roles.map((role) => ({
-    membershipId, roleId: role.id, assignedByUserId,
-  })));
+  // Destroy-then-recreate must be atomic — otherwise a crash between the
+  // two steps would leave the membership with zero roles and no access.
+  await sequelize.transaction(async (transaction) => {
+    await MembershipRole.destroy({ where: { membershipId }, transaction });
+    await MembershipRole.bulkCreate(roles.map((role) => ({
+      membershipId, roleId: role.id, assignedByUserId,
+    })), { transaction });
+  });
 
   return roles.map((r) => r.key);
 }

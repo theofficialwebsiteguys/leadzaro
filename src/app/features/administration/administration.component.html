@@ -12,7 +12,7 @@
   }
 
   <div class="admin-tabs">
-    <button class="tab-btn" [class.active]="tab() === 'members'" (click)="setTab('members')">
+    <button class="tab-btn" *hasPermission="'memberships.manage'" [class.active]="tab() === 'members'" (click)="setTab('members')">
       <lz-icon name="users" [size]="15" /> Members
     </button>
     <button class="tab-btn" *hasPermission="'invitations.manage'" [class.active]="tab() === 'invitations'" (click)="setTab('invitations')">

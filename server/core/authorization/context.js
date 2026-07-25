@@ -105,26 +105,9 @@ function requireAnyPermission(permissionKeys) {
   };
 }
 
-/**
- * Defense-in-depth for routes that also carry an organization id in the
- * URL (e.g. `/api/v1/organizations/:organizationId/...`): confirms the
- * path parameter matches the already-verified active-membership context
- * rather than trusting the URL value directly.
- */
-function requireOrganizationMatch(paramName = 'organizationId') {
-  return (req, res, next) => {
-    const paramValue = req.params[paramName];
-    if (paramValue && paramValue !== req.context?.organization?.id) {
-      return forbidden(res, 'You do not have access to that organization');
-    }
-    next();
-  };
-}
-
 module.exports = {
   loadActiveMemberships,
   resolveContext,
   requirePermission,
   requireAnyPermission,
-  requireOrganizationMatch,
 };

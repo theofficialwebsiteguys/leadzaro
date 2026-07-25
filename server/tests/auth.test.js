@@ -93,4 +93,41 @@ describe('login / session lifecycle', () => {
     const record = await PasswordResetToken.findOne({ where: { userId: user.id }, order: [['createdAt', 'DESC']] });
     expect(record).toBeTruthy();
   });
+
+  test('changing password revokes every other session but keeps the one making the request', async () => {
+    const org = await createOrganization(sequelize.models, { type: 'agency' });
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_representative'] });
+
+    const sessionA = await loginAs(app, user.email, password);
+    const sessionB = await loginAs(app, user.email, password);
+
+    const change = await request(app).put('/api/v1/auth/password')
+      .set('Authorization', `Bearer ${sessionB.token}`)
+      .set('Cookie', sessionB.cookie)
+      .send({ currentPassword: password, newPassword: 'BrandNewSecurePass1!' });
+    expect(change.status).toBe(200);
+
+    const refreshA = await request(app).post('/api/v1/auth/refresh').set('Cookie', sessionA.cookie);
+    expect(refreshA.status).toBe(401);
+
+    const refreshB = await request(app).post('/api/v1/auth/refresh').set('Cookie', sessionB.cookie);
+    expect(refreshB.status).toBe(200);
+  });
+
+  test('confirming a password reset revokes every session for that user', async () => {
+    const org = await createOrganization(sequelize.models, { type: 'agency' });
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_representative'] });
+    const session = await loginAs(app, user.email, password);
+
+    const { generateRawToken, hashToken } = require('../core/security/tokens');
+    const { PasswordResetToken } = sequelize.models;
+    const rawToken = generateRawToken();
+    await PasswordResetToken.create({ userId: user.id, tokenHash: hashToken(rawToken), expiresAt: new Date(Date.now() + 60000) });
+
+    const confirm = await request(app).post('/api/v1/auth/password-reset/confirm').send({ token: rawToken, newPassword: 'AnotherNewPass1!' });
+    expect(confirm.status).toBe(200);
+
+    const refresh = await request(app).post('/api/v1/auth/refresh').set('Cookie', session.cookie);
+    expect(refresh.status).toBe(401);
+  });
 });

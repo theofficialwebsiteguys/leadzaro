@@ -4,7 +4,7 @@ const { requestPasswordReset, confirmPasswordReset } = require('../services/pass
 const { requestEmailVerification, confirmEmailVerification } = require('../services/emailVerificationService');
 const {
   createSession, setSessionCookie, clearSessionCookie, findActiveSessionByRawToken, touchSession,
-  revokeSession, signAccessToken,
+  revokeSession, revokeAllSessionsForUser, signAccessToken,
 } = require('../core/authentication/sessionService');
 const { recordAudit } = require('../core/audit/auditService');
 const { env } = require('../core/config/env');
@@ -135,6 +135,12 @@ async function changePassword(req, res, next) {
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await user.update({ passwordHash });
+
+    // A session hijacked before this change must not survive it — keep
+    // only the session making this request alive.
+    const currentSession = await findActiveSessionByRawToken(req.cookies?.[env.SESSION_COOKIE_NAME]);
+    await revokeAllSessionsForUser(user.id, { exceptSessionId: currentSession?.id, reason: 'password_changed' });
+
     await recordAudit({ actorUserId: user.id, action: 'auth.password_changed', targetType: 'User', targetId: user.id, req });
 
     return success(res, {}, 'Password changed successfully');
@@ -155,6 +161,9 @@ async function requestPasswordResetHandler(req, res, next) {
 async function confirmPasswordResetHandler(req, res, next) {
   try {
     const user = await confirmPasswordReset(req.body.token, req.body.newPassword);
+    // No "current session" context here (anonymous action via emailed
+    // link) — revoke everywhere and require a fresh login.
+    await revokeAllSessionsForUser(user.id, { reason: 'password_reset' });
     await recordAudit({ actorUserId: user.id, action: 'auth.password_reset', targetType: 'User', targetId: user.id, req });
     return success(res, {}, 'Password reset successfully. You can now log in.');
   } catch (err) {

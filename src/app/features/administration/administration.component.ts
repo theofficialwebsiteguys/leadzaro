@@ -62,11 +62,37 @@ export class AdministrationComponent implements OnInit {
   impersonationStarting = signal(false);
 
   ngOnInit() {
-    this.loadMembers();
+    // Mirrors the tab gating in the template: land on the first tab this
+    // membership actually has permission for, rather than assuming
+    // 'members' (memberships.manage) is available to everyone who passed
+    // the route guard on some other admin permission (e.g. audit.view).
+    const initialTab = this.availableTabs().find((t) => this.tabPermission(t) === null || this.org.hasPermission(this.tabPermission(t)!));
+    this.tab.set(initialTab || 'members');
+
+    if (this.tab() === 'members') this.loadMembers();
+    if (this.tab() === 'invitations') this.loadInvitations();
+    if (this.tab() === 'audit') this.loadAudit(1);
+    if (this.tab() === 'impersonation') this.loadImpersonationCandidates();
+
     this.roleService.list().subscribe((res) => {
       this.employeeRoles.set(res.data.roles.filter((r) => r.scope === 'employee'));
       this.clientRoles.set(res.data.roles.filter((r) => r.scope === 'client'));
     });
+  }
+
+  private availableTabs(): Tab[] {
+    return ['members', 'invitations', 'sessions', 'audit', 'impersonation'];
+  }
+
+  private tabPermission(tab: Tab): string | null {
+    const map: Record<Tab, string | null> = {
+      members: 'memberships.manage',
+      invitations: 'invitations.manage',
+      sessions: null,
+      audit: 'audit.view',
+      impersonation: 'impersonation.use',
+    };
+    return map[tab];
   }
 
   setTab(tab: Tab) {

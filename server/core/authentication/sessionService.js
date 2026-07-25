@@ -1,5 +1,6 @@
 'use strict';
 
+const { Op } = require('sequelize');
 const { signToken, verifyToken } = require('../../config/jwt');
 const { env } = require('../config/env');
 const { generateRawToken, hashToken } = require('../security/tokens');
@@ -64,6 +65,22 @@ function revokeSession(session, { revokedByUserId = null, reason = null } = {}) 
   return session.update({ revokedAt: new Date(), revokedByUserId, revokedReason: reason });
 }
 
+/**
+ * Revokes every active session for a user except one (typically the
+ * session making the request). Used after a password change/reset so a
+ * session hijacked before the credential change doesn't survive it —
+ * without that, changing a compromised password would leave an
+ * attacker's existing session valid indefinitely.
+ */
+async function revokeAllSessionsForUser(userId, { exceptSessionId = null, reason = null } = {}) {
+  const where = { userId, revokedAt: null };
+  if (exceptSessionId) where.id = { [Op.ne]: exceptSessionId };
+  await AuthSession.update(
+    { revokedAt: new Date(), revokedByUserId: userId, revokedReason: reason },
+    { where }
+  );
+}
+
 module.exports = {
   signAccessToken,
   verifyAccessToken: verifyToken,
@@ -73,4 +90,5 @@ module.exports = {
   findActiveSessionByRawToken,
   touchSession,
   revokeSession,
+  revokeAllSessionsForUser,
 };
