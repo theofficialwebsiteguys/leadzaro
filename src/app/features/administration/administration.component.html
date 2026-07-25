@@ -150,11 +150,13 @@
                 <td class="text-sm text-muted">{{ s.lastSeenAt | date:'MMM d, y, h:mm a' }}</td>
                 <td>{{ s.revokedAt ? 'Revoked' : 'Active' }}</td>
                 <td>
-                  @if (!s.revokedAt && !s.isCurrent) {
+  @if (!s.revokedAt && !s.isCurrent) {
                     <button class="btn btn-ghost btn-sm danger-btn" (click)="revokeSession(s.id)">Revoke</button>
                   }
                 </td>
               </tr>
+            } @empty {
+              <tr><td colspan="5" class="text-sm text-muted">No sessions found.</td></tr>
             }
           </tbody>
         </table>
