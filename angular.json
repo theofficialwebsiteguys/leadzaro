@@ -67,7 +67,8 @@
               "buildTarget": "leadzaro:build:production"
             },
             "development": {
-              "buildTarget": "leadzaro:build:development"
+              "buildTarget": "leadzaro:build:development",
+              "proxyConfig": "proxy.conf.json"
             }
           },
           "defaultConfiguration": "development"
@@ -98,5 +99,8 @@
         }
       }
     }
+  },
+  "cli": {
+    "analytics": false
   }
 }

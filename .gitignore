@@ -40,3 +40,20 @@ testem.log
 # System files
 .DS_Store
 Thumbs.db
+
+.env
+.env.*
+!.env.example
+
+# Claude Code local settings (machine-specific permission grants)
+.claude/settings.local.json
+
+# Logs and local certificates
+*.log
+logs/
+*.pem
+*.key
+!server/**/*.key.example
+
+# Local exports / dev outbox (console email adapter writes here in dev)
+/server/.dev-outbox/

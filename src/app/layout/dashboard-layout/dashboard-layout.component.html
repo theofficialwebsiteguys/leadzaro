@@ -1,0 +1,29 @@
+<div class="layout">
+
+  @if (sidebarOpen()) {
+    <div class="overlay" (click)="sidebarOpen.set(false)"></div>
+  }
+
+  <div class="sidebar-wrap" [class.open]="sidebarOpen()">
+    <app-sidebar (closeMobile)="sidebarOpen.set(false)" />
+  </div>
+
+  <div class="main">
+
+    <header class="mobile-header">
+      <button class="menu-btn" (click)="sidebarOpen.set(!sidebarOpen())" aria-label="Toggle menu">
+        <lz-icon name="menu" [size]="20" />
+      </button>
+      <div class="mobile-logo">
+        <img src="/logo.png" alt="Leadzaro" class="mobile-logo-img" />
+        <span>Leadzaro</span>
+      </div>
+    </header>
+
+    <div class="content">
+      <router-outlet />
+    </div>
+
+  </div>
+
+</div>

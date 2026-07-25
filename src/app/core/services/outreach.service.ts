@@ -1,0 +1,23 @@
+import { Injectable, inject } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { OutreachActivity, OutreachType, PaginatedResponse } from '../models/lead.model';
+
+@Injectable({ providedIn: 'root' })
+export class OutreachService {
+  private http = inject(HttpClient);
+
+  getAll(leadId?: string, page = 1, limit = 20): Observable<{ data: PaginatedResponse<OutreachActivity> }> {
+    let params = new HttpParams().set('page', page).set('limit', limit);
+    if (leadId) params = params.set('leadId', leadId);
+    return this.http.get<{ data: PaginatedResponse<OutreachActivity> }>('/api/outreach', { params });
+  }
+
+  add(leadId: string, type: OutreachType, note?: string): Observable<{ data: { activity: OutreachActivity } }> {
+    return this.http.post<{ data: { activity: OutreachActivity } }>('/api/outreach', { leadId, type, note });
+  }
+
+  delete(id: string): Observable<unknown> {
+    return this.http.delete(`/api/outreach/${id}`);
+  }
+}

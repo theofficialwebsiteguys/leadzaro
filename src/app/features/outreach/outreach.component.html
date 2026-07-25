@@ -1,0 +1,47 @@
+<div class="page">
+  <div class="page-header">
+    <div><h2>Outreach Log</h2><p>All your logged calls, emails, and visits.</p></div>
+  </div>
+
+  @if (loading()) {
+    <div class="loading-state"><div class="spinner"></div></div>
+  } @else if (activities().length === 0) {
+    <div class="empty-state">
+      <div class="empty-icon">📞</div>
+      <h3>No outreach logged yet</h3>
+      <p>Open a saved lead and log a call, email, or visit to see it here.</p>
+      <a routerLink="/app/leads" class="btn btn-primary">View Saved Leads</a>
+    </div>
+  } @else {
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Business</th><th>Type</th><th>Note</th><th>Date</th><th></th></tr>
+          </thead>
+          <tbody>
+            @for (act of activities(); track act.id) {
+              <tr>
+                <td>
+                  <a [routerLink]="['/app/leads']" class="font-medium">{{ act.lead?.name }}</a>
+                  <div class="text-xs text-muted">{{ act.lead?.city }}</div>
+                </td>
+                <td><span class="type-badge">{{ activityIcon(act.type) }} {{ act.type | titlecase }}</span></td>
+                <td class="text-sm text-muted">{{ act.note || '—' }}</td>
+                <td class="text-sm text-muted">{{ act.createdAt | date:'MMM d, y' }}</td>
+                <td><button class="btn btn-ghost btn-sm danger" (click)="delete(act.id)">✕</button></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+    @if (totalPages() > 1) {
+      <div class="pagination">
+        <button class="btn btn-ghost btn-sm" [disabled]="page() <= 1" (click)="load(page() - 1)">← Prev</button>
+        <span class="text-sm text-muted">Page {{ page() }} of {{ totalPages() }}</span>
+        <button class="btn btn-ghost btn-sm" [disabled]="page() >= totalPages()" (click)="load(page() + 1)">Next →</button>
+      </div>
+    }
+  }
+</div>

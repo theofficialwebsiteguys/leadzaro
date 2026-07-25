@@ -1,0 +1,39 @@
+{
+  "source_zip": "leadzaro.zip",
+  "audited_stack": {
+    "frontend": "Angular 19.2 standalone",
+    "backend": "Express 4 / CommonJS",
+    "orm": "Sequelize 6",
+    "database": "PostgreSQL"
+  },
+  "existing_models": [
+    "User",
+    "Lead",
+    "SavedLead",
+    "LeadNote",
+    "OutreachActivity",
+    "SubscriptionPlan",
+    "UserSubscription"
+  ],
+  "existing_features": [
+    "auth",
+    "lead search",
+    "saved leads",
+    "notes",
+    "outreach",
+    "dashboard",
+    "subscription groundwork"
+  ],
+  "phase_1_focus": [
+    "repository sanitation",
+    "migrations",
+    "organizations",
+    "memberships",
+    "RBAC",
+    "invitations",
+    "sessions",
+    "audit",
+    "notifications",
+    "legacy backfill"
+  ]
+}

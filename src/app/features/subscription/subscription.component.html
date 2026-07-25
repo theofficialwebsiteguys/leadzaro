@@ -1,0 +1,75 @@
+<div class="page">
+  <div class="page-header">
+    <div><h2>Subscription</h2><p>Choose the plan that fits your workflow.</p></div>
+  </div>
+
+  <!-- Current Plan Banner -->
+  @if (currentSub(); as sub) {
+    <div class="current-banner">
+      <div>
+        <div class="font-semibold">Current Plan: {{ sub.plan?.name }}</div>
+        <div class="text-sm text-muted">
+          Status: <strong>{{ sub.status }}</strong>
+          @if (sub.currentPeriodEnd) {
+            · Renews {{ sub.currentPeriodEnd | slice:0:10 }}
+          }
+        </div>
+      </div>
+      <div class="usage-stats">
+        <div class="usage-item">
+          <div class="font-semibold">{{ sub.searchesUsedThisMonth }}</div>
+          <div class="text-xs text-muted">Searches this month</div>
+        </div>
+        <div class="usage-item">
+          <div class="font-semibold">{{ sub.leadsUsedTotal }}</div>
+          <div class="text-xs text-muted">Total leads saved</div>
+        </div>
+      </div>
+    </div>
+  }
+
+  @if (loading()) {
+    <div class="loading-state"><div class="spinner"></div></div>
+  } @else {
+
+    <div class="plans-grid">
+      @for (plan of plans(); track plan.id) {
+        <div class="plan-card card" [class.current]="isCurrentPlan(plan)" [class.popular]="plan.name === 'Pro'">
+          @if (plan.name === 'Pro') { <div class="popular-badge">Most Popular</div> }
+
+          <div class="plan-header">
+            <div class="plan-name">{{ plan.name }}</div>
+            <div class="plan-price">
+              @if (plan.price === 0) { <span class="price-free">Free</span> }
+              @else { <span class="price-amount">${{ plan.price }}</span><span class="price-per">/mo</span> }
+            </div>
+          </div>
+
+          <ul class="plan-features">
+            <li>{{ formatLimit(plan.monthlySearches) }} searches / month</li>
+            <li>{{ formatLimit(plan.savedLeadsLimit) }} saved leads</li>
+            <li [class.disabled]="!plan.exportAccess">{{ plan.exportAccess ? '✓' : '✕' }} CSV Export</li>
+            <li>{{ plan.teamMembers }} team member{{ plan.teamMembers > 1 ? 's' : '' }}</li>
+            <li [class.disabled]="!plan.advancedFilters">{{ plan.advancedFilters ? '✓' : '✕' }} Advanced Filters</li>
+          </ul>
+
+          @if (isCurrentPlan(plan)) {
+            <button class="btn btn-outline btn-full" disabled>Current Plan</button>
+          } @else if (plan.price === 0) {
+            <button class="btn btn-ghost btn-full" disabled>Free Trial</button>
+          } @else {
+            <button class="btn btn-full" [class.btn-primary]="plan.name === 'Pro'" [class.btn-outline]="plan.name !== 'Pro'">
+              Upgrade to {{ plan.name }}
+            </button>
+          }
+
+        </div>
+      }
+    </div>
+
+    <div class="stripe-notice alert alert-info mt-4">
+      💳 Payment integration (Stripe) coming soon. Contact us to upgrade your plan today.
+    </div>
+
+  }
+</div>

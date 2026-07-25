@@ -1,0 +1,318 @@
+<div class="page">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div>
+      <h1>Search Leads</h1>
+      <p>Find local businesses by keyword and location using Google Maps data.</p>
+    </div>
+    @if (demoMode()) {
+      <div class="demo-banner">
+        <lz-icon name="zap" [size]="14" />
+        Demo mode — showing sample data
+      </div>
+    }
+  </div>
+
+  <!-- Search Card -->
+  <div class="card search-card">
+    <div class="card-body">
+      <form [formGroup]="form" (ngSubmit)="search()" class="search-form" autocomplete="off">
+
+        <!-- Row 1: keyword + location -->
+        <div class="search-main-row">
+          <div class="form-group search-keyword">
+            <label class="form-label" for="s-keyword">Business Type or Keyword</label>
+            <div class="input-icon-wrap">
+              <lz-icon name="search" [size]="16" class="input-icon" />
+              <input
+                id="s-keyword"
+                type="text"
+                class="form-control input-with-icon"
+                formControlName="keyword"
+                placeholder="e.g. Roofing Contractor, Restaurant, Dentist…"
+              />
+            </div>
+          </div>
+          <div class="form-group search-location">
+            <label class="form-label" for="s-location">Location</label>
+            <div class="input-icon-wrap">
+              <lz-icon name="target" [size]="16" class="input-icon" />
+              <input
+                id="s-location"
+                type="text"
+                class="form-control input-with-icon"
+                formControlName="location"
+                placeholder="City, State or ZIP code"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2: filters -->
+        <div class="search-filters-row">
+          <div class="form-group">
+            <label class="form-label" for="s-radius">Radius</label>
+            <select id="s-radius" class="form-select" formControlName="radius">
+              <option value="5">5 miles</option>
+              <option value="10">10 miles</option>
+              <option value="25">25 miles</option>
+              <option value="50">50 miles</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="s-rating">Min. Star Rating</label>
+            <select id="s-rating" class="form-select" formControlName="minRating">
+              <option value="">Any Rating</option>
+              <option value="3">3+ Stars</option>
+              <option value="4">4+ Stars</option>
+              <option value="4.5">4.5+ Stars</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="s-reviews">Min. Reviews</label>
+            <select id="s-reviews" class="form-select" formControlName="minReviews">
+              <option value="">Any</option>
+              <option value="10">10+ reviews</option>
+              <option value="25">25+ reviews</option>
+              <option value="50">50+ reviews</option>
+              <option value="100">100+ reviews</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Row 3: actions + demo toggle -->
+        <div class="search-actions">
+          <button type="submit" class="btn btn-primary btn-lg" [disabled]="loading()">
+            @if (loading()) {
+              <span class="spinner spinner-sm"></span> Searching…
+            } @else {
+              <lz-icon name="search" [size]="16" /> Search Leads
+            }
+          </button>
+
+          <div class="demo-toggle-wrap">
+            <button type="button" class="demo-toggle" [class.active]="demoMode()" (click)="toggleDemo()">
+              <span class="toggle-track">
+                <span class="toggle-thumb"></span>
+              </span>
+              <span class="toggle-label">Demo Mode</span>
+            </button>
+            <span class="toggle-hint">{{ demoMode() ? 'Using sample data' : 'Using Google data' }}</span>
+          </div>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <!-- Results -->
+  @if (loading()) {
+
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <span>Searching Google Maps…</span>
+    </div>
+
+  } @else if (!searched()) {
+
+    <!-- Workflow guide -->
+    <div class="workflow-guide">
+      <div class="wg-step">
+        <div class="wg-num">1</div>
+        <div class="wg-text">
+          <strong>Enter a keyword</strong>
+          <p>Business type + city or ZIP — e.g. "Plumber, Austin TX"</p>
+        </div>
+      </div>
+      <div class="wg-arrow">→</div>
+      <div class="wg-step">
+        <div class="wg-num">2</div>
+        <div class="wg-text">
+          <strong>Review results</strong>
+          <p>Filter by rating, radius, and spot no-website leads</p>
+        </div>
+      </div>
+      <div class="wg-arrow">→</div>
+      <div class="wg-step">
+        <div class="wg-num">3</div>
+        <div class="wg-text">
+          <strong>Save the best ones</strong>
+          <p>Build your pipeline with one click and start outreach</p>
+        </div>
+      </div>
+    </div>
+
+  } @else if (results()?.items?.length === 0) {
+
+    <div class="empty-state">
+      <div class="empty-icon"><lz-icon name="search" [size]="20" /></div>
+      <h3>No results found</h3>
+      <p>Try a broader keyword, different location, or reduce your filter requirements.</p>
+    </div>
+
+  } @else {
+
+    <!-- Results header -->
+    <div class="results-header">
+      <div class="results-meta">
+        <span class="results-count">{{ totalLabel() }}</span>
+        @if (noWebsiteCount() > 0) {
+          <span class="opp-badge">
+            <lz-icon name="globe" [size]="12" /> {{ noWebsiteCount() }} no website
+          </span>
+        }
+        @if (isGoogleSource()) {
+          <span class="source-badge source-google">
+            <lz-icon name="globe" [size]="12" /> Live Google Data
+          </span>
+        }
+        @if (isDemoSource()) {
+          <span class="source-badge source-demo">
+            <lz-icon name="zap" [size]="12" /> Demo Data
+          </span>
+        }
+      </div>
+    </div>
+
+    <!-- Results table -->
+    <div class="card results-card">
+      <div class="table-wrap">
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>Business</th>
+              <th>Location</th>
+              <th>Phone</th>
+              <th>Rating</th>
+              <th>Website</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (lead of results()!.items; track lead.id) {
+              <tr class="result-row"
+                [class.row-saved]="savedIds().has(lead.id)"
+                [class.row-no-website]="!lead.website && !savedIds().has(lead.id)">
+
+                <td class="col-name">
+                  <div class="biz-name">{{ lead.name }}</div>
+                  @if (lead.category) {
+                    <div class="biz-category">{{ lead.category }}</div>
+                  }
+                </td>
+
+                <td class="col-location">
+                  @if (lead.city || lead.state) {
+                    <span>{{ lead.city }}{{ lead.city && lead.state ? ', ' : '' }}{{ lead.state }}</span>
+                  } @else {
+                    <span class="text-muted">—</span>
+                  }
+                </td>
+
+                <td class="col-phone">
+                  @if (lead.source === 'google' && !revealedPhone().has(lead.googlePlaceId || lead.id)) {
+                    @if (revealingPhone().has(lead.googlePlaceId || lead.id)) {
+                      <span class="spinner spinner-sm"></span>
+                    } @else {
+                      <button class="reveal-btn" (click)="revealPhone(lead)" title="Load phone number">
+                        <lz-icon name="phone" [size]="12" /> Reveal
+                      </button>
+                    }
+                  } @else if (resolvedPhone(lead)) {
+                    <div class="phone-cell">
+                      <a [href]="'tel:' + resolvedPhone(lead)" class="phone-link">{{ resolvedPhone(lead) }}</a>
+                      <button
+                        class="copy-btn"
+                        [class.copied]="copiedPhone() === lead.id"
+                        (click)="copyPhone(resolvedPhone(lead)!, lead.id)"
+                        title="Copy phone number"
+                      >
+                        <lz-icon [name]="copiedPhone() === lead.id ? 'check' : 'phone'" [size]="12" />
+                      </button>
+                    </div>
+                  } @else {
+                    <span class="text-muted">—</span>
+                  }
+                </td>
+
+                <td class="col-rating">
+                  @if (lead.rating) {
+                    <div class="rating-wrap">
+                      <span class="rating-num">{{ formatRating(lead.rating) }}</span>
+                      <div class="stars-row">
+                        @for (s of ratingStars(lead.rating); track $index) {
+                          <span class="star-fill"></span>
+                        }
+                      </div>
+                      <span class="review-count">({{ lead.reviewCount }})</span>
+                    </div>
+                  } @else {
+                    <span class="text-muted">—</span>
+                  }
+                </td>
+
+                <td class="col-website">
+                  @if (lead.website) {
+                    <a [href]="lead.website" target="_blank" rel="noopener" class="website-link">
+                      <lz-icon name="globe" [size]="14" />
+                      <span class="website-text">View</span>
+                    </a>
+                  } @else {
+                    <span class="no-website-badge">No Website</span>
+                  }
+                </td>
+
+                <td class="col-actions">
+                  <div class="row-actions">
+                    @if (lead.googleMapsUrl) {
+                      <a [href]="lead.googleMapsUrl" target="_blank" rel="noopener" class="btn btn-ghost btn-sm action-btn" title="View on Google Maps">
+                        <lz-icon name="target" [size]="14" />
+                      </a>
+                    }
+                    <button
+                      class="btn btn-sm action-btn"
+                      [class.btn-primary]="!savedIds().has(lead.id)"
+                      [class.btn-saved]="savedIds().has(lead.id)"
+                      [disabled]="saving() === lead.id || savedIds().has(lead.id)"
+                      (click)="saveLead(lead)"
+                      [title]="savedIds().has(lead.id) ? 'Already saved' : 'Save lead'"
+                    >
+                      @if (saving() === lead.id) {
+                        <span class="spinner spinner-sm"></span>
+                      } @else if (savedIds().has(lead.id)) {
+                        <lz-icon name="check" [size]="14" />
+                        Saved
+                      } @else {
+                        <lz-icon name="plus" [size]="14" />
+                        Save
+                      }
+                    </button>
+                  </div>
+                </td>
+
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    @if (results()!.pagination.totalPages > 1) {
+      <div class="pagination">
+        <button class="btn btn-ghost btn-sm" [disabled]="!results()!.pagination.hasPrev" (click)="goPage(results()!.pagination.page - 1)">
+          <lz-icon name="arrow-right" [size]="14" style="transform:rotate(180deg)" /> Prev
+        </button>
+        <span class="page-info text-sm text-muted">
+          Page {{ results()!.pagination.page }} of {{ results()!.pagination.totalPages }}
+        </span>
+        <button class="btn btn-ghost btn-sm" [disabled]="!results()!.pagination.hasNext" (click)="goPage(results()!.pagination.page + 1)">
+          Next <lz-icon name="arrow-right" [size]="14" />
+        </button>
+      </div>
+    }
+
+  }
+
+</div>

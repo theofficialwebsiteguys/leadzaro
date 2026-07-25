@@ -1,0 +1,237 @@
+<div class="page">
+
+  <!-- Page header -->
+  <div class="page-header">
+    <div>
+      @if (auth.currentUser(); as u) {
+        <h1>Welcome back, {{ u.name.split(' ')[0] }}</h1>
+        <p>Here's what's happening with your leads today.</p>
+      } @else {
+        <h1>Dashboard</h1>
+      }
+    </div>
+    <a routerLink="/app/search" class="btn btn-primary">
+      <lz-icon name="plus" [size]="16" />
+      Search Leads
+    </a>
+  </div>
+
+  @if (loading()) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <span>Loading dashboard…</span>
+    </div>
+  } @else if (error()) {
+    <div class="alert alert-error">{{ error() }}</div>
+  } @else {
+    @if (data(); as d) {
+
+      <!-- Getting Started (zero state) -->
+      @if (d.stats.totalSaved === 0) {
+        <div class="card getting-started-card">
+          <div class="card-body">
+            <h3>Welcome! Here's how to get your first leads</h3>
+            <p class="gs-sub">Follow these three steps to build your pipeline.</p>
+            <div class="gs-steps">
+              <div class="gs-step">
+                <div class="gs-icon"><lz-icon name="search" [size]="18" /></div>
+                <div>
+                  <strong>Search leads</strong>
+                  <p>Find local businesses by keyword and city</p>
+                </div>
+              </div>
+              <div class="gs-divider">→</div>
+              <div class="gs-step">
+                <div class="gs-icon"><lz-icon name="leads" [size]="18" /></div>
+                <div>
+                  <strong>Save the best ones</strong>
+                  <p>One click adds them to your pipeline</p>
+                </div>
+              </div>
+              <div class="gs-divider">→</div>
+              <div class="gs-step">
+                <div class="gs-icon"><lz-icon name="outreach" [size]="18" /></div>
+                <div>
+                  <strong>Log outreach</strong>
+                  <p>Track every call, email, and follow-up</p>
+                </div>
+              </div>
+            </div>
+            <a routerLink="/app/search" class="btn btn-primary">Start Searching →</a>
+          </div>
+        </div>
+      }
+
+      <!-- KPI Cards -->
+      <div class="kpi-grid">
+        @for (card of kpiCards(); track card.label) {
+          <a [routerLink]="card.route" class="kpi-card kpi-{{ card.color }}">
+            <div class="kpi-icon">
+              <lz-icon [name]="card.icon" [size]="18" />
+            </div>
+            <div class="kpi-body">
+              <div class="kpi-value">{{ card.value | number }}</div>
+              <div class="kpi-label">{{ card.label }}</div>
+            </div>
+          </a>
+        }
+      </div>
+
+      <!-- Main 2-col grid -->
+      <div class="dash-grid">
+
+        <!-- Recent Outreach -->
+        <div class="card">
+          <div class="card-header">
+            <h3>Recent Outreach</h3>
+            <a routerLink="/app/outreach" class="btn btn-ghost btn-sm">View All</a>
+          </div>
+          <div class="card-body">
+            @if (d.recentActivity.length === 0) {
+              <div class="empty-state" style="padding:32px 0">
+                <div class="empty-icon"><lz-icon name="outreach" [size]="20" /></div>
+                <h3>No outreach yet</h3>
+                <p>Log a call or email after saving your first lead.</p>
+              </div>
+            } @else {
+              <div class="activity-list">
+                @for (act of d.recentActivity; track act.id) {
+                  <div class="activity-row">
+                    <div class="act-icon act-{{ act.type }}">
+                      <lz-icon [name]="activityIcon(act.type)" [size]="15" />
+                    </div>
+                    <div class="act-body">
+                      <div class="act-name font-medium">{{ act.lead?.name }}</div>
+                      <div class="text-sm text-muted">{{ act.type | titlecase }} &middot; {{ act.note || 'No note' }}</div>
+                    </div>
+                    <div class="act-time text-xs text-muted">{{ act.createdAt | date:'MMM d' }}</div>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="card">
+          <div class="card-header"><h3>Quick Actions</h3></div>
+          <div class="card-body actions-list">
+            <a routerLink="/app/search" class="action-row">
+              <div class="action-icon"><lz-icon name="search" [size]="17" /></div>
+              <div class="action-text">
+                <div class="font-medium">Search New Leads</div>
+                <div class="text-sm text-muted">Find businesses by area or keyword</div>
+              </div>
+              <lz-icon name="arrow-right" [size]="16" class="action-arrow" />
+            </a>
+            <a routerLink="/app/leads" [queryParams]="{status: 'Follow Up'}" class="action-row">
+              <div class="action-icon action-amber"><lz-icon name="bell" [size]="17" /></div>
+              <div class="action-text">
+                <div class="font-medium">View Follow-ups</div>
+                <div class="text-sm text-muted">{{ d.stats.followUpsDue }} leads waiting</div>
+              </div>
+              <lz-icon name="arrow-right" [size]="16" class="action-arrow" />
+            </a>
+            <a routerLink="/app/leads" [queryParams]="{status: 'Interested'}" class="action-row">
+              <div class="action-icon action-green"><lz-icon name="star" [size]="17" /></div>
+              <div class="action-text">
+                <div class="font-medium">Interested Leads</div>
+                <div class="text-sm text-muted">{{ d.stats.interested }} ready to close</div>
+              </div>
+              <lz-icon name="arrow-right" [size]="16" class="action-arrow" />
+            </a>
+            <a routerLink="/app/leads" [queryParams]="{status: 'Contacted'}" class="action-row">
+              <div class="action-icon action-sky"><lz-icon name="phone" [size]="17" /></div>
+              <div class="action-text">
+                <div class="font-medium">Contacted Leads</div>
+                <div class="text-sm text-muted">{{ d.stats.contacted }} in progress</div>
+              </div>
+              <lz-icon name="arrow-right" [size]="16" class="action-arrow" />
+            </a>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Chart row -->
+      <div class="chart-row">
+
+        <!-- Lead growth line chart -->
+        <div class="card chart-card">
+          <div class="card-header">
+            <h3>Pipeline Overview</h3>
+            <span class="text-xs text-muted">Last 30 days</span>
+          </div>
+          <div class="card-body chart-body">
+            <div class="chart-y-labels">
+              <span>3K</span><span>2K</span><span>1K</span><span>0</span>
+            </div>
+            <div class="chart-area">
+              <svg viewBox="0 0 560 110" preserveAspectRatio="none" class="line-chart-svg">
+                <defs>
+                  <linearGradient id="dashGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#6366F1" stop-opacity="0.14"/>
+                    <stop offset="100%" stop-color="#6366F1" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <line x1="0" y1="27"  x2="560" y2="27"  stroke="#E2E8F0" stroke-width="1"/>
+                <line x1="0" y1="55"  x2="560" y2="55"  stroke="#E2E8F0" stroke-width="1"/>
+                <line x1="0" y1="82"  x2="560" y2="82"  stroke="#E2E8F0" stroke-width="1"/>
+                <path fill="url(#dashGrad)" d="M0,88 C40,83 70,79 110,70 C150,61 180,68 220,52 C260,36 290,44 330,27 C370,11 410,17 450,7 C490,1 530,3 560,1 L560,110 L0,110 Z"/>
+                <path fill="none" stroke="#6366F1" stroke-width="2.5" stroke-linecap="round" d="M0,88 C40,83 70,79 110,70 C150,61 180,68 220,52 C260,36 290,44 330,27 C370,11 410,17 450,7 C490,1 530,3 560,1"/>
+              </svg>
+              <div class="chart-x-labels">
+                <span>Apr 13</span><span>Apr 20</span><span>Apr 27</span>
+                <span>May 4</span><span>May 11</span><span>May 18</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Top sources donut -->
+        <div class="card sources-card">
+          <div class="card-header"><h3>Top Sources</h3></div>
+          <div class="card-body sources-body">
+            <svg viewBox="0 0 130 130" class="donut-svg">
+              <circle cx="65" cy="65" r="48" fill="none" stroke="#EEF2FF" stroke-width="22"/>
+              <circle cx="65" cy="65" r="48" fill="none" stroke="#6366F1" stroke-width="22"
+                stroke-dasharray="135.7 165.9" stroke-dashoffset="0"
+                transform="rotate(-90 65 65)"/>
+              <circle cx="65" cy="65" r="48" fill="none" stroke="#8B5CF6" stroke-width="22"
+                stroke-dasharray="90.5 211.1" stroke-dashoffset="-135.7"
+                transform="rotate(-90 65 65)"/>
+              <circle cx="65" cy="65" r="48" fill="none" stroke="#C7D2FE" stroke-width="22"
+                stroke-dasharray="45.2 256.4" stroke-dashoffset="-226.2"
+                transform="rotate(-90 65 65)"/>
+              <text x="65" y="61" text-anchor="middle" font-size="13" font-weight="700" fill="#0F172A" font-family="Inter,sans-serif">2,534</text>
+              <text x="65" y="75" text-anchor="middle" font-size="9" fill="#64748B" font-family="Inter,sans-serif">Total</text>
+            </svg>
+            <div class="sources-legend">
+              <div class="legend-row"><span class="ldot" style="background:#6366F1"></span><span class="lname">Google Maps</span><span class="lpct">45%</span></div>
+              <div class="legend-row"><span class="ldot" style="background:#8B5CF6"></span><span class="lname">Direct Search</span><span class="lpct">30%</span></div>
+              <div class="legend-row"><span class="ldot" style="background:#C7D2FE"></span><span class="lname">Referrals</span><span class="lpct">15%</span></div>
+              <div class="legend-row"><span class="ldot" style="background:#EEF2FF"></span><span class="lname">Other</span><span class="lpct">10%</span></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Pipeline filters -->
+      @if (d.dashboardConfig.quickFilters.length > 0) {
+        <div class="card mt-4">
+          <div class="card-header">
+            <h3>Pipeline Filters &mdash; {{ d.userType }}</h3>
+          </div>
+          <div class="card-body filters-row">
+            @for (filter of d.dashboardConfig.quickFilters; track filter) {
+              <a routerLink="/app/leads" [queryParams]="{status: filter}" class="filter-chip">{{ filter }}</a>
+            }
+          </div>
+        </div>
+      }
+
+    }
+  }
+
+</div>

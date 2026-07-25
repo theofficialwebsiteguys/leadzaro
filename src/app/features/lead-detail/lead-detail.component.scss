@@ -1,0 +1,73 @@
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: .8rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-decoration: none !important;
+  &:hover { color: var(--primary); }
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 20px;
+  align-items: start;
+  @media (max-width: 900px) { grid-template-columns: 1fr; }
+}
+
+.info-list { display: flex; flex-direction: column; gap: 12px; }
+
+.info-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: .875rem;
+  color: var(--text-secondary);
+
+  a { color: var(--primary); word-break: break-all; }
+}
+
+.info-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-50);
+  color: var(--primary);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.note-input { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.notes-list { display: flex; flex-direction: column; gap: 12px; }
+.note-item {
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  p { font-size: .875rem; color: var(--text-primary); line-height: 1.5; margin-bottom: 4px; }
+}
+
+.status-panel { display: flex; flex-direction: column; gap: 14px; }
+
+.activity-log { display: flex; flex-direction: column; gap: 12px; }
+
+.act-item { display: flex; align-items: flex-start; gap: 10px; }
+
+.act-icon {
+  width: 30px;
+  height: 30px;
+  background: var(--primary-50);
+  color: var(--primary);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.act-body { flex: 1; min-width: 0; }
+.act-time { flex-shrink: 0; padding-top: 2px; }

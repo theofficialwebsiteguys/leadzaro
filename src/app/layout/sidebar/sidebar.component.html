@@ -1,0 +1,49 @@
+<aside class="sidebar">
+
+  <!-- Brand -->
+  <div class="sidebar-brand">
+    <div class="brand-mark">
+      <img src="/logo.png" alt="Leadzaro" class="brand-logo-img" />
+    </div>
+    <div class="brand-text">
+      <span class="brand-name">Leadzaro</span>
+      <span class="brand-tag">Find. Engage. Grow.</span>
+    </div>
+  </div>
+
+  <!-- Navigation -->
+  <nav class="sidebar-nav">
+    @for (item of nav; track item.route) {
+      <a
+        [routerLink]="item.route"
+        routerLinkActive="active"
+        class="nav-item"
+        (click)="closeMobile.emit()"
+      >
+        <span class="nav-icon">
+          <lz-icon [name]="item.icon" [size]="17" />
+        </span>
+        <span class="nav-label">{{ item.label }}</span>
+      </a>
+    }
+  </nav>
+
+  <!-- User section -->
+  <div class="sidebar-footer">
+    @if (auth.currentUser(); as user) {
+      <div class="user-row">
+        <div class="user-avatar">{{ user.name[0].toUpperCase() }}</div>
+        <div class="user-info">
+          <div class="user-name">{{ user.name }}</div>
+          <div class="user-type">{{ user.salespersonType }}</div>
+        </div>
+      </div>
+    }
+
+    <button class="logout-btn" (click)="logout()">
+      <lz-icon name="logout" [size]="15" />
+      <span>Log Out</span>
+    </button>
+  </div>
+
+</aside>

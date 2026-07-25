@@ -1,0 +1,261 @@
+<div class="landing">
+
+  <!-- ── Navigation ───────────────────────────────────────────────────────── -->
+  <nav class="nav">
+    <div class="nav-inner">
+
+      <a routerLink="/" class="nav-logo">
+        <img src="/logo.png" alt="Leadzaro" class="nav-logo-img" />
+        <span class="nav-wordmark">Leadzaro</span>
+      </a>
+
+      <div class="nav-links">
+        <a href="#features" class="nav-link">Features</a>
+        <a href="#pricing" class="nav-link">Pricing</a>
+        <a routerLink="/login" class="nav-link">Log In</a>
+        <a routerLink="/register" class="btn btn-cta btn-sm">Get Started</a>
+      </div>
+
+    </div>
+  </nav>
+
+  <!-- ── Hero ─────────────────────────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="hero-orb hero-orb--1"></div>
+    <div class="hero-orb hero-orb--2"></div>
+    <div class="hero-orb hero-orb--3"></div>
+    <div class="hero-noise"></div>
+
+    <div class="hero-inner">
+
+      <div class="hero-text">
+        <div class="hero-badge">Lead Generation &amp; Sales CRM</div>
+        <h1>Find leads.<br>Engage prospects.<br><span class="hero-accent">Close more deals.</span></h1>
+        <p class="hero-sub">
+          Leadzaro helps you discover high-quality leads, manage your outreach pipeline,
+          and grow your business from one sleek, focused dashboard.
+        </p>
+        <div class="hero-cta">
+          <a routerLink="/register" class="btn btn-cta btn-xl">Start Free Trial</a>
+          <a routerLink="/login" class="btn btn-ghost-light btn-xl">View Demo</a>
+        </div>
+        <p class="hero-note">No credit card required &nbsp;·&nbsp; 14-day free trial &nbsp;·&nbsp; Cancel anytime</p>
+      </div>
+
+      <div class="hero-preview" aria-hidden="true">
+
+        <!-- mini sidebar -->
+        <div class="prev-sidebar">
+          <div class="prev-brand">
+            <img src="/logo.png" alt="Leadzaro" class="prev-brand-img" />
+          </div>
+          <div class="prev-nav-items">
+            <div class="prev-nav-dot active"></div>
+            <div class="prev-nav-dot"></div>
+            <div class="prev-nav-dot"></div>
+            <div class="prev-nav-dot"></div>
+            <div class="prev-nav-dot"></div>
+          </div>
+        </div>
+
+        <!-- main area -->
+        <div class="prev-main">
+          <div class="prev-topbar">
+            <div class="prev-greeting">
+              <div class="prev-title">Welcome back, Alex</div>
+              <div class="prev-sub-text">Here's what's happening with your leads today.</div>
+            </div>
+            <div class="prev-topbar-right">
+              <div class="prev-bell-icon"></div>
+              <div class="prev-avatar">A</div>
+            </div>
+          </div>
+
+          <div class="prev-kpis">
+            @for (kpi of previewKpis; track kpi.label) {
+              <div class="prev-kpi">
+                <div class="prev-kpi-label">{{ kpi.label }}</div>
+                <div class="prev-kpi-value">{{ kpi.value }}</div>
+                <div class="prev-kpi-trend">
+                  <span class="trend-arrow">&#8593;</span> {{ kpi.trend }}
+                </div>
+              </div>
+            }
+          </div>
+
+          <div class="prev-chart-row">
+            <div class="prev-chart-card">
+              <div class="prev-chart-label">Leads Over Time</div>
+              <svg viewBox="0 0 340 72" preserveAspectRatio="none" class="prev-chart-svg">
+                <defs>
+                  <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#6366F1" stop-opacity="0.18"/>
+                    <stop offset="100%" stop-color="#6366F1" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <path fill="url(#cg)" d="M0,58 C30,54 60,50 90,42 C120,34 150,40 180,28 C210,16 240,20 270,11 C295,5 320,6 340,3 L340,72 L0,72 Z"/>
+                <path fill="none" stroke="#6366F1" stroke-width="2" d="M0,58 C30,54 60,50 90,42 C120,34 150,40 180,28 C210,16 240,20 270,11 C295,5 320,6 340,3"/>
+              </svg>
+            </div>
+
+            <div class="prev-sources-card">
+              <div class="prev-chart-label">Top Sources</div>
+              <svg viewBox="0 0 80 80" class="prev-donut">
+                <circle cx="40" cy="40" r="28" fill="none" stroke="#1E1B4B" stroke-width="14"/>
+                <circle cx="40" cy="40" r="28" fill="none" stroke="#6366F1" stroke-width="14" stroke-dasharray="79.2 96.7" stroke-dashoffset="0" transform="rotate(-90 40 40)"/>
+                <circle cx="40" cy="40" r="28" fill="none" stroke="#8B5CF6" stroke-width="14" stroke-dasharray="52.8 123.1" stroke-dashoffset="-79.2" transform="rotate(-90 40 40)"/>
+                <circle cx="40" cy="40" r="28" fill="none" stroke="rgba(99,102,241,0.3)" stroke-width="14" stroke-dasharray="43.9 132" stroke-dashoffset="-132" transform="rotate(-90 40 40)"/>
+              </svg>
+              <div class="prev-legend">
+                <div class="prev-leg-item"><span class="dot indigo"></span>LinkedIn</div>
+                <div class="prev-leg-item"><span class="dot violet"></span>Website</div>
+                <div class="prev-leg-item"><span class="dot soft"></span>Other</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="prev-table">
+            <div class="prev-table-head">
+              <span>Name</span><span>Company</span><span>Status</span>
+            </div>
+            <div class="prev-row"><span>Sarah Mitchell</span><span>Apex Systems</span><span class="pb pb-new">New</span></div>
+            <div class="prev-row"><span>James Carter</span><span>BrightWave</span><span class="pb pb-contacted">Contacted</span></div>
+            <div class="prev-row"><span>Olivia Bennett</span><span>Nova Labs</span><span class="pb pb-followup">Follow Up</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Four Pillars ──────────────────────────────────────────────────────── -->
+  <section class="pillars-section">
+    <div class="section-wrap">
+      <div class="pillars-grid">
+        @for (p of pillars; track p.label) {
+          <div class="pillar-card">
+            <div class="pillar-icon">
+              <lz-icon [name]="p.icon" [size]="20" />
+            </div>
+            <div class="pillar-body">
+              <h4>{{ p.label }}</h4>
+              <p>{{ p.desc }}</p>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Features ─────────────────────────────────────────────────────────── -->
+  <section class="features-section" id="features">
+    <div class="section-wrap">
+      <div class="section-label">Features</div>
+      <h2 class="section-title">Everything you need to <span class="grad">find and close leads</span></h2>
+      <p class="section-sub">One platform built for speed, focus, and results — without the complexity.</p>
+
+      <div class="features-grid">
+        @for (f of features; track f.title) {
+          <div class="feature-card">
+            <div class="feature-icon">
+              <lz-icon [name]="f.icon" [size]="18" />
+            </div>
+            <h3>{{ f.title }}</h3>
+            <p>{{ f.desc }}</p>
+          </div>
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Stats strip ───────────────────────────────────────────────────────── -->
+  <section class="stats-strip">
+    <div class="section-wrap">
+      <div class="stats-row">
+        <div class="stat-item">
+          <div class="stat-num">50M+</div>
+          <div class="stat-lbl">Business records indexed</div>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <div class="stat-num">14 days</div>
+          <div class="stat-lbl">Free trial, no card needed</div>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <div class="stat-num">4 plans</div>
+          <div class="stat-lbl">From solo to agency scale</div>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <div class="stat-num">1 min</div>
+          <div class="stat-lbl">Setup time to first search</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Pricing ───────────────────────────────────────────────────────────── -->
+  <section class="pricing-section" id="pricing">
+    <div class="section-wrap">
+      <div class="section-label">Pricing</div>
+      <h2 class="section-title">Simple, transparent pricing</h2>
+      <p class="section-sub">Start free. Upgrade when you're ready. No hidden fees.</p>
+
+      <div class="pricing-grid">
+        @for (plan of plans; track plan.name) {
+          <div class="plan-card" [class.plan-highlight]="plan.highlight">
+            @if (plan.highlight) {
+              <div class="plan-badge">Most Popular</div>
+            }
+            <div class="plan-header">
+              <div class="plan-name">{{ plan.name }}</div>
+              <div class="plan-price">
+                {{ plan.price }}<span class="plan-period">{{ plan.period }}</span>
+              </div>
+              <div class="plan-desc">{{ plan.desc }}</div>
+            </div>
+            <ul class="plan-features">
+              @for (feat of plan.features; track feat) {
+                <li>
+                  <lz-icon name="check" [size]="14" />
+                  {{ feat }}
+                </li>
+              }
+            </ul>
+            <a [routerLink]="plan.route" class="btn btn-full" [class.btn-cta]="plan.highlight" [class.btn-ghost-light]="!plan.highlight">
+              {{ plan.cta }}
+            </a>
+          </div>
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- ── CTA Banner ────────────────────────────────────────────────────────── -->
+  <section class="cta-section">
+    <div class="cta-inner">
+      <div class="cta-glow"></div>
+      <div class="section-label light">Get Started</div>
+      <h2>Start finding leads <span class="grad">today.</span></h2>
+      <p>Join salespeople who use Leadzaro to discover high-quality prospects and manage their pipeline from one clean workspace.</p>
+      <div class="cta-actions">
+        <a routerLink="/register" class="btn btn-xl btn-cta-white">Start Free Trial</a>
+        <a routerLink="/login" class="btn btn-xl btn-ghost-light">Log In</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ────────────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <img src="/logo.png" alt="Leadzaro" class="footer-logo-img" />
+        <span class="footer-wordmark">Leadzaro</span>
+        <span class="footer-tagline">Find. Engage. Grow.</span>
+      </div>
+      <p class="footer-copy">&copy; 2025 Leadzaro. All rights reserved.</p>
+    </div>
+  </footer>
+
+</div>
