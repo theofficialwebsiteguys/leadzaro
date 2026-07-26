@@ -6,6 +6,12 @@ const { validate } = require('../../middleware/validate');
 const controller = require('./opportunityController');
 const mergeController = require('./mergeController');
 const dashboardController = require('./dashboardController');
+const websiteAuditController = require('./websiteAuditController');
+
+// Public: a shared audit report link must be viewable without being
+// logged in. Mounted before the authenticate/resolveContext gate below,
+// same pattern as the invitations module's public lookup/accept routes.
+router.get('/public-audit/:token', websiteAuditController.getPublic);
 
 router.use(authenticate, resolveContext());
 
@@ -41,5 +47,9 @@ router.post('/opportunities/:id/assign', requirePermission('leads.assign'), [
 router.post('/opportunities/:id/round-robin-assign', requirePermission('leads.assign'), controller.roundRobinAssign);
 router.post('/opportunities/:id/archive', requireAnyPermission(['leads.archive', 'crm.manage_pipeline']), controller.archive);
 router.post('/opportunities/:id/restore', requireAnyPermission(['leads.archive', 'crm.manage_pipeline']), controller.restore);
+
+router.get('/opportunities/:id/website-audit', requirePermission('leads.read'), websiteAuditController.getForOpportunity);
+router.post('/opportunities/:id/website-audit', requirePermission('crm.manage_pipeline'), websiteAuditController.generate);
+router.post('/opportunities/:id/website-audit/rotate-link', requirePermission('crm.manage_pipeline'), websiteAuditController.rotateLink);
 
 module.exports = router;

@@ -24,6 +24,12 @@ export const routes: Routes = [
     loadComponent: () => import('./features/invitation-accept/invitation-accept.component').then((m) => m.InvitationAcceptComponent),
   },
   {
+    // Public shareable website-audit report — no auth, reachable by
+    // anyone holding the link (the token itself is the authorization).
+    path: 'audit/:token',
+    loadComponent: () => import('./features/public-audit/public-audit.component').then((m) => m.PublicAuditComponent),
+  },
+  {
     path: 'app',
     canActivate: [authGuard],
     loadComponent: () => import('./layout/dashboard-layout/dashboard-layout.component').then((m) => m.DashboardLayoutComponent),

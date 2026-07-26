@@ -1,0 +1,43 @@
+<div class="audit-page">
+  <div class="audit-card">
+
+    <div class="audit-logo">⚡ Leadzaro</div>
+
+    @if (loading()) {
+      <div class="loading-state"><div class="spinner"></div><span>Loading report…</span></div>
+    } @else if (loadError()) {
+      <h2>Report unavailable</h2>
+      <div class="alert alert-error">{{ loadError() }}</div>
+    } @else {
+      @if (report(); as r) {
+        <h2>Website Audit Report</h2>
+        <p class="audit-sub">{{ r.businessName }}</p>
+        @if (r.website) {
+          <a [href]="r.website" target="_blank" rel="noopener noreferrer" class="audit-website-link">{{ r.website }}</a>
+        }
+
+        <div class="audit-score-row">
+          <span class="score-badge" [class]="scoreClass(r.score)">{{ r.score }}/100</span>
+          <span class="text-sm text-muted">Generated {{ r.generatedAt | date:'MMM d, y' }}</span>
+        </div>
+
+        <p class="audit-summary">{{ r.summary }}</p>
+
+        <ul class="audit-checks">
+          @for (check of r.checks; track check.key) {
+            <li [class.check-passed]="check.passed" [class.check-failed]="!check.passed">
+              <span class="check-icon">{{ check.passed ? '✓' : '✗' }}</span>
+              <span>
+                <span class="font-medium">{{ check.label }}</span>
+                <span class="text-sm text-muted"> — {{ check.detail }}</span>
+              </span>
+            </li>
+          }
+        </ul>
+
+        <p class="audit-footer-note">This report was prepared by The Website Guys. Have questions? Reach out to whoever shared this link with you.</p>
+      }
+    }
+
+  </div>
+</div>

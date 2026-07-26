@@ -80,6 +80,7 @@ module.exports = (sequelize) => {
     Opportunity.belongsTo(models.Lead, { foreignKey: 'sourceLeadId', as: 'sourceLead' });
     Opportunity.belongsTo(models.User, { foreignKey: 'assignedToUserId', as: 'assignedTo' });
     Opportunity.belongsTo(models.Opportunity, { foreignKey: 'mergedIntoOpportunityId', as: 'mergedInto' });
+    Opportunity.hasOne(models.WebsiteAudit, { foreignKey: 'opportunityId', as: 'websiteAudit' });
   };
 
   return Opportunity;

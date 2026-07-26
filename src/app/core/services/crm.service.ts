@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
-  DuplicateGroup, MergePreview, Opportunity, PipelineSummary,
+  DuplicateGroup, MergePreview, Opportunity, PipelineSummary, PublicWebsiteAuditReport, WebsiteAudit,
 } from '../models/crm.model';
 import { PaginatedResponse } from '../models/lead.model';
 
@@ -78,5 +78,21 @@ export class CrmService {
 
   undoMerge(loserId: string): Observable<{ data: { opportunity: Opportunity } }> {
     return this.http.post<{ data: { opportunity: Opportunity } }>(`/api/v1/crm/opportunities/${loserId}/undo-merge`, {});
+  }
+
+  getWebsiteAudit(opportunityId: string): Observable<{ data: { audit: WebsiteAudit } }> {
+    return this.http.get<{ data: { audit: WebsiteAudit } }>(`/api/v1/crm/opportunities/${opportunityId}/website-audit`);
+  }
+
+  generateWebsiteAudit(opportunityId: string): Observable<{ data: { audit: WebsiteAudit; shareUrl?: string } }> {
+    return this.http.post<{ data: { audit: WebsiteAudit; shareUrl?: string } }>(`/api/v1/crm/opportunities/${opportunityId}/website-audit`, {});
+  }
+
+  rotateWebsiteAuditLink(opportunityId: string): Observable<{ data: { audit: WebsiteAudit; shareUrl: string } }> {
+    return this.http.post<{ data: { audit: WebsiteAudit; shareUrl: string } }>(`/api/v1/crm/opportunities/${opportunityId}/website-audit/rotate-link`, {});
+  }
+
+  getPublicWebsiteAudit(token: string): Observable<{ data: PublicWebsiteAuditReport }> {
+    return this.http.get<{ data: PublicWebsiteAuditReport }>(`/api/v1/crm/public-audit/${token}`);
   }
 }

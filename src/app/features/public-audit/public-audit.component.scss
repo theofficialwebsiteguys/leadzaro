@@ -1,0 +1,107 @@
+.audit-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse 900px 700px at 15% 25%, rgba(99,102,241,0.18) 0%, transparent 65%),
+    radial-gradient(ellipse 600px 500px at 85% 75%, rgba(139,92,246,0.12) 0%, transparent 65%),
+    #080D1A;
+}
+
+.audit-card {
+  background: #111827;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px rgba(99,102,241,0.1);
+  padding: 40px;
+  width: 100%;
+  max-width: 560px;
+  color: #F1F5F9;
+}
+
+.audit-logo {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  margin-bottom: 28px;
+  background: linear-gradient(135deg, #818CF8, #C084FC);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: 4px; }
+
+.audit-sub { color: rgba(241,245,249,0.7); font-weight: 600; margin-bottom: 4px; }
+
+.audit-website-link {
+  color: #A5B4FC;
+  font-size: .875rem;
+  text-decoration: none;
+  &:hover { text-decoration: underline; }
+}
+
+.audit-score-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 12px;
+}
+
+.score-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-weight: 700;
+  font-size: .9rem;
+
+  &.score-high   { background: rgba(16,185,129,0.16); color: #6EE7B7; }
+  &.score-medium { background: rgba(245,158,11,0.16); color: #FCD34D; }
+  &.score-low    { background: rgba(239,68,68,0.16); color: #FCA5A5; }
+}
+
+.audit-summary {
+  font-size: .9375rem;
+  line-height: 1.6;
+  color: rgba(241,245,249,0.85);
+  margin-bottom: 20px;
+}
+
+.audit-checks {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    &:last-child { border-bottom: none; }
+  }
+}
+
+.check-icon { font-weight: 700; flex-shrink: 0; }
+.check-passed .check-icon { color: #6EE7B7; }
+.check-failed .check-icon { color: rgba(241,245,249,0.35); }
+
+.audit-footer-note {
+  font-size: .8125rem;
+  color: rgba(241,245,249,0.4);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding-top: 16px;
+}
+
+.alert { margin-bottom: 20px; }
+.alert-error {
+  background: rgba(239,68,68,0.1);
+  border-color: rgba(239,68,68,0.4);
+  color: #FCA5A5;
+}

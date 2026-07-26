@@ -27,7 +27,16 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(authedReq).pipe(
     catchError((err) => {
-      if (err.status === 401 && !isExempt && token) {
+      // Exempt endpoints (the silent bootstrap refresh chief among them)
+      // 401 as their normal, expected outcome for a logged-out visitor —
+      // that must never force a logout/redirect, or every public page
+      // (landing, login, register, accept-invite, a shared audit report)
+      // would bounce an anonymous visitor to /login on every load.
+      if (err.status === 401 && isExempt) {
+        return throwError(() => err);
+      }
+
+      if (err.status === 401 && token) {
         return auth.refreshAccessToken().pipe(
           switchMap((newToken) => {
             authedReq = req.clone({

@@ -1,42 +1,46 @@
-# Phase 2 Continuation Plan — Scoring and Sales Dashboard
+# Phase 2 Continuation Plan — Website Audits
 
-This overwrites the prior Phase 2 working plan (preserved in git history), which covered items 1–3 (data model/migration, opportunity pipeline, duplicate detection/merge/undo) and is now fully delivered, twice-reviewed, and checkpointed — see `docs/leadzaro/phase-2-completion-report.md`. This document covers the next slice: items 4 (scoring) and 5 (sales dashboard) from `docs/leadzaro/NEXT_PHASE_PROMPT.md`'s remaining-items list.
+This overwrites the prior Phase 2 working plan (preserved in git history), which covered scoring and the sales dashboard. This document covers the next slice: item 3 from `docs/leadzaro/NEXT_PHASE_PROMPT.md`'s remaining-items list — "Website audits + shareable report."
 
 ## 1. Evidence audit
 
-- `Opportunity.score`/`scoreReason` existed since the Phase 2 foundation migration but were always `null` — nothing ever set them except a fully manual `PUT /opportunities/:id` call, and the frontend never exposed a way to do that. "Scoring with manual override" was schema-only, not a real feature.
-- `PUT /api/v1/crm/opportunities/:id` had no body validation at all for `stage`/`score`/`scoreReason` — a real, independently-discovered gap (see completion report's review pass 1) that needed closing regardless of the scoring work, and was closed as part of this slice.
-- No existing "sales dashboard" or team-performance view exists anywhere in the CRM module. The legacy `/app/dashboard` (`DashboardComponent`/`dashboard.service.ts`) is `SavedLead`-based, per-user, and predates Phase 2 — it is not migrated or touched by this slice, per the standing "preserve working behavior" rule; `SavedLead` continues to coexist with `Opportunity` as established in Phase 2's foundation.
+- No `WebsiteAudit` (or equivalent) model, table, or route existed anywhere in the codebase before this slice.
+- The roadmap's "shareable report" language directly parallels Phase 1's invitation-link mechanism (`Invitation.tokenHash`, `server/core/security/tokens.js`'s `generateRawToken`/`hashToken`) — reused verbatim rather than inventing a second token scheme.
+- `Lead` already carries `hasWebsite`, `website`, `rating`, `reviewCount`, `category` — enough to generate a genuinely useful report without needing any new data source.
 
 ## 2. Design decisions
 
-- **Scoring is a rule-based heuristic, not ML.** `server/core/crm/scoring.js` combines: product-fit (no website is a strong signal — that's literally what Website Guys sells), business establishment (review count/rating as a rough proxy for whether the business has a budget), pipeline progress, and activity recency, into a 0–100 score with a human-readable reason string naming every contributing factor. This is deliberately simple, explainable, and easy to retune later — not a black box.
-- **Auto-score never silently overwrites a human's manual override.** It's computed once at creation, and only recomputed again through an explicit "Recalculate" action the user chooses to click — never on a background job or as a side effect of some other action.
-- **The dashboard lives inside the existing Pipeline screen, not a new competing page.** Per the standing "do not introduce a separate competing workflow" rule and the next-phase prompt's own guidance to reuse the dashboard pattern "where sensible" — a team performance dashboard is a materially different scope (team-wide visibility) than the legacy per-user dashboard, so it was added as a new "Pipeline Overview" section at the top of `crm-pipeline.component` rather than either overloading the legacy dashboard or creating a second, disconnected dashboard route.
-- **Team-wide visibility is gated by `leads.assign`, not `crm.manage_pipeline`.** This was a real mistake caught by my own test suite while building it: `crm.manage_pipeline` is granted broadly to every `sales_representative` (so they can manage their own pipeline), so gating the team breakdown on it would have shown every rep every other rep's individual numbers. `leads.assign` is only granted to `sales_manager`/`administrator` and is the correct signal for "this person manages others." Every caller always sees the agency-wide stage distribution and their own stats regardless of role — only the per-rep breakdown table is manager-gated.
+- **No live fetch of the prospect's website.** Making the server issue outbound HTTP requests to an arbitrary lead/caller-supplied URL is a real SSRF surface (internal network/cloud-metadata access) — safely defending against that (hostname/IP allowlisting, per-redirect validation, timeouts) is substantial, security-critical work of its own, not something to bolt on as a side effect of a reporting feature. Per the standing external-services rule ("build the adapter interface + a real, useful mock/rule-based mode first, don't block on a live integration"), `server/core/crm/websiteAuditor.js` generates a genuinely useful report from data already on file (has-a-website, HTTPS scheme, Google review signals) in the same `{ score, summary, checks }` shape a future live-fetch implementation would return, so callers never need to change when that lands.
+- **Regenerating an audit updates the same row and keeps the same share link working**, rather than minting a new link every time — a prospect's bookmarked/forwarded link shouldn't break just because the sales rep refreshed the report.
+- **The share token is hashed at rest** (SHA-256, same as `Invitation.tokenHash`), which means the server can never redisplay a previously-issued raw token. This creates a real, deliberately-accepted UX trade-off: if the link is lost, the only way to get a working one again is `rotate-link`, which invalidates the old one — mirroring `invitationService.resendInvitation`'s token rotation exactly.
+- **The public report route exposes only report fields** (business name, website, score, summary, checks, generated-at) — never `opportunityId`, `agencyOrganizationId`, assignee, or any other internal CRM identifier, verified by a dedicated test asserting the exact key set of the public response.
 
-## 3. Acceptance matrix
+## 3. A real bug found and fixed along the way (not scope creep — it blocked this feature)
+
+Manual browser verification of the new public report page (visited from a genuinely anonymous, cookie-less browser context, simulating a real prospect) found that it redirected straight to `/login` instead of rendering. Root cause: `src/app/core/interceptors/auth.interceptor.ts` had a `catchError` with two `if (err.status === 401)` checks — the second one fired unconditionally on **any** 401, including the silent bootstrap-refresh call every page load makes (`AuthService.bootstrap()`, wired into `app.config.ts`'s `provideAppInitializer`), which normally 401s for any anonymous visitor as its expected, correct outcome. That 401 was being treated as "your session just died, force a logout and redirect" for every public page load — landing, login, register, accept-invite, and now the audit report — not just this new one.
+
+Fixed by making the exempt-endpoint check (`AUTH_RETRY_EXEMPT`, which already existed and already correctly covered `/api/v1/auth/refresh`) short-circuit before the forced-redirect branch, so an expected 401 from a background/anonymous call never triggers a logout or navigation. Added `src/app/core/interceptors/auth.interceptor.spec.ts` (no prior spec existed for this interceptor) covering: an exempt 401 does not redirect, a non-exempt 401 with no token does redirect, and a non-exempt 401 with a token attempts a silent refresh before giving up.
+
+## 4. Acceptance matrix
 
 | Requirement | Implementation | Tests | Status |
 |---|---|---|---|
-| Auto-score computed at opportunity creation | `opportunityService.createFromLead` + `scoring.js` | `crmScoring.test.js` | Done |
-| Recalculate action (explicit, not automatic) | `POST /opportunities/:id/recalculate-score` | `crmScoring.test.js` | Done |
-| Manual override persists exactly as given | Existing `PUT /opportunities/:id` (score/scoreReason already supported it) | `crmScoring.test.js` | Done |
-| Score validated 0–100; stage/reason validated | `express-validator` on `PUT /opportunities/:id` | `crmScoring.test.js` | Done |
-| Score badge + inline edit + recalculate in UI | `crm-pipeline.component.*` | Real headless-Chrome session (isolated synthetic org) | Done |
-| Validation-error detail surfaced to the user | `formatError()` in `crm-pipeline.component.ts` | Found live via the same browser session, then fixed | Done |
-| Pipeline stage distribution, win rate | `dashboardService.getPipelineSummary` | `crmDashboard.test.js` | Done |
-| Caller's own stats always visible | Same endpoint, `myStats` | `crmDashboard.test.js` | Done |
-| Team breakdown manager-gated (not leaked to every rep) | `leads.assign` check in `dashboardController` | `crmDashboard.test.js` (caught the `crm.manage_pipeline` mistake) | Done |
-| Dashboard summary is agency-scoped | Same `agencyOrganizationId` pattern as everything else | `crmDashboard.test.js` cross-agency test | Done |
+| Rule-based audit (no live fetch) | `server/core/crm/websiteAuditor.js` | `crmWebsiteAudit.test.js` | Done |
+| One audit per opportunity, regenerate-in-place | `websiteAuditService.generateAudit` | `crmWebsiteAudit.test.js` | Done |
+| Share link hashed at rest, stable across regeneration | `WebsiteAudit.shareTokenHash` + `generateAudit` | `crmWebsiteAudit.test.js` | Done |
+| Lost link recoverable via explicit rotation | `POST .../website-audit/rotate-link` | `crmWebsiteAudit.test.js` | Done |
+| Public report exposes only report fields | `websiteAuditService.getPublicByToken` | `crmWebsiteAudit.test.js` (asserts exact key set) | Done |
+| Public route reachable pre-authenticate | `routes.js` route ordering (mirrors invitations) | Real anonymous-browser-context verification | Done |
+| Audit/generate/view scoped to caller's agency | `getOpportunityInAgency` | `crmWebsiteAudit.test.js` cross-agency test | Done |
+| Public audit page renders for a real anonymous visitor | `PublicAuditComponent` | Real headless-Chrome session, isolated browser context | Done (after the interceptor fix above) |
 
-## 4. Testing performed
+## 5. Testing performed
 
-- `npm run test:backend`: 48/48 passing (11 suites) — up from 42 at the end of the prior slice.
-- `ng test`: 15/15 passing.
+- `npm run test:backend`: 52/52 passing (12 suites) — up from 48.
+- `ng test`: 18/18 passing (up from 15 — added the interceptor spec).
 - `ng build`: clean (only the pre-existing inherited landing-page budget warning).
-- Real headless-Chrome sessions against isolated, purpose-created synthetic agencies (never the real dev database or any pre-existing data this time, having learned from the prior slice's incident): one for scoring (create → auto-score → manual override → recalculate), one for the dashboard (a manager + rep pair, verifying the rep sees no team breakdown and the manager does, with exact KPI values matching the seeded data). All synthetic accounts/orgs/data removed afterward.
+- Real headless-Chrome sessions against an isolated, purpose-created synthetic agency: generated an audit, viewed it in the Pipeline UI, captured the share link, then opened that exact link in a **separate, fully isolated browser context** (no cookies at all) to simulate a genuine anonymous prospect — confirmed it renders the full report correctly. All synthetic data removed afterward.
 
-## 5. Remaining Phase 2 backlog (unchanged from the completion report, still deferred)
+## 6. Remaining Phase 2 backlog (unchanged, still deferred)
 
-Website audits, public landing pages/inbound forms/UTM attribution, enrichment adapter, assisted outreach sequences, optional territories, saved search campaigns, and Contact/Location management UI. See `docs/leadzaro/NEXT_PHASE_PROMPT.md` for sequencing guidance on these.
+Public landing pages/inbound forms/UTM attribution, enrichment adapter, assisted outreach sequences, optional territories, saved search campaigns, Contact/Location management UI. See `docs/leadzaro/NEXT_PHASE_PROMPT.md`.

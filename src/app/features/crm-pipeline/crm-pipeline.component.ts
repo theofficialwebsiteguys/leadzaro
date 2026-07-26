@@ -6,7 +6,7 @@ import { MembershipService } from '../../core/services/membership.service';
 import { AuthService } from '../../core/services/auth.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
 import {
-  DuplicateGroup, Opportunity, PIPELINE_STAGES, PipelineSummary,
+  DuplicateGroup, Opportunity, PIPELINE_STAGES, PipelineSummary, WebsiteAudit,
 } from '../../core/models/crm.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
@@ -58,6 +58,12 @@ export class CrmPipelineComponent implements OnInit {
   duplicatesLoading = signal(false);
 
   summary = signal<PipelineSummary | null>(null);
+
+  auditingId = signal<string | null>(null);
+  auditLoading = signal(false);
+  auditData = signal<WebsiteAudit | null>(null);
+  auditShareUrl = signal<string | null>(null);
+  auditNotGenerated = signal(false);
 
   ngOnInit() {
     this.loadOpportunities();
@@ -242,6 +248,62 @@ export class CrmPipelineComponent implements OnInit {
       },
       error: (err) => this.actionMessage.set(err.error?.message || 'Could not undo this merge.'),
     });
+  }
+
+  toggleAudit(opp: Opportunity) {
+    if (this.auditingId() === opp.id) {
+      this.auditingId.set(null);
+      return;
+    }
+    this.auditingId.set(opp.id);
+    this.auditData.set(null);
+    this.auditShareUrl.set(null);
+    this.auditNotGenerated.set(false);
+    this.auditLoading.set(true);
+    this.crm.getWebsiteAudit(opp.id).subscribe({
+      next: (res) => {
+        this.auditData.set(res.data.audit);
+        this.auditLoading.set(false);
+      },
+      error: (err) => {
+        this.auditLoading.set(false);
+        if (err.status === 404) this.auditNotGenerated.set(true);
+        else this.actionMessage.set(err.error?.message || 'Failed to load website audit.');
+      },
+    });
+  }
+
+  generateAudit(opp: Opportunity) {
+    this.auditLoading.set(true);
+    this.crm.generateWebsiteAudit(opp.id).subscribe({
+      next: (res) => {
+        this.auditData.set(res.data.audit);
+        if (res.data.shareUrl) this.auditShareUrl.set(res.data.shareUrl);
+        this.auditNotGenerated.set(false);
+        this.auditLoading.set(false);
+      },
+      error: (err) => {
+        this.auditLoading.set(false);
+        this.actionMessage.set(err.error?.message || 'Failed to generate website audit.');
+      },
+    });
+  }
+
+  rotateAuditLink(opp: Opportunity) {
+    if (!confirm('This resets the shareable link. Anyone with the old link will no longer be able to view the report. Continue?')) return;
+    this.crm.rotateWebsiteAuditLink(opp.id).subscribe({
+      next: (res) => this.auditShareUrl.set(res.data.shareUrl),
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to reset the share link.'),
+    });
+  }
+
+  copyAuditLink() {
+    const url = this.auditShareUrl();
+    if (!url) return;
+    navigator.clipboard?.writeText(url).then(
+      () => this.actionMessage.set('Share link copied to clipboard.'),
+      () => this.actionMessage.set('Could not copy automatically — select and copy the link manually.')
+    );
   }
 
   private replaceOpportunity(updated: Opportunity) {

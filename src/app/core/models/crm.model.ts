@@ -99,3 +99,28 @@ export interface PipelineSummary {
   myStats: MyPipelineStats;
   teamBreakdown: TeamPipelineRow[];
 }
+
+export interface WebsiteAuditCheck {
+  key: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface WebsiteAudit {
+  id: string;
+  opportunityId: string;
+  score: number;
+  summary: string;
+  checks: WebsiteAuditCheck[];
+  generatedAt: string;
+}
+
+export interface PublicWebsiteAuditReport {
+  businessName: string;
+  website: string | null;
+  score: number;
+  summary: string;
+  checks: WebsiteAuditCheck[];
+  generatedAt: string;
+}

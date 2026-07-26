@@ -26,6 +26,7 @@ const EmailVerificationToken = require('./EmailVerificationToken')(sequelize);
 const Opportunity = require('./Opportunity')(sequelize);
 const Contact = require('./Contact')(sequelize);
 const Location = require('./Location')(sequelize);
+const WebsiteAudit = require('./WebsiteAudit')(sequelize);
 
 const models = {
   User,
@@ -52,6 +53,7 @@ const models = {
   Opportunity,
   Contact,
   Location,
+  WebsiteAudit,
 };
 
 // Run associations
