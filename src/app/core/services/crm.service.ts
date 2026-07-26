@@ -33,6 +33,10 @@ export class CrmService {
     return this.http.put<{ data: { opportunity: Opportunity } }>(`/api/v1/crm/opportunities/${id}`, updates);
   }
 
+  recalculateScore(id: string): Observable<{ data: { opportunity: Opportunity } }> {
+    return this.http.post<{ data: { opportunity: Opportunity } }>(`/api/v1/crm/opportunities/${id}/recalculate-score`, {});
+  }
+
   claim(id: string): Observable<{ data: { opportunity: Opportunity } }> {
     return this.http.post<{ data: { opportunity: Opportunity } }>(`/api/v1/crm/opportunities/${id}/claim`, {});
   }

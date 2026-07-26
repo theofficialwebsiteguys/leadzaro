@@ -25,7 +25,12 @@ router.post('/opportunities', requirePermission('leads.save'), [
   body('leadData.name').notEmpty(),
 ], validate, controller.create);
 router.get('/opportunities/:id', requirePermission('leads.read'), controller.getById);
-router.put('/opportunities/:id', requirePermission('crm.manage_pipeline'), controller.updateStage);
+router.put('/opportunities/:id', requirePermission('crm.manage_pipeline'), [
+  body('stage').optional().isString(),
+  body('score').optional().isInt({ min: 0, max: 100 }),
+  body('scoreReason').optional().isString().isLength({ max: 255 }),
+], validate, controller.updateStage);
+router.post('/opportunities/:id/recalculate-score', requirePermission('crm.manage_pipeline'), controller.recalculateScore);
 router.post('/opportunities/:id/claim', requirePermission('leads.save'), controller.claim);
 router.post('/opportunities/:id/assign', requirePermission('leads.assign'), [
   body('userId').notEmpty(),

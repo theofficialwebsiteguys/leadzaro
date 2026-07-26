@@ -6,6 +6,7 @@ const {
   sequelize, Opportunity, Organization, Lead, OrganizationMembership, MembershipRole, Role, User,
 } = require('../../models');
 const { STAGES, CLOSED_STAGES } = require('../../core/crm/pipelineCatalog');
+const { computeAutoScore } = require('../../core/crm/scoring');
 
 const SALES_CAPABLE_ROLE_KEYS = ['sales_representative', 'sales_manager', 'administrator'];
 
@@ -60,12 +61,22 @@ async function createFromLead({
       managingAgencyOrganizationId: agencyOrganizationId,
     }, { transaction });
 
+    const initialScore = computeAutoScore({
+      hasWebsite: lead.hasWebsite,
+      rating: lead.rating,
+      reviewCount: lead.reviewCount,
+      stage: STAGES[0],
+      lastActivityAt: new Date(),
+    });
+
     const opportunity = await Opportunity.create({
       organizationId: prospectOrg.id,
       agencyOrganizationId,
       sourceLeadId: lead.id,
       stage: STAGES[0],
       assignedToUserId: assignedToUserId || actorUserId,
+      score: initialScore.score,
+      scoreReason: initialScore.reason,
     }, { transaction });
 
     return { opportunity, organization: prospectOrg, lead };
@@ -113,6 +124,25 @@ async function updateStage(id, agencyOrganizationId, { stage, score, scoreReason
     score: score === undefined ? opportunity.score : score,
     scoreReason: scoreReason === undefined ? opportunity.scoreReason : scoreReason,
   });
+  return opportunity;
+}
+
+/**
+ * Recomputes the auto-score from the opportunity's current stage and its
+ * source Lead's signals. An explicit, opt-in action (not run silently on
+ * every read/update) so it never clobbers a human's manual override
+ * without them choosing to overwrite it.
+ */
+async function recalculateScore(id, agencyOrganizationId) {
+  const opportunity = await getInAgency(id, agencyOrganizationId);
+  const { score, reason } = computeAutoScore({
+    hasWebsite: opportunity.sourceLead?.hasWebsite,
+    rating: opportunity.sourceLead?.rating,
+    reviewCount: opportunity.sourceLead?.reviewCount,
+    stage: opportunity.stage,
+    lastActivityAt: opportunity.updatedAt,
+  });
+  await opportunity.update({ score, scoreReason: reason });
   return opportunity;
 }
 
@@ -214,6 +244,7 @@ module.exports = {
   listForAgency,
   getInAgency,
   updateStage,
+  recalculateScore,
   claim,
   assign,
   roundRobinAssign,

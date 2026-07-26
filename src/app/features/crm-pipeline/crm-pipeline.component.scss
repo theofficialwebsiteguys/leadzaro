@@ -68,6 +68,35 @@
 .row-actions { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .danger-btn { color: var(--danger) !important; &:hover { background: var(--danger-bg) !important; } }
 
+.score-cell { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+
+.score-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  font-size: .75rem;
+  font-weight: 600;
+
+  &.score-high   { background: #D1FAE5; color: #064E3B; }
+  &.score-medium { background: var(--warning-bg); color: var(--warning-text); }
+  &.score-low    { background: var(--danger-bg); color: var(--danger-text); }
+  &.score-none   { background: #F1F5F9; color: #475569; }
+}
+
+.score-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.score-input { width: 70px; }
+.score-reason-input { width: 100%; }
+.score-edit-actions { display: flex; gap: 4px; }
+
 .duplicate-group {
   padding: 12px 0;
   border-bottom: 1px solid var(--border-light);

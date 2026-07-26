@@ -77,6 +77,21 @@ async function updateStage(req, res, next) {
   }
 }
 
+async function recalculateScore(req, res, next) {
+  try {
+    const orgId = req.context.organization.id;
+    const opportunity = await opportunityService.recalculateScore(req.params.id, orgId);
+
+    await recordAudit({
+      organizationId: orgId, actorUserId: req.user.id, action: 'opportunity.score_recalculated', targetType: 'Opportunity', targetId: opportunity.id, metadata: { score: opportunity.score }, req,
+    });
+
+    return success(res, { opportunity }, 'Score recalculated');
+  } catch (err) {
+    handleServiceError(err, res, next);
+  }
+}
+
 async function claim(req, res, next) {
   try {
     const orgId = req.context.organization.id;
@@ -159,5 +174,5 @@ async function restore(req, res, next) {
 }
 
 module.exports = {
-  create, list, getById, updateStage, claim, assign, roundRobinAssign, archive, restore,
+  create, list, getById, updateStage, recalculateScore, claim, assign, roundRobinAssign, archive, restore,
 };

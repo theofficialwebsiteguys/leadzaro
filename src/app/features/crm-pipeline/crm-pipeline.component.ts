@@ -38,6 +38,10 @@ export class CrmPipelineComponent implements OnInit {
   members = signal<Member[]>([]);
   assigningId = signal<string | null>(null);
 
+  editingScoreId = signal<string | null>(null);
+  editScoreValue = 0;
+  editScoreReason = '';
+
   showCreateForm = signal(false);
   newName = '';
   newPhone = '';
@@ -160,6 +164,46 @@ export class CrmPipelineComponent implements OnInit {
       next: (res) => this.replaceOpportunity(res.data.opportunity),
       error: (err) => this.actionMessage.set(err.error?.message || 'Failed to auto-assign.'),
     });
+  }
+
+  startEditScore(opp: Opportunity) {
+    this.editingScoreId.set(opp.id);
+    this.editScoreValue = opp.score ?? 0;
+    this.editScoreReason = opp.scoreReason ?? '';
+  }
+
+  cancelEditScore() {
+    this.editingScoreId.set(null);
+  }
+
+  saveScore(opp: Opportunity) {
+    this.crm.updateStage(opp.id, { score: this.editScoreValue, scoreReason: this.editScoreReason }).subscribe({
+      next: (res) => {
+        this.replaceOpportunity(res.data.opportunity);
+        this.editingScoreId.set(null);
+      },
+      error: (err) => this.actionMessage.set(this.formatError(err, 'Failed to update score.')),
+    });
+  }
+
+  private formatError(err: { error?: { message?: string; details?: string[] } }, fallback: string): string {
+    const base = err.error?.message || fallback;
+    const details = err.error?.details;
+    return details?.length ? `${base}: ${details.join(', ')}` : base;
+  }
+
+  recalculateScore(opp: Opportunity) {
+    this.crm.recalculateScore(opp.id).subscribe({
+      next: (res) => this.replaceOpportunity(res.data.opportunity),
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to recalculate score.'),
+    });
+  }
+
+  scoreClass(score: number | null | undefined): string {
+    if (score === null || score === undefined) return 'score-none';
+    if (score >= 70) return 'score-high';
+    if (score >= 40) return 'score-medium';
+    return 'score-low';
   }
 
   archive(opp: Opportunity) {

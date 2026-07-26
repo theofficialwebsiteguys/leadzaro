@@ -147,7 +147,26 @@
                     {{ memberName(opp.assignedToUserId) }}
                   }
                 </td>
-                <td class="text-sm text-muted">{{ opp.score ?? '—' }}</td>
+                <td>
+                  @if (editingScoreId() === opp.id) {
+                    <div class="score-edit">
+                      <input type="number" min="0" max="100" class="form-control score-input" [(ngModel)]="editScoreValue" aria-label="Score" />
+                      <input type="text" class="form-control score-reason-input" placeholder="Reason" [(ngModel)]="editScoreReason" aria-label="Score reason" />
+                      <div class="score-edit-actions">
+                        <button class="btn btn-primary btn-sm" (click)="saveScore(opp)">Save</button>
+                        <button class="btn btn-ghost btn-sm" (click)="cancelEditScore()">Cancel</button>
+                      </div>
+                    </div>
+                  } @else {
+                    <div class="score-cell">
+                      <span class="score-badge" [class]="scoreClass(opp.score)" [title]="opp.scoreReason || ''">{{ opp.score ?? '—' }}</span>
+                      @if (org.hasPermission('crm.manage_pipeline')) {
+                        <button class="btn btn-ghost btn-sm" (click)="startEditScore(opp)" title="Edit score">Edit</button>
+                        <button class="btn btn-ghost btn-sm" (click)="recalculateScore(opp)" title="Recalculate from lead signals">&#8635;</button>
+                      }
+                    </div>
+                  }
+                </td>
                 <td class="text-sm text-muted">{{ opp.createdAt | date:'MMM d, y' }}</td>
                 <td>
                   <div class="row-actions">
