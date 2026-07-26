@@ -1,3 +1,78 @@
+/* ── Pipeline Overview (KPIs + stage/team breakdown) ─────────────────────── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+
+  @media (max-width: 1100px) { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 680px)  { grid-template-columns: repeat(2, 1fr); }
+}
+
+.kpi-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  border-top: 3px solid transparent;
+}
+
+.kpi-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.kpi-value { font-size: 1.4rem; font-weight: 800; color: var(--text-primary); letter-spacing: -.03em; line-height: 1; }
+.kpi-label { font-size: .7rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-top: 3px; }
+
+.kpi-blue  { border-top-color: #6366F1; .kpi-icon { background: #EEF2FF; color: #4338CA; } }
+.kpi-sky   { border-top-color: #0EA5E9; .kpi-icon { background: #F0F9FF; color: #0369A1; } }
+.kpi-amber { border-top-color: #F59E0B; .kpi-icon { background: #FFFBEB; color: #B45309; } }
+.kpi-green { border-top-color: #10B981; .kpi-icon { background: #ECFDF5; color: #047857; } }
+.kpi-teal  { border-top-color: #14B8A6; .kpi-icon { background: #F0FDFA; color: #0F766E; } }
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+
+  @media (max-width: 900px) { grid-template-columns: 1fr; }
+}
+
+.stage-bars { display: flex; flex-direction: column; gap: 10px; }
+
+.stage-bar-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 28px;
+  align-items: center;
+  gap: 10px;
+}
+
+.stage-bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.stage-bar-track {
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.stage-bar-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: var(--radius-full);
+}
+
+.stage-bar-count { text-align: right; }
+
 .filters-bar {
   display: flex;
   align-items: flex-end;

@@ -1,88 +1,42 @@
-# Phase 2 Implementation Plan — Lead Generation, Inbound Acquisition, and CRM
+# Phase 2 Continuation Plan — Scoring and Sales Dashboard
 
-## 1. Repository evidence audit
+This overwrites the prior Phase 2 working plan (preserved in git history), which covered items 1–3 (data model/migration, opportunity pipeline, duplicate detection/merge/undo) and is now fully delivered, twice-reviewed, and checkpointed — see `docs/leadzaro/phase-2-completion-report.md`. This document covers the next slice: items 4 (scoring) and 5 (sales dashboard) from `docs/leadzaro/NEXT_PHASE_PROMPT.md`'s remaining-items list.
 
-### What Phase 1 left in place (verified against actual code, not assumed)
+## 1. Evidence audit
 
-- `Lead` (`server/models/Lead.js`) remains the canonical, globally-deduplicated-by-`googlePlaceId` Google Places business record. Unchanged this phase.
-- `SavedLead` (`server/models/SavedLead.js`) is organization-scoped (`organizationId`, `userId` as author, `status`/`priority` enums, `archivedAt`/`deletedAt` soft-delete, unique-while-active per `(organizationId, leadId)`). This is today's entire "CRM" — a single flat bookmark-with-status per business per organization.
-- **`Organization.type` already includes `'prospect'`** (`server/models/Organization.js`, confirmed live: `Organization.TYPES → ['agency', 'client', 'prospect']`). This was deliberately anticipated in Phase 1 and is the single biggest architectural fact shaping this plan: prospect organizations are not a new tenant concept requiring a parallel model — they reuse the exact `Organization`/`OrganizationMembership` infrastructure already built, audited, tested, and permission-checked in Phase 1.
-- Full RBAC foundation (`server/core/authorization/{catalog,context}.js`), audit (`server/core/audit/auditService.js`), notifications (`server/core/notifications/notificationService.js`), and sessions are all reusable as-is.
-- Test infrastructure: `server/tests/helpers/{factory,globalSetup}.js` — reuse directly.
-- No prior CRM entities exist: no Contact, Opportunity, Location, Campaign, Territory, Score, Assignment, WebsiteAudit, or public inbound-form model of any kind. This phase is greenfield for all of them.
+- `Opportunity.score`/`scoreReason` existed since the Phase 2 foundation migration but were always `null` — nothing ever set them except a fully manual `PUT /opportunities/:id` call, and the frontend never exposed a way to do that. "Scoring with manual override" was schema-only, not a real feature.
+- `PUT /api/v1/crm/opportunities/:id` had no body validation at all for `stage`/`score`/`scoreReason` — a real, independently-discovered gap (see completion report's review pass 1) that needed closing regardless of the scoring work, and was closed as part of this slice.
+- No existing "sales dashboard" or team-performance view exists anywhere in the CRM module. The legacy `/app/dashboard` (`DashboardComponent`/`dashboard.service.ts`) is `SavedLead`-based, per-user, and predates Phase 2 — it is not migrated or touched by this slice, per the standing "preserve working behavior" rule; `SavedLead` continues to coexist with `Opportunity` as established in Phase 2's foundation.
 
-### Key architectural decision: what is a "prospect organization"?
+## 2. Design decisions
 
-The master architecture (`docs/planning/02_MASTER_PRODUCT_SYSTEM_ARCHITECTURE.md` § 7) describes:
+- **Scoring is a rule-based heuristic, not ML.** `server/core/crm/scoring.js` combines: product-fit (no website is a strong signal — that's literally what Website Guys sells), business establishment (review count/rating as a rough proxy for whether the business has a budget), pipeline progress, and activity recency, into a 0–100 score with a human-readable reason string naming every contributing factor. This is deliberately simple, explainable, and easy to retune later — not a black box.
+- **Auto-score never silently overwrites a human's manual override.** It's computed once at creation, and only recomputed again through an explicit "Recalculate" action the user chooses to click — never on a background job or as a side effect of some other action.
+- **The dashboard lives inside the existing Pipeline screen, not a new competing page.** Per the standing "do not introduce a separate competing workflow" rule and the next-phase prompt's own guidance to reuse the dashboard pattern "where sensible" — a team performance dashboard is a materially different scope (team-wide visibility) than the legacy per-user dashboard, so it was added as a new "Pipeline Overview" section at the top of `crm-pipeline.component` rather than either overloading the legacy dashboard or creating a second, disconnected dashboard route.
+- **Team-wide visibility is gated by `leads.assign`, not `crm.manage_pipeline`.** This was a real mistake caught by my own test suite while building it: `crm.manage_pipeline` is granted broadly to every `sales_representative` (so they can manage their own pipeline), so gating the team breakdown on it would have shown every rep every other rep's individual numbers. `leads.assign` is only granted to `sales_manager`/`administrator` and is the correct signal for "this person manages others." Every caller always sees the agency-wide stage distribution and their own stats regardless of role — only the per-rep breakdown table is manager-gated.
 
-```
-Organization (prospect)
-├── Locations
-├── Contacts
-├── Opportunities
-├── Search Campaign Memberships
-├── Activities
-├── Notes
-├── Website Audits
-├── Scores
-├── Assignments
-└── Conversion History
-```
+## 3. Acceptance matrix
 
-Given `Organization.type: 'prospect'` already exists, the only reasonable reading is: **a prospect organization is an `Organization` row**, and Phase 2's new entities (`Contact`, `Opportunity`, `Location`, campaign membership, score, assignment) are new tables that hang off `organizationId`, exactly the way Phase 1's `SavedLead`/`OutreachActivity`/`LeadNote` already do. This is not a new tenant/membership concept — a prospect organization typically has **no** `OrganizationMembership` rows at all (nobody logs in as a prospect) until/unless it converts to a client in Phase 3.
+| Requirement | Implementation | Tests | Status |
+|---|---|---|---|
+| Auto-score computed at opportunity creation | `opportunityService.createFromLead` + `scoring.js` | `crmScoring.test.js` | Done |
+| Recalculate action (explicit, not automatic) | `POST /opportunities/:id/recalculate-score` | `crmScoring.test.js` | Done |
+| Manual override persists exactly as given | Existing `PUT /opportunities/:id` (score/scoreReason already supported it) | `crmScoring.test.js` | Done |
+| Score validated 0–100; stage/reason validated | `express-validator` on `PUT /opportunities/:id` | `crmScoring.test.js` | Done |
+| Score badge + inline edit + recalculate in UI | `crm-pipeline.component.*` | Real headless-Chrome session (isolated synthetic org) | Done |
+| Validation-error detail surfaced to the user | `formatError()` in `crm-pipeline.component.ts` | Found live via the same browser session, then fixed | Done |
+| Pipeline stage distribution, win rate | `dashboardService.getPipelineSummary` | `crmDashboard.test.js` | Done |
+| Caller's own stats always visible | Same endpoint, `myStats` | `crmDashboard.test.js` | Done |
+| Team breakdown manager-gated (not leaked to every rep) | `leads.assign` check in `dashboardController` | `crmDashboard.test.js` (caught the `crm.manage_pipeline` mistake) | Done |
+| Dashboard summary is agency-scoped | Same `agencyOrganizationId` pattern as everything else | `crmDashboard.test.js` cross-agency test | Done |
 
-This directly resolves what would otherwise be the single biggest open architecture question for this phase, and is why the plan below does not need to invent a parallel "prospect" concept next to `Organization`.
+## 4. Testing performed
 
-### The remaining design question: how does a canonical `Lead`/`SavedLead` become a prospect `Organization`+`Opportunity`?
+- `npm run test:backend`: 48/48 passing (11 suites) — up from 42 at the end of the prior slice.
+- `ng test`: 15/15 passing.
+- `ng build`: clean (only the pre-existing inherited landing-page budget warning).
+- Real headless-Chrome sessions against isolated, purpose-created synthetic agencies (never the real dev database or any pre-existing data this time, having learned from the prior slice's incident): one for scoring (create → auto-score → manual override → recalculate), one for the dashboard (a manager + rep pair, verifying the rep sees no team breakdown and the manager does, with exact KPI values matching the seeded data). All synthetic accounts/orgs/data removed afterward.
 
-Two materially different approaches exist:
+## 5. Remaining Phase 2 backlog (unchanged from the completion report, still deferred)
 
-**Option A — One canonical Lead maps to one prospect Organization globally.** A `Lead.organizationId` (nullable, unique) FK is added; the first agency to save a Lead creates its prospect `Organization`; every other organization's `SavedLead`/`Opportunity` for that same `Lead` points at the *same* prospect `Organization`. This mirrors `Lead`'s existing global-canonical-record semantics.
-
-**Option B — Each organization gets its own prospect Organization per Lead it has saved (no sharing).** A prospect `Organization` is really "how *this* agency organization sees this business," created fresh per (agency, Lead) pair; `Lead` stays a pure search-result cache with no reverse link.
-
-**Recommendation: Option B — confirmed by `fable-phase-reviewer` (escalated per CLAUDE.md's rule for major architecture/migration decisions before writing any migration code).** The reviewer's justification is stronger than my original one: multi-agency SaaS is explicitly out of initial scope (`02_MASTER_PRODUCT_SYSTEM_ARCHITECTURE.md` § 3), so today there is exactly one agency organization and the cross-agency-collision argument is nearly moot. The decisive reason is the **prospect→client conversion state machine**: `Organization.type` is a single scalar field on one row, and the architecture requires "an organization may transition from prospect to client without losing activity history" (§5). Under Option A, one shared prospect `Organization` can only hold one `type` — if one agency converts it to `client`, every other agency's still-open pursuit of the same row would have its type silently changed underneath it. Option B has no such problem: each agency's prospect `Organization` converts independently, exactly like the seeded demo client already does via `managingAgencyOrganizationId`.
-
-The review also surfaced three required corrections to the plan below (now incorporated): (1) the backfill must group by `(organizationId, leadId)`, not iterate `SavedLead` rows independently — Phase 1's archive/restore feature means a single organization can already have both an archived and an active `SavedLead` for the same business today, and a naive per-row migration would manufacture two prospect Organizations for one real prospect, directly violating this phase's "no duplicate prospect records" gate; (2) a real DB-level partial-unique constraint is needed going forward (not just correctness at migration time); (3) `Contact`/`Opportunity`/`Location` need a denormalized `agencyOrganizationId` column so their authorization/query pattern matches the one already reviewed and tested three times in this codebase (`where: { agencyOrganizationId: req.context.organization.id }`), rather than relying on an untested join through `managingAgencyOrganizationId` that the current single-real-agency test suite could not catch if built wrong.
-
-## 2. Proposed data model (corrected per review)
-
-New tables. Each carries **two** organization references, matching the reviewer's required correction: `organizationId` (the prospect `Organization` it belongs to) and a denormalized **`agencyOrganizationId`** (copied from the prospect org's `managingAgencyOrganizationId` at creation time). All authorization/query scoping uses `agencyOrganizationId`, exactly matching the already-reviewed-and-tested `where: { organizationId: req.context.organization.id }` pattern `SavedLead`/`LeadNote`/`OutreachActivity` use today — never a join through `managingAgencyOrganizationId`, which nothing in a single-real-agency test suite would catch if wrong.
-
-- `Location` — a prospect can have multiple physical locations (address, phone, hours later). One is primary.
-- `Contact` — person(s) at the prospect (name, title, email, phone, source).
-- `Opportunity` — the actual pipeline object: `stage` (validated string, not enum — reference table like Phase 1's role/permission catalog, since the architecture explicitly wants a "configurable in the future" pipeline), `assignedToUserId`, `sourceLeadId` (nullable FK back to the canonical `Lead`), `score`, `scoreReason`, timestamps per stage transition. **`sourceLeadId` + `agencyOrganizationId` get a partial unique index (`WHERE "deletedAt" IS NULL`)** — the DB-level guarantee that prevents a duplicate prospect from ever being created for the same business by the same agency again, mirroring `SavedLeads`' own `(organizationId, leadId)` partial unique index from Phase 1.
-- `SearchCampaign` / `SearchCampaignMembership` — saved search definitions (private/shared) and which prospects came from which campaign.
-- `Territory` (optional per roadmap — build the column/table but no enforcement UI yet if time-constrained).
-- `WebsiteAudit` — one per prospect, generated report data + shareable-link token (reuse the hashed-token pattern from Phase 1's invitations).
-- Assignment/claim history reuses `AuditLog` (already real, tested, queryable) rather than a parallel table.
-
-### Migration from `Lead`/`SavedLead` (the major gate)
-
-Grouped by `(organizationId, leadId)` — **not** iterated per `SavedLead` row, per the review finding: an organization can already hold both an archived and an active `SavedLead` for the same business today (Phase 1's archive/restore feature), and a naive per-row migration would manufacture two prospect Organizations for one real prospect.
-
-For each `(organizationId, leadId)` group in `SavedLeads`:
-1. Create exactly one prospect `Organization` (`type: 'prospect'`, `managingAgencyOrganizationId: organizationId`, name from `Lead.name`, a disambiguated slug — plain name-slugs will collide across unrelated businesses sharing a name, since `Organization.slug` is globally unique).
-2. Create exactly one `Opportunity` under it, with `agencyOrganizationId: organizationId`, `sourceLeadId: leadId`. If the group has an active (non-archived, non-deleted) `SavedLead`, its `status` drives `Opportunity.stage` and its `userId` drives `assignedToUserId`. If the group has only archived rows (no active one), the `Opportunity` is created in a closed/inactive stage reflecting that — archived rows never spawn a second `Opportunity` or `Organization`, they're historical trail only.
-3. Preserve `SavedLead` itself, unchanged, as a compatibility record (strangler pattern, per ADR 0005) — **do not delete or stop writing to `SavedLead` in this phase**; existing lead-search-save-note-outreach-dashboard UI keeps working exactly as Phase 1 left it while the new CRM UI is built against `Opportunity`. Removal of `SavedLead` is a future phase's decision.
-4. `LeadNote`/`OutreachActivity` stay as-is (already organization-scoped); the new CRM UI queries them by `organizationId` (the agency org — unchanged meaning) + `leadId` (shared with `Opportunity.sourceLeadId`), avoiding a data migration for every historical note/activity.
-
-### Testing requirement added per review
-
-A second, fixture-only agency organization must be added to the relevant Phase 2 test suite(s) specifically to exercise agency-to-agency isolation for `Contact`/`Opportunity`/`Location` — the same technique Phase 1's independent review used to catch the impersonation tenant-boundary bug. A single-agency test suite cannot prove this boundary holds.
-
-## 3. Sequencing given the size of this phase
-
-Per the roadmap, Phase 2 also includes public landing pages/inbound forms, assisted outreach sequences, enrichment adapters, and a sales dashboard — each independently substantial. Implementation order, safest/highest-value first:
-
-1. Data model + migration/backfill for `Location`/`Contact`/`Opportunity` (the major gate — get this reviewed and correct before anything else).
-2. Pipeline stage reference table + assignment (claim/manager-assign/round-robin) + activity timeline reusing existing audit/notes/outreach.
-3. Duplicate detection/merge preview/audit/undo for prospect organizations (the second-highest-risk item — reuses the exact archive-not-delete + audit pattern Phase 1's migration 5 already established and tested).
-4. Opportunity/engagement scoring with manual override + reason.
-5. Sales dashboard.
-6. Website audits.
-7. Public landing pages + inbound forms + UTM/source attribution (lowest technical risk, but a genuinely separate surface — public-facing Angular routes with no auth, feeding the same CRM).
-8. Enrichment adapter (external API — interface + mock/disabled mode only, per the standing external-services rule).
-9. Assisted outreach sequences requiring employee approval.
-
-Items 6–9 will be deferred to a documented backlog if this phase runs out of safe stopping room before reaching them — the phase will not be declared complete with a broken or half-built item 1–3, but a coherent stop after item 3 or 4 (data model + pipeline + dedup, the actual "major gate") with 5–9 clearly documented as deferred is preferable to a rushed, unreviewed attempt at all nine.
+Website audits, public landing pages/inbound forms/UTM attribution, enrichment adapter, assisted outreach sequences, optional territories, saved search campaigns, and Contact/Location management UI. See `docs/leadzaro/NEXT_PHASE_PROMPT.md` for sequencing guidance on these.

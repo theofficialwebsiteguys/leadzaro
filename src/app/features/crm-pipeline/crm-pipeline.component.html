@@ -10,6 +10,88 @@
     </button>
   </div>
 
+  @if (summary(); as s) {
+    <div class="kpi-grid">
+      <div class="kpi-card kpi-blue">
+        <div class="kpi-icon"><lz-icon name="funnel" [size]="18" /></div>
+        <div class="kpi-body">
+          <div class="kpi-value">{{ s.totalActive }}</div>
+          <div class="kpi-label">Open Pipeline</div>
+        </div>
+      </div>
+      <div class="kpi-card kpi-green">
+        <div class="kpi-icon"><lz-icon name="trending-up" [size]="18" /></div>
+        <div class="kpi-body">
+          <div class="kpi-value">{{ s.winRate !== null ? s.winRate + '%' : '—' }}</div>
+          <div class="kpi-label">Win Rate</div>
+        </div>
+      </div>
+      <div class="kpi-card kpi-sky">
+        <div class="kpi-icon"><lz-icon name="target" [size]="18" /></div>
+        <div class="kpi-body">
+          <div class="kpi-value">{{ s.myStats.open }}</div>
+          <div class="kpi-label">My Open</div>
+        </div>
+      </div>
+      <div class="kpi-card kpi-amber">
+        <div class="kpi-icon"><lz-icon name="check-circle" [size]="18" /></div>
+        <div class="kpi-body">
+          <div class="kpi-value">{{ s.myStats.closedWon }}</div>
+          <div class="kpi-label">My Closed Won</div>
+        </div>
+      </div>
+      <div class="kpi-card kpi-teal">
+        <div class="kpi-icon"><lz-icon name="star" [size]="18" /></div>
+        <div class="kpi-body">
+          <div class="kpi-value">{{ s.myStats.avgScore ?? '—' }}</div>
+          <div class="kpi-label">My Avg Score</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dash-grid mb-4">
+      <div class="card">
+        <div class="card-header"><h3>Pipeline by Stage</h3></div>
+        <div class="card-body stage-bars">
+          @for (s2 of s.stageCounts; track s2.stage) {
+            @if (s2.count > 0) {
+              <div class="stage-bar-row">
+                <span class="stage-bar-label text-sm">{{ s2.stage }}</span>
+                <div class="stage-bar-track">
+                  <div class="stage-bar-fill" [style.width.%]="(s2.count / maxStageCount()) * 100"></div>
+                </div>
+                <span class="stage-bar-count text-sm text-muted">{{ s2.count }}</span>
+              </div>
+            }
+          }
+        </div>
+      </div>
+
+      @if (s.teamBreakdown.length > 0) {
+        <div class="card">
+          <div class="card-header"><h3>Team Performance</h3></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Rep</th><th>Open</th><th>Closed Won</th><th>Closed Lost</th></tr>
+              </thead>
+              <tbody>
+                @for (row of s.teamBreakdown; track row.userId) {
+                  <tr>
+                    <td class="font-medium">{{ row.name }}</td>
+                    <td>{{ row.open }}</td>
+                    <td>{{ row.closedWon }}</td>
+                    <td>{{ row.closedLost }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+    </div>
+  }
+
   @if (actionMessage()) {
     <div class="alert alert-info mb-4">{{ actionMessage() }}</div>
   }

@@ -1,7 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { DuplicateGroup, MergePreview, Opportunity } from '../models/crm.model';
+import {
+  DuplicateGroup, MergePreview, Opportunity, PipelineSummary,
+} from '../models/crm.model';
 import { PaginatedResponse } from '../models/lead.model';
 
 export interface OpportunityLeadData {
@@ -14,6 +16,10 @@ export interface OpportunityLeadData {
 @Injectable({ providedIn: 'root' })
 export class CrmService {
   private http = inject(HttpClient);
+
+  getDashboardSummary(): Observable<{ data: PipelineSummary }> {
+    return this.http.get<{ data: PipelineSummary }>('/api/v1/crm/dashboard');
+  }
 
   list(filters?: { stage?: string; assignedToUserId?: string; archived?: boolean; page?: number; limit?: number }): Observable<{ data: PaginatedResponse<Opportunity> }> {
     let params = new HttpParams();

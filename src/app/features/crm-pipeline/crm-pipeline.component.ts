@@ -5,7 +5,9 @@ import { CrmService } from '../../core/services/crm.service';
 import { MembershipService } from '../../core/services/membership.service';
 import { AuthService } from '../../core/services/auth.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
-import { DuplicateGroup, Opportunity, PIPELINE_STAGES } from '../../core/models/crm.model';
+import {
+  DuplicateGroup, Opportunity, PIPELINE_STAGES, PipelineSummary,
+} from '../../core/models/crm.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 import { IconComponent } from '../../shared/icon/icon.component';
@@ -55,11 +57,19 @@ export class CrmPipelineComponent implements OnInit {
   duplicates = signal<DuplicateGroup[]>([]);
   duplicatesLoading = signal(false);
 
+  summary = signal<PipelineSummary | null>(null);
+
   ngOnInit() {
     this.loadOpportunities();
     this.membershipService.list().subscribe((res) => {
       this.members.set(res.data.memberships.filter((m) => m.membershipType === 'employee' && m.status === 'active'));
     });
+    this.crm.getDashboardSummary().subscribe((res) => this.summary.set(res.data));
+  }
+
+  maxStageCount(): number {
+    const counts = this.summary()?.stageCounts.map((s) => s.count) ?? [];
+    return Math.max(1, ...counts);
   }
 
   loadOpportunities(p = 1) {

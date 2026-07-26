@@ -71,3 +71,31 @@ export interface MergePreview {
   winnerLocations: unknown[];
   loserLocations: unknown[];
 }
+
+export interface PipelineStageCount {
+  stage: PipelineStage;
+  count: number;
+}
+
+export interface MyPipelineStats {
+  assigned: number;
+  open: number;
+  closedWon: number;
+  avgScore: number | null;
+}
+
+export interface TeamPipelineRow {
+  userId: string;
+  name: string;
+  open: number;
+  closedWon: number;
+  closedLost: number;
+}
+
+export interface PipelineSummary {
+  stageCounts: PipelineStageCount[];
+  totalActive: number;
+  winRate: number | null;
+  myStats: MyPipelineStats;
+  teamBreakdown: TeamPipelineRow[];
+}

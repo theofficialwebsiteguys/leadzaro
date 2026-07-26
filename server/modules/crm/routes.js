@@ -5,8 +5,11 @@ const { resolveContext, requirePermission, requireAnyPermission } = require('../
 const { validate } = require('../../middleware/validate');
 const controller = require('./opportunityController');
 const mergeController = require('./mergeController');
+const dashboardController = require('./dashboardController');
 
 router.use(authenticate, resolveContext());
+
+router.get('/dashboard', requirePermission('leads.read'), dashboardController.getSummary);
 
 router.get('/duplicates', requirePermission('crm.manage_pipeline'), mergeController.listDuplicates);
 router.get('/merge/preview', requirePermission('crm.manage_pipeline'), [
