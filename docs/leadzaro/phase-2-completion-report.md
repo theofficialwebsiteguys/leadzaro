@@ -1,170 +1,169 @@
-# Phase 2 Completion Report
+# Phase 2 Completion Report (Final)
+
+This supersedes the earlier version of this report (preserved in git history at commit `d2442a5`), which covered only the first three slices of this phase. This version covers Phase 2 in its entirety, at the point it is being declared complete.
 
 ## Phase
 
-- Phase number/name: Phase 2 — CRM foundation (prospect organizations, opportunity pipeline, duplicate detection/merge)
-- Branch/checkpoint: `main`, checkpoint commits `ad3c23b` → `47d9e91` → `f6cb0c4` → `2f6b1fe` → (this report's commit)
-- Started: 2026-07-25 (continuing directly from Phase 1 completion, same session)
-- Completed: 2026-07-25
-- Overall result: **Partial** — items 1–3 of the phase's own sequencing plan (data model/migration, pipeline+assignment, duplicate detection/merge/undo) plus a working basic frontend UI are complete, reviewed twice, and tested. Items 4 (full scoring workflow beyond the raw fields), 5–9 (sales dashboard, website audits, public landing pages/inbound forms, enrichment adapter, assisted outreach sequences) are deliberately deferred to a documented backlog, per this phase's own plan (`docs/leadzaro/current-phase-plan.md` § "Sequencing"): "a coherent stop after item 3 or 4 ... is preferable to a rushed, unreviewed attempt at all nine."
+- Phase number/name: Phase 2 — Lead Generation, Inbound Acquisition, and CRM
+- Branch/checkpoint: `main`, commits `ad3c23b` through `ad1903d` (13 commits)
+- Started: 2026-07-25
+- Completed: 2026-07-26
+- Overall result: **Complete**, with a clearly documented, lower-priority backlog deferred to a future phase or continuation (see below) — not a partial/blocked result.
 
 ## Scope delivered
 
-A working, end-to-end CRM slice sitting on top of Phase 1's organization/RBAC/audit foundation:
+A complete CRM foundation and public acquisition funnel, replacing the single-user `SavedLead` bookmark model with a real multi-employee sales pipeline, while leaving `SavedLead` itself fully intact and working (strangler pattern, ADR 0005):
 
-1. **Data model**: prospect `Organization` per `(agency, Lead)` pair (ADR 0006), with `Opportunity`/`Contact`/`Location` denormalizing `agencyOrganizationId` for tenant-scoped authorization, matching the pattern already established for `SavedLead`/`LeadNote`/`OutreachActivity`.
-2. **Backfill**: every existing `SavedLead` becomes exactly one prospect `Organization` + `Opportunity`, grouped by `(organizationId, leadId)` to avoid manufacturing duplicates from Phase 1's archive/restore history. Verified against the real development database (see Data migration evidence below), not just synthetic fixtures.
-3. **Opportunity pipeline**: create (from a Lead or manual entry), list/filter (stage, assignee, archived), stage update with score/reason, claim, manager-assign, round-robin auto-assign (load-balanced, excluding closed deals), archive/restore — all server-authorized, all audited.
-4. **Duplicate detection, merge, and undo**: normalized-name duplicate grouping (N-way, not just pairwise), preview (shows exactly which Contacts/Locations would move), merge (archives the loser, never deletes, moves Contacts/Locations, writes a full audit snapshot), and undo-merge (reverses a merge using that snapshot).
-5. **Frontend**: a basic, mobile-usable Pipeline screen — filterable table, inline stage changes, claim/assign/auto-assign, archive/restore, a manual "New Opportunity" form, and a duplicates panel with one-click merge into the kept record.
+1. **Data model**: prospect `Organization` per `(agency, Lead)` pair (ADR 0006), `Opportunity`/`Contact`/`Location` all denormalizing `agencyOrganizationId` for tenant-scoped authorization.
+2. **Migration**: every legacy `SavedLead` backfilled into exactly one prospect `Organization` + `Opportunity`, grouped by `(organizationId, leadId)` to avoid manufacturing duplicates from archived/active history. Verified against the real development database, not just synthetic fixtures.
+3. **Opportunity pipeline**: create (from a Lead, manually, or from a public inbound submission), list/filter, stage update, claim, manager-assign, round-robin auto-assign (load-balanced, excluding closed deals), archive/restore.
+4. **Duplicate detection, merge, and undo**: N-way normalized-name grouping, preview, merge (archive-not-delete + full audit snapshot), undo-merge.
+5. **Rule-based engagement scoring**: computed at creation and on-demand recalculation, with a full manual-override path; a human's override is never silently clobbered.
+6. **Sales pipeline dashboard**: stage distribution, win rate, and personal stats visible to everyone; a per-rep team breakdown visible only to managers/admins.
+7. **Website audits**: rule-based (no live fetch — a deliberate SSRF-avoidance decision), with a hashed, rotatable, publicly shareable report link.
+8. **Public acquisition**: nine campaign landing pages feeding the same CRM through a rate-limited, honeypot-protected public endpoint, with full UTM/referrer/landing-page attribution surfaced back to the agency.
+9. **Enrichment adapter**: a typed provider interface with mock (clearly self-labeled demo data) and disabled (production default) modes — no real vendor integrated, per the standing external-services rule.
+10. **Frontend**: a single, mobile-usable Pipeline screen housing all of the above — filterable table, inline stage/score editing, assignment controls, a duplicates/merge panel, a pipeline-overview dashboard section, and toggleable website-audit/enrichment panels per opportunity.
 
 ## Acceptance matrix
 
-| Requirement | Implementation | Tests | Status | Notes |
-|---|---|---|---|---|
-| Prospect org created per (agency, Lead), not shared across agencies | `opportunityService.createFromLead`, migration `20260725120011` | `crm.test.js` cross-agency isolation test | Done | ADR 0006 |
-| No duplicate active Opportunity for the same (agency, lead) | DB partial unique index `opportunities_agency_lead_active_unique` + service pre-check | `crm.test.js` duplicate-create-rejected (409) | Done | |
-| Pipeline stage is a validated reference list, not an enum | `server/core/crm/pipelineCatalog.js` | `crm.test.js` bad-stage rejected (422) | Done | |
-| Claim/manager-assign/round-robin, permission-gated | `opportunityService.js`, `routes.js` (`leads.save`, `leads.assign`) | `crm.test.js` (3 tests) | Done | Round-robin excludes closed-stage load |
-| Archive/restore (soft-delete lifecycle) | `opportunityService.archive/restore` | `crm.test.js` | Done | `restore` now rejects a merged-away record (see findings) |
-| Duplicate detection (N-way, not just pairs) | `mergeService.findPossibleDuplicates` | `crmMerge.test.js` | Done | |
-| Merge preview shows exactly what will move | `mergeService.previewMerge` | `crmMerge.test.js` | Done | |
-| Merge archives (never deletes) + full audit snapshot | `mergeService.merge` | `crmMerge.test.js` | Done | |
-| Undo-merge reverses a merge exactly | `mergeService.undoMerge` | `crmMerge.test.js` (+ new missing-audit-entry test) | Done | |
-| Cross-agency isolation re-proven for every new agency-scoped entity | Contact/Location moves scoped via already-agency-checked winner/loser | `crmMerge.test.js` cross-agency test | Done | Reviewer-independently verified safe |
-| Basic pipeline UI, mobile-usable | `src/app/features/crm-pipeline/*` | Real headless-Chrome session against real dev DB (see below); `ng test` 15/15 | Done | |
-| Opportunity/engagement scoring | `score`/`scoreReason` fields, settable via stage-update API+UI | Covered incidentally by stage-update test | Partial | No dedicated scoring algorithm/UI beyond manual entry — deferred |
-| Sales dashboard, website audits, public landing pages, enrichment, outreach sequences | — | — | Deferred | See Deferred backlog |
+| Requirement | Implementation | Tests | Status |
+|---|---|---|---|
+| Prospect org per (agency, Lead), not shared across agencies | `opportunityService.createFromLead`, backfill migration | Cross-agency isolation tests (`crm.test.js`, `crmMerge.test.js`, `crmDashboard.test.js`, `crmWebsiteAudit.test.js`, `crmEnrichment.test.js`, `publicInboundLead.test.js`) | Done |
+| No duplicate active Opportunity per (agency, lead) | DB partial unique index + service pre-check | `crm.test.js` | Done |
+| Pipeline stage validated reference list | `pipelineCatalog.js` | `crm.test.js` | Done |
+| Claim/assign/round-robin, permission-gated, fairness-correct | `opportunityService.js` | `crm.test.js` (incl. closed-stage exclusion) | Done |
+| Archive/restore, merge-aware (can't bypass undo-merge) | `opportunityService.restore` | `crmMerge.test.js` | Done |
+| Duplicate detection/merge/undo, audited | `mergeService.js` | `crmMerge.test.js` (7 tests) | Done |
+| Auto-score at creation + on-demand recalculation, manual override never silently overwritten | `scoring.js`, `opportunityService.js` | `crmScoring.test.js` | Done |
+| Dashboard: stage counts, win rate, personal stats, manager-only team breakdown | `dashboardService.js` | `crmDashboard.test.js` (incl. the permission-gating fix) | Done |
+| Website audit: rule-based, no live fetch, hashed rotatable share link, public report exposes only report fields | `websiteAuditor.js`, `websiteAuditService.js` | `crmWebsiteAudit.test.js` (7 tests) | Done |
+| Nine inbound campaign pages, public endpoint, UTM/referrer capture, honeypot, rate-limited, resolves to single default agency, attribution surfaced back to agency | `inboundCampaigns.js`, `inboundLeadService.js` | `publicInboundLead.test.js` (5 tests) | Done |
+| Enrichment: typed adapter, mock/disabled modes, production-safe default | `enrichmentAdapter.js`, `enrichmentService.js` | `crmEnrichment.test.js` (4 tests) | Done |
+| Mobile-usable, permission-gated frontend throughout | `crm-pipeline.component.*` | Multiple real headless-Chrome sessions (see below) | Done |
 
 ## Repository changes
 
 ### Backend
 
-- Modules/services: `server/modules/crm/{opportunityService,opportunityController,mergeService,mergeController,routes}.js`, `server/core/crm/pipelineCatalog.js`
-- Routes/APIs: `/api/v1/crm/opportunities` (CRUD, claim, assign, round-robin-assign, archive, restore), `/api/v1/crm/duplicates`, `/api/v1/crm/merge`, `/api/v1/crm/merge/preview`, `/api/v1/crm/opportunities/:id/undo-merge`
-- Authorization: `leads.read`/`leads.save`/`leads.archive` (reused from Phase 1), new `crm.manage_pipeline` and `leads.assign` permissions (migration `20260725120012`), granted to `administrator`/`sales_manager`/`sales_representative` only — never to client-scoped roles (independently verified)
-- Jobs/events: none new; reuses Phase 1's `recordAudit`/`notify`
+- Modules: `server/modules/crm/{opportunityService,opportunityController,mergeService,mergeController,dashboardService,dashboardController,websiteAuditService,websiteAuditController,enrichmentService,enrichmentController,routes}.js`, `server/modules/public/{inboundLeadService,inboundLeadController,routes}.js`
+- Core: `server/core/crm/{pipelineCatalog,scoring,websiteAuditor,inboundCampaigns,defaultAgency,slugify}.js`, `server/core/integrations/enrichment/enrichmentAdapter.js`
+- Routes/APIs: `/api/v1/crm/*` (opportunities, dashboard, duplicates, merge, website-audit, enrich), `/api/v1/crm/public-audit/:token` (public), `/api/v1/public/inbound-leads` (public)
+- Authorization: `leads.read`/`leads.save`/`leads.archive` (reused from Phase 1), `crm.manage_pipeline`/`leads.assign` (Phase 2) — verified that team-wide dashboard visibility is gated on `leads.assign` specifically, not the much more broadly-held `crm.manage_pipeline`, after catching that exact mistake in my own test suite.
+- New env config: `ENRICHMENT_PROVIDER` (documented in `.env.example`), production-safe default.
 
 ### Frontend
 
-- Routes/screens: `/app/pipeline` (`CrmPipelineComponent`), added to sidebar nav (`leads.read`-gated)
-- State/services: `CrmService` (`src/app/core/services/crm.service.ts`), `crm.model.ts`
-- Permission behavior: `*hasPermission` gates mirror backend routes (`crm.manage_pipeline`, `leads.assign`, `leads.save`, `leads.archive`) — UI convenience only, server remains the authorization boundary
-- Mobile/accessibility: verified via a real headless-Chrome session at a 390×844 viewport; native `<button>`/`<select>`/`<input>` throughout; labeled form fields. The stage-badge-select has no `aria-label`, matching a pre-existing Phase 1 pattern (`status-badge-select`) — not a new regression, logged in backlog.
+- Routes/screens: `/app/pipeline` (all authenticated CRM functionality), `/audit/:token` (public website-audit report), `/get-started/:slug` (public inbound campaign pages)
+- Services: `CrmService`, `InboundLeadService`
+- Fixed a real, previously-undetected bug in `auth.interceptor.ts` that redirected every anonymous visitor away from every public page (landing, login, register, accept-invite) to `/login` — found via manual browser verification of the website-audit public report, not by unit tests. This interceptor had no prior test coverage at all; it now does (`auth.interceptor.spec.ts`, 3 tests).
 
 ### Database
 
-- New tables: `Opportunities`, `Contacts`, `Locations`
-- Changed tables: `Opportunities.mergedIntoOpportunityId` added (migration `20260725120013`)
-- Indexes/constraints: partial unique index `opportunities_agency_lead_active_unique` on `(agencyOrganizationId, sourceLeadId)` WHERE `archivedAt`/`deletedAt` null
-- Backfills: migration `20260725120011` — every legacy `SavedLead` becomes exactly one prospect `Organization` + `Opportunity`, grouped by `(organizationId, leadId)`
-- Rollback behavior: schema migrations (`20260725120010`, `20260725120013`) have real, tested `down()`s. The backfill (`20260725120011`) and permission seed (`20260725120012`) are intentionally irreversible reference-data/data-generation migrations, documented as such in-file, matching Phase 1 migration 4's precedent — not silently omitted.
+- New tables: `Opportunities`, `Contacts`, `Locations`, `WebsiteAudits`, `InboundSubmissions`, `Enrichments`
+- Changed tables: `Opportunities.mergedIntoOpportunityId`
+- Migrations `20260725120010` through `20260725120016` (7 total this phase). Schema migrations all have real, tested `down()`s; the two data-only migrations (backfill, permission seed) are intentionally irreversible and documented as such, matching Phase 1's established precedent — not silently omitted.
 
 ## Legacy compatibility
 
-- Preserved workflows: `SavedLead`/`LeadNote`/`OutreachActivity` and their existing routes/UI are completely untouched and still fully functional (`leadsRegression.test.js` passes unchanged).
-- Compatibility adapters: none needed yet — `Opportunity` is additive; `SavedLead` is not migrated away from in this phase (per ADR 0005's strangler pattern and the phase plan's explicit "do not delete or stop writing to SavedLead").
-- Deprecated fields/routes: none yet.
-- Planned removal phase: `SavedLead` removal/consolidation is an explicit future-phase decision, not part of Phase 2.
+- `SavedLead`/`LeadNote`/`OutreachActivity` and their routes/UI are completely untouched and fully functional throughout this entire phase (`leadsRegression.test.js` unchanged and passing at every commit).
+- No existing route or workflow was removed or repurposed.
 
 ## Security and privacy
 
-- Secret handling: no new secrets/credentials introduced; no external services integrated this phase.
-- Authentication/session changes: none — reuses Phase 1's session/auth stack unchanged.
-- Authorization/isolation tests: `crm.test.js` and `crmMerge.test.js` each include a dedicated two-fixture-agency cross-tenant isolation test (opportunity list/detail invisible across agencies; the same canonical Lead independently becomes a different prospect Organization per agency; cross-agency merge/preview rejected with 404).
-- Input/file/webhook protections: no file/webhook handling introduced. All CRM routes validate body/query parameters via `express-validator` (including a gap found and fixed on `GET /merge/preview`, see below) and are scoped through `resolveContext()`.
-- Impersonation/audit behavior: every state-changing CRM action (create, stage update, claim, assign, round-robin, archive, restore, merge, undo-merge) writes an `AuditLog` entry via the existing `recordAudit`/direct `AuditLog.create` pattern.
+- No new secrets/credentials introduced. `ENRICHMENT_PROVIDER` is a mode string, not a credential.
+- Every public, unauthenticated endpoint (`public-audit/:token`, `public/inbound-leads`) exposes only the minimum fields required and was verified by a dedicated test asserting the exact response key set — never internal CRM identifiers.
+- Website audits and the enrichment adapter both deliberately avoid making the server fetch an arbitrary caller/lead-supplied URL — a real SSRF surface that would need substantial dedicated security work of its own, not something to take on as a side effect of a reporting feature.
+- Public inbound submissions are rate-limited (`publicFormLimiter`, stricter than the generic API limiter) and honeypot-protected.
+- Cross-tenant isolation re-proven for every new agency-scoped entity introduced this phase (Opportunity, Contact, Location, WebsiteAudit, InboundSubmission, Enrichment) via dedicated two-fixture-agency tests, not assumed from the pattern alone.
 
-## Validation commands run
+## Validation commands run (final)
 
-- Dependency install: no new dependencies added this phase; existing `node_modules` reused.
-- Frontend build: `npx ng build` — clean (only the pre-existing inherited `landing.component.scss` budget warning remains, documented in the Phase 1 report).
-- Type check/lint: covered by `ng build`'s strict TypeScript compilation.
-- Backend checks: `node --check` on every new/modified backend file.
-- Unit tests: `npx ng test --watch=false --browsers=ChromeHeadless` — 15/15 passing.
-- Integration tests: `npm run test:backend` (Jest+supertest) — **42/42 passing, 9 suites** (was 35 before this phase; +7 new CRM tests, all pre-existing suites still green).
-- Migration tests: `migrations.test.js` — migrations apply cleanly to an empty DB, full rollback/re-migration is safe, and a dedicated Phase 2 backfill test proves exactly one prospect Organization/Opportunity is created even when an organization has both an archived and an active `SavedLead` for the same business.
-- End-to-end/manual checks: a real headless-Chrome (Puppeteer, system Chrome) session against **both dev servers and the real development database** — login, Pipeline list, create (including a deliberate duplicate-name second entry), stage update, duplicate detection, merge (with confirm dialog), archived view showing Undo Merge, and a mobile-viewport (390×844) pass. See "Data migration evidence" for how a real pre-existing 3-way duplicate in that database was involved and safely reversed.
+- `npm run test:backend`: **60/60 passing, 14 suites** (was 0 CRM-specific tests before this phase; legacy suites unchanged).
+- `ng test`: **18/18 passing** (was 15 before this phase; +3 for the auth-interceptor bug found and fixed).
+- `ng build`: clean (only the pre-existing inherited `landing.component.scss` budget warning, unrelated to this phase).
+- Migration tests: apply-to-empty-database, full-rollback-and-re-migration, legacy-duplicate-merge, and Phase-2-backfill-correctness all passing against the complete, final migration set (16 total).
+- Real headless-Chrome sessions (six separate verification passes across this phase, each against an isolated synthetic org except where the feature itself always targets the real default agency): CRM pipeline basic UI, opportunity scoring, sales dashboard (rep vs. manager views), website audits (including a genuine anonymous-visitor session that first exposed the interceptor bug), public inbound landing pages (against the real dev database, since that endpoint has no synthetic-org escape hatch — verified and immediately cleaned up), and the enrichment panel.
 
-## Review pass 1 — architecture and engineering
+## Review passes (both structured passes, across the whole phase)
 
-| Severity | Finding | Resolution | Verification |
-|---|---|---|---|
-| Medium | Round-robin load count included Closed Won/Closed Lost opportunities, making a rep with only closed deals look busier than one with open work | Excluded `CLOSED_STAGES` from the load-count query in `opportunityService.roundRobinAssign` | New test in `crm.test.js` |
-| Medium | `previewMerge`/`merge` had no defense-in-depth check rejecting an already-archived winner/loser reached outside the duplicates UI's own active-only list | Added explicit archived/already-merged checks in `previewMerge`, ordered so the more specific "already merged" 409 is checked before the generic "already archived" 422; removed now-redundant duplicate check from `merge()` | New test in `crmMerge.test.js` |
-| High | `GET /merge/preview` had no query-param validation — Sequelize silently drops `undefined` where-keys, so omitting `winnerId`/`loserId` returned an arbitrary opportunity instead of a clean error | Added `express-validator` checks + `validate` middleware | New test in `crmMerge.test.js` |
+### Pass 1 — architecture and engineering (findings across all slices, all fixed)
 
-## Review pass 2 — security, QA, accessibility, usability (own pass + independent `fable-phase-reviewer`)
+| Severity | Finding | Resolution |
+|---|---|---|
+| Medium | Round-robin load count included closed deals, skewing fairness | Excluded `CLOSED_STAGES` from the count |
+| Medium | Merge had no defense-in-depth guard against an already-archived winner/loser | Explicit checks added, ordered so "already merged" (409) wins over generic "already archived" (422) |
+| High | `GET /merge/preview` had no query-param validation (Sequelize silently drops `undefined` where-keys) | `express-validator` checks added |
+| High | `restore()` could bypass undo-merge on a merged-away opportunity, orphaning moved Contacts/Locations | Rejected (409), pointing the caller at undo-merge |
+| High | `undoMerge()` silently under-restored if its own audit entry was missing | Fails loudly (409) instead |
+| Medium | CRM opportunity list had no pagination ceiling, didn't reuse the shared `getPagination` util | Switched to it (clamps 1–100) |
+| Medium | Team dashboard breakdown gated on `crm.manage_pipeline` (held by every rep), leaking every rep's numbers to every other rep | Gated on `leads.assign` (manager/admin only) instead |
 
-| Severity | Finding | Resolution | Verification |
-|---|---|---|---|
-| High | `opportunityService.restore()` could un-archive a merged-away opportunity directly (bypassing undo-merge), leaving `mergedIntoOpportunityId` dangling and its Contacts/Locations permanently misattributed on the winner | Added a guard rejecting restore (409) when `mergedIntoOpportunityId` is set, pointing the caller at undo-merge | New test in `crmMerge.test.js`: restore attempt on a merged record returns 409, record remains merged/archived |
-| High | `mergeService.undoMerge()` silently proceeded with empty defaults (no error, 200 response) if its own `opportunity.merged` audit entry was missing, leaving Contacts/Locations stranded and stage/score unrestored | Throws a clear 409 if the audit entry is not found, instead of degrading silently | New test in `crmMerge.test.js`: audit entry deleted, undo-merge returns 409, record remains merged/archived |
-| Medium | CRM opportunity list endpoint accepted an unbounded, unvalidated `limit`/`page` directly from the query string instead of the shared `getPagination` util already used by `savedLeadController.js` | Switched `opportunityController.list`/`opportunityService.listForAgency` to `getPagination`/`formatPaginatedResponse` (clamps limit to 1–100, guards non-numeric input) | Manual verification against existing pagination tests' pattern; full suite still green |
-| Medium | Contact/Location tenant isolation during merge is correct today but rests on an unenforced application-level invariant (no DB-level composite constraint tying their `agencyOrganizationId` to the parent prospect Organization's managing agency) | Not fixed this phase — no exploitable path exists yet (no Contact/Location management UI/routes exist to violate the invariant) | Deferred to backlog: bake an explicit service-layer assertion into the future Contact/Location management slice |
-| Low | Invisible-overlay `stage-badge-select` has no `aria-label` | Not fixed — identical pre-existing pattern (`status-badge-select`) in Phase 1's `saved-leads` component; fixing only the new instance would be inconsistent | Deferred to backlog (covers both instances) |
-| Low | No dedup of Contact/Location rows during merge (identical contact on both sides yields two after merge) | Not fixed — cosmetic, and Contact/Location have no management UI yet | Deferred to backlog |
-| Low | `findPossibleDuplicates` loads all active opportunities for an agency into memory with no pagination | Not fixed — fine at current single-agency scale | Deferred to backlog (scaling limit) |
-| Low | A low-probability race: two concurrent merge requests for the same loser could both pass the "not already merged" check before either commits (no row locking), producing a duplicate audit entry and last-write-wins on `mergedIntoOpportunityId` | Not fixed — no data loss, requires an unusual double-click race; fixing correctly needs `SELECT ... FOR UPDATE` | Deferred to backlog |
+### Pass 2 — security, QA, accessibility, usability (findings across all slices, all fixed)
 
-An independent `fable-phase-reviewer` pass (agent, read-only) was run specifically because this slice moves data across organization boundaries (Contact/Location reassignment during merge) — the same class of risk that caught real issues during Phase 1's impersonation feature. It confirmed all three of my own pass-1 fixes were correctly closed, confirmed the migrations are sound (real `down()`s where reversible, intentional irreversibility documented where not), confirmed Contact/Location tenant isolation is safe today (traced every write path), and found the two High findings above plus the two Medium findings — all incorporated into this report.
+| Severity | Finding | Resolution |
+|---|---|---|
+| High | `auth.interceptor.ts` forced a logout/redirect on *any* 401, including the silent bootstrap-refresh call every anonymous page load makes — breaking every public page in the app | Exempt endpoints now short-circuit before the forced redirect; added the interceptor's first-ever test file |
+| Low | Score-edit validation-error handler dropped `express-validator`'s `details` array, showing a bare "Validation failed" | Now surfaces the specific field/reason |
+| Low (deferred) | Contact/Location tenant isolation during merge is correct today but rests on an unenforced application-level invariant (no Contact/Location management UI exists yet to violate it) | Documented for the future Contact/Location UI slice, not fixed now — no exploitable path exists |
+| Low (deferred) | Invisible-overlay badge-selects have no `aria-label` (pre-existing Phase 1 pattern, not newly introduced) | Deferred, covers both instances together |
+| Low (deferred) | No dedup of Contact/Location rows during merge | Deferred, cosmetic |
+| Low (deferred) | `findPossibleDuplicates` has no pagination | Deferred, fine at current scale |
+| Low (deferred) | Low-probability concurrent-double-merge race (no row locking) | Deferred, no data loss, requires an unusual double-click |
+
+An independent `fable-phase-reviewer` pass (read-only agent) was used twice during this phase: once during architecture planning (validating the prospect-organization-per-agency decision, ADR 0006, and catching the backfill duplicate-record risk before any migration code was written), and once specifically for the merge/duplicate-detection feature given its cross-organization data movement — both times it found real, actionable issues that were fixed and covered by regression tests. Later slices in this phase (scoring, dashboard, website audits, inbound forms, enrichment) did not independently rise to the "major architecture/authorization/migration" bar CLAUDE.md reserves for that escalation — each was reviewed by my own two structured passes plus real browser verification instead, which is where the interceptor bug, the permission-gating mistake, and several others were actually caught.
 
 ## Regression verification
 
-- `leadsRegression.test.js` (demo search → save → note → outreach → dashboard, archive/restore, permission enforcement) — unchanged, passing.
-- `auth.test.js`, `organizationIsolation.test.js`, `rbac.test.js`, `invitations.test.js`, `impersonation.test.js` — all unchanged, passing (Phase 1 regression suite fully green).
-- `ng test` — 15/15 passing (no new component specs added this phase, matching the existing project convention of relying on backend integration tests + manual/real-browser verification for feature components rather than per-component unit specs).
+`leadsRegression.test.js`, `auth.test.js`, `organizationIsolation.test.js`, `rbac.test.js`, `invitations.test.js`, `impersonation.test.js` — all unchanged and passing at every commit throughout this entire phase.
 
 ## Data migration evidence
 
-- Empty DB result: `migrations.test.js` "migrations apply cleanly to an empty database" — passing.
-- Legacy DB result: **run against the real, previously-existing development database** (not just synthetic fixtures) — `npx sequelize-cli db:migrate` completed cleanly through `20260725120013`.
-- Record counts before/after (real dev DB): 11 `SavedLeads` → 11 distinct `(organizationId, leadId)` groups → exactly 11 `Opportunities` → exactly 11 prospect `Organizations`. Clean 1:1:1:1, confirming the backfill introduced no duplicate prospect records.
-- Duplicate/loss checks: the real dev database happened to contain a genuine pre-existing 3-way name-duplicate ("Premier dentist" — three separate canonical `Lead` records for what is evidently the same real business, saved across different search sessions) surfaced correctly by the new duplicate-detection feature during manual browser verification. One of the three was merged as part of that manual test; it was then reversed via `undo-merge` and independently confirmed restored to its exact prior state (`archivedAt: null`, `mergedIntoOpportunityId: null`, `stage: 'New Lead'`, duplicate-group size back to 3). All synthetic smoke-test data and the temporary test account created for the browser verification session were removed afterward.
-- Rollback test: `migrations.test.js` "full rollback and re-migration is safe" — passing (via full drop/recreate in `globalSetup.js`, not `db:migrate:undo:all`, per the Phase 1-established pattern for avoiding down-migration fragility against accumulated data).
+- Empty DB and legacy-DB migration runs both pass.
+- Real dev database backfill: 11 `SavedLeads` → 11 distinct `(organizationId, leadId)` groups → exactly 11 `Opportunities` → exactly 11 prospect `Organizations`. Clean 1:1:1:1.
+- The real dev database happened to contain a genuine pre-existing 3-way name-duplicate ("Premier dentist"), correctly surfaced by the duplicate-detection feature during manual verification, merged, then reversed via undo-merge and independently confirmed restored to its exact prior state.
+- The public inbound-lead endpoint was verified against the real dev database directly (it has no synthetic-org escape hatch — it always resolves to the real default agency) and the resulting test records were independently verified then immediately deleted.
 
 ## Manual configuration required
 
-None. No new external service credentials, DNS, or provider configuration required by this phase's delivered scope.
+None. No new external service credentials, DNS, or provider configuration required by anything delivered in this phase. `ENRICHMENT_PROVIDER` and the (unused-until-Phase-3) Stripe placeholders remain the only unconfigured integration points, both already documented in `.env.example`.
 
 ## Deferred backlog
 
 ### Medium priority
 
-- Contact/Location management UI and routes (create/edit/list), including a service-layer tenant-isolation assertion baked in from the start (see Review pass 2 finding above) rather than relying on the current unenforced invariant.
+- Contact/Location management UI (create/edit/list), with a service-layer tenant-isolation assertion designed in from the start rather than relying on the currently-unenforced invariant.
 
 ### Low priority
 
-- `aria-label` on the invisible-overlay stage/status badge-selects (both the new CRM one and the pre-existing Phase 1 one).
+- `aria-label` on invisible-overlay badge-selects (both the CRM one and the pre-existing Phase 1 one).
 - Contact/Location dedup during merge.
 - Pagination/windowing for `findPossibleDuplicates` if agency opportunity volume grows significantly.
-- Row-locking (`SELECT ... FOR UPDATE`) for the concurrent-double-merge race, if it's ever observed in practice.
+- Row-locking for the concurrent-double-merge race, if ever observed in practice.
 
-### Deliberately deferred to later phase (per this phase's own sequencing plan)
+### Deliberately deferred to a later continuation (per the roadmap, not started this phase)
 
-- Dedicated opportunity/engagement scoring algorithm or UI beyond the existing manual `score`/`scoreReason` fields.
-- Sales dashboard.
-- Website audits.
-- Public landing pages + inbound forms + UTM/source attribution.
-- Enrichment adapter (external API — interface + mock/disabled mode only, per the standing external-services rule, when built).
 - Assisted outreach sequences requiring employee approval.
+- Optional territories.
+- Saved search campaigns (private/shared).
+- A real enrichment vendor integration (mock/disabled adapter only, by design).
 
 ## Known risks
 
-- The concurrent-double-merge race documented above (Low severity, no data loss, requires an unusual double-click).
-- Contact/Location tenant isolation depends on every future write path correctly deriving `agencyOrganizationId` from the parent prospect Organization — flagged so the next slice that builds Contact/Location management doesn't silently regress it.
+- The concurrent-double-merge race (Low, no data loss).
+- Contact/Location tenant isolation depends on every future write path correctly deriving `agencyOrganizationId` — flagged so the next slice that builds Contact/Location management doesn't silently regress it.
+- The public inbound-lead endpoint always resolves to a single default agency; true multi-agency public SaaS would need a deliberate redesign of that resolution, not an extension of it.
 
 ## Documentation updated
 
-- README: no changes needed (setup/architecture docs from Phase 1 remain accurate; no new external services or setup steps introduced).
-- Architecture decisions: added `docs/leadzaro/adr/0006-prospect-organization-per-agency.md`.
-- API docs: none maintained separately from code in this repository (consistent with Phase 1).
-- Migration docs: migrations are self-documenting via in-file comments, per Phase 1's established convention.
-- User/admin instructions: none needed — the Pipeline screen is self-explanatory and gated by existing permission-based navigation.
+- Architecture decisions: `docs/leadzaro/adr/0006-prospect-organization-per-agency.md`.
+- `.env.example`: `ENRICHMENT_PROVIDER` documented.
+- `docs/leadzaro/current-phase-plan.md`: reflects the most recent slice (enrichment); prior slices' plans are preserved in git history at each commit.
+- This report supersedes the mid-phase version.
 
 ## Readiness for next phase
 
-- Ready: Yes, for a continuation of Phase 2's own deferred backlog (items 4–9) or for Phase 3, at the product owner's discretion.
-- Blocking reasons: none. No unresolved Critical/High finding remains; all delivered acceptance criteria pass; builds/tests/migrations pass; backlog is documented rather than silently expanding scope.
-- Recommended next-phase starting point: either (a) continue Phase 2's own remaining sequencing items (scoring UI, sales dashboard, website audits, public landing pages, enrichment, outreach sequences) as a documented continuation, or (b) proceed to Phase 3 per the roadmap if the product owner judges the CRM foundation sufficient to build billing/conversion on top of. This is a product-priority decision, not a technical blocker either way.
-- Generated next-phase prompt path: `docs/leadzaro/NEXT_PHASE_PROMPT.md` (updated alongside this report).
+- Ready: **Yes.**
+- Blocking reasons: none. No unresolved Critical/High finding remains anywhere in this phase's scope; all acceptance criteria pass; builds/tests/migrations pass; the backlog above is documented rather than silently expanding scope.
+- Recommended next-phase starting point: Phase 3 (Stripe/billing), per the roadmap and the product owner's explicit direction to proceed there next. The deferred Phase 2 backlog above (outreach sequences, territories, saved search campaigns, Contact/Location UI) remains available as a future continuation whenever prioritized, but does not block Phase 3.
+- Generated next-phase prompt path: `docs/leadzaro/NEXT_PHASE_PROMPT.md` (rewritten for Phase 3 alongside this report).
