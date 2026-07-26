@@ -10,5 +10,6 @@ router.use('/notifications', require('../../modules/notifications/routes'));
 router.use('/impersonation', require('../../modules/impersonation/routes'));
 router.use('/crm', require('../../modules/crm/routes'));
 router.use('/public', require('../../modules/public/routes'));
+router.use('/billing', require('../../modules/billing/routes'));
 
 module.exports = router;

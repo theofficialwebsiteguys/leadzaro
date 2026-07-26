@@ -8,6 +8,7 @@ const mergeController = require('./mergeController');
 const dashboardController = require('./dashboardController');
 const websiteAuditController = require('./websiteAuditController');
 const enrichmentController = require('./enrichmentController');
+const billingController = require('../billing/billingController');
 
 // Public: a shared audit report link must be viewable without being
 // logged in. Mounted before the authenticate/resolveContext gate below,
@@ -55,5 +56,14 @@ router.post('/opportunities/:id/website-audit/rotate-link', requirePermission('c
 
 router.get('/opportunities/:id/enrichment', requirePermission('leads.read'), enrichmentController.getForOpportunity);
 router.post('/opportunities/:id/enrich', requirePermission('crm.manage_pipeline'), enrichmentController.enrich);
+
+router.get('/opportunities/:id/payment-links', requirePermission('leads.read'), billingController.listPaymentLinks);
+router.post('/opportunities/:id/payment-links', requirePermission('crm.manage_pipeline'), [
+  body('servicePlanId').notEmpty(),
+  body('addOnServicePlanIds').optional().isArray(),
+], validate, billingController.createPaymentLink);
+router.post('/opportunities/:id/convert', requirePermission('crm.manage_pipeline'), [
+  body('servicePlanId').optional().isString(),
+], validate, billingController.manualConvert);
 
 module.exports = router;

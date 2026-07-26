@@ -54,6 +54,15 @@ function validateEnv() {
     errors.push('SESSION_COOKIE_SECURE must not be disabled in production.');
   }
 
+  const stripeProvider = process.env.STRIPE_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock');
+  if (stripeProvider === 'live') {
+    const stripeKey = process.env.STRIPE_SECRET_KEY || '';
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
+    if (KNOWN_PLACEHOLDER_VALUES.has(stripeKey) || !stripeKey || KNOWN_PLACEHOLDER_VALUES.has(webhookSecret) || !webhookSecret) {
+      errors.push('STRIPE_PROVIDER=live but STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET are missing or still placeholder values.');
+    }
+  }
+
   if (warnings.length) {
     for (const w of warnings) {
       // eslint-disable-next-line no-console
@@ -104,6 +113,15 @@ const env = {
   // real sales team as if it came from a real provider would be worse
   // than showing nothing.
   ENRICHMENT_PROVIDER: process.env.ENRICHMENT_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
+
+  // No real Stripe credentials exist yet. Same reasoning as
+  // ENRICHMENT_PROVIDER: mock in dev (a full internal workflow to build
+  // and test against) but disabled in production unless explicitly
+  // opted into — never process a real payment against a placeholder
+  // key, and never silently pretend a payment succeeded.
+  STRIPE_PROVIDER: process.env.STRIPE_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '',
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
 };
 
 module.exports = { env, validateEnv };

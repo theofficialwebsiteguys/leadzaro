@@ -90,6 +90,28 @@
         </div>
       }
     </div>
+
+    @if (needsAttention().length > 0) {
+      <div class="card mb-4">
+        <div class="card-header"><h3>Billing — Needs Attention</h3></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Reason</th><th>Source</th><th>When</th></tr>
+            </thead>
+            <tbody>
+              @for (item of needsAttention(); track item.id) {
+                <tr>
+                  <td class="text-sm">{{ item.failureReason }}</td>
+                  <td class="text-sm text-muted">{{ item.source }}</td>
+                  <td class="text-sm text-muted">{{ item.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
   }
 
   @if (actionMessage()) {
@@ -277,6 +299,9 @@
                       <button class="btn btn-ghost btn-sm" (click)="toggleEnrichment(opp)">
                         {{ enrichingId() === opp.id ? 'Hide Enrich' : 'Enrich' }}
                       </button>
+                      <button class="btn btn-ghost btn-sm" *hasPermission="'crm.manage_pipeline'" (click)="toggleBilling(opp)">
+                        {{ billingId() === opp.id ? 'Hide Billing' : 'Billing' }}
+                      </button>
                       <button class="btn btn-ghost btn-sm danger-btn" *hasPermission="['leads.archive', 'crm.manage_pipeline']" (click)="archive(opp)" title="Archive opportunity">
                         <lz-icon name="x" [size]="13" />
                       </button>
@@ -362,6 +387,44 @@
                           <button class="btn btn-ghost btn-sm" *hasPermission="'crm.manage_pipeline'" (click)="requestEnrichment(opp)">Refresh</button>
                         </div>
                       }
+                    }
+                  </td>
+                </tr>
+              }
+              @if (billingId() === opp.id) {
+                <tr class="audit-row">
+                  <td colspan="6">
+                    @if (billingLoading()) {
+                      <div class="loading-state" style="padding:20px 0"><div class="spinner spinner-sm"></div><span>Loading billing…</span></div>
+                    } @else {
+                      <div class="audit-panel">
+                        @if (paymentLinks().length > 0) {
+                          <ul class="audit-checks">
+                            @for (link of paymentLinks(); track link.id) {
+                              <li>
+                                <span class="font-medium">{{ link.servicePlan?.name }}</span>
+                                <span class="badge badge-new">{{ link.status }}</span>
+                                @if (link.stripePaymentLinkUrl) {
+                                  <button class="btn btn-ghost btn-sm" (click)="copyPaymentLink(link.stripePaymentLinkUrl)">Copy Link</button>
+                                }
+                              </li>
+                            }
+                          </ul>
+                        } @else {
+                          <p class="text-sm text-muted">No payment links yet for this opportunity.</p>
+                        }
+
+                        <div class="billing-actions" *hasPermission="'crm.manage_pipeline'">
+                          <select class="form-select" [(ngModel)]="selectedServicePlanId" aria-label="Service plan">
+                            <option value="">Choose a service plan…</option>
+                            @for (plan of servicePlans(); track plan.id) {
+                              <option [value]="plan.id">{{ plan.name }} ({{ plan.priceType === 'recurring' ? '$' + (plan.amountCents / 100) + '/' + plan.billingInterval : '$' + (plan.amountCents / 100) }})</option>
+                            }
+                          </select>
+                          <button class="btn btn-primary btn-sm" [disabled]="!selectedServicePlanId" (click)="createPaymentLink(opp)">Create Payment Link</button>
+                          <button class="btn btn-ghost btn-sm" (click)="convertToClient(opp)">Convert to Client</button>
+                        </div>
+                      </div>
                     }
                   </td>
                 </tr>

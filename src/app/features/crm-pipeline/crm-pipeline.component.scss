@@ -41,6 +41,15 @@
   .form-control { max-width: 340px; }
 }
 
+.billing-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+
+  .form-select { max-width: 320px; }
+}
+
 /* ── Pipeline Overview (KPIs + stage/team breakdown) ─────────────────────── */
 .kpi-grid {
   display: grid;

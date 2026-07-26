@@ -15,6 +15,7 @@ const outreachRoutes = require('./routes/outreach');
 const dashboardRoutes = require('./routes/dashboard');
 const subscriptionRoutes = require('./routes/subscriptions');
 const v1Routes = require('./routes/v1');
+const { handleStripeWebhook } = require('./modules/billing/webhookController');
 
 const app = express();
 
@@ -27,6 +28,12 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Organization-Id'],
 }));
+
+// Stripe webhook signature verification needs the exact raw bytes it
+// signed — mounted here, before the global JSON body parser below, with
+// its own express.raw() so req.body stays an unparsed Buffer for this
+// one route only. No auth: the signature itself is the authorization.
+app.post('/api/v1/billing/webhooks/stripe', express.raw({ type: 'application/json' }), handleStripeWebhook);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));

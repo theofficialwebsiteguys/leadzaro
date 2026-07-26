@@ -223,4 +223,39 @@ describe('CRM duplicate detection and merge', () => {
       (g) => g.opportunities.some((o) => o.id === oppA1.opportunity.id || o.id === oppA2.opportunity.id)
     )).toBe(false);
   });
+
+  test('merge/preview/undo-merge refuse to touch an opportunity whose organization is no longer a prospect (Phase 3 conversion guard)', async () => {
+    const org = await createOrganization(sequelize.models, { type: 'agency' });
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_manager'] });
+    const login = await loginAs(app, user.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const winner = await createOpportunity(auth, 'Converted Client Winner', 'convWin');
+    const loser = await createOpportunity(auth, 'Converted Client Loser', 'convLose');
+
+    // Simulate a completed Phase 3 conversion directly (the conversion
+    // service is a separate slice) — the winner's organization is no
+    // longer a prospect.
+    const { Organization } = sequelize.models;
+    await Organization.update({ type: 'client' }, { where: { id: winner.organization.id } });
+
+    const preview = await auth(request(app).get('/api/v1/crm/merge/preview').query({
+      winnerId: winner.opportunity.id, loserId: loser.opportunity.id,
+    }));
+    expect(preview.status).toBe(422);
+
+    const merge = await auth(request(app).post('/api/v1/crm/merge').send({
+      winnerId: winner.opportunity.id, loserId: loser.opportunity.id,
+    }));
+    expect(merge.status).toBe(422);
+
+    // And the reverse direction: loser's organization converted instead.
+    const winner2 = await createOpportunity(auth, 'Second Winner', 'convWin2');
+    const loser2 = await createOpportunity(auth, 'Second Loser Converted', 'convLose2');
+    await Organization.update({ type: 'client' }, { where: { id: loser2.organization.id } });
+    const merge2 = await auth(request(app).post('/api/v1/crm/merge').send({
+      winnerId: winner2.opportunity.id, loserId: loser2.opportunity.id,
+    }));
+    expect(merge2.status).toBe(422);
+  });
 });

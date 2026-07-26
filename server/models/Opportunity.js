@@ -83,6 +83,8 @@ module.exports = (sequelize) => {
     Opportunity.hasOne(models.WebsiteAudit, { foreignKey: 'opportunityId', as: 'websiteAudit' });
     Opportunity.hasOne(models.InboundSubmission, { foreignKey: 'opportunityId', as: 'inboundSubmission' });
     Opportunity.hasOne(models.Enrichment, { foreignKey: 'opportunityId', as: 'enrichment' });
+    Opportunity.hasMany(models.PaymentLinkRequest, { foreignKey: 'opportunityId', as: 'paymentLinkRequests' });
+    Opportunity.hasMany(models.ConversionAttempt, { foreignKey: 'opportunityId', as: 'conversionAttempts' });
   };
 
   return Opportunity;

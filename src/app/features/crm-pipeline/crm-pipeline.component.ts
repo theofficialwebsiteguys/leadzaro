@@ -3,11 +3,13 @@ import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { CrmService } from '../../core/services/crm.service';
 import { MembershipService } from '../../core/services/membership.service';
+import { BillingService } from '../../core/services/billing.service';
 import { AuthService } from '../../core/services/auth.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
 import {
   DuplicateGroup, Enrichment, Opportunity, PIPELINE_STAGES, PipelineSummary, WebsiteAudit,
 } from '../../core/models/crm.model';
+import { ConversionAttempt, PaymentLinkRequest, ServicePlan } from '../../core/models/billing.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 import { IconComponent } from '../../shared/icon/icon.component';
@@ -22,6 +24,7 @@ import { IconComponent } from '../../shared/icon/icon.component';
 export class CrmPipelineComponent implements OnInit {
   private readonly crm = inject(CrmService);
   private readonly membershipService = inject(MembershipService);
+  private readonly billing = inject(BillingService);
   readonly auth = inject(AuthService);
   readonly org = inject(OrganizationContextService);
 
@@ -70,12 +73,23 @@ export class CrmPipelineComponent implements OnInit {
   enrichmentData = signal<Enrichment | null>(null);
   enrichmentNotRequested = signal(false);
 
+  billingId = signal<string | null>(null);
+  billingLoading = signal(false);
+  servicePlans = signal<ServicePlan[]>([]);
+  paymentLinks = signal<PaymentLinkRequest[]>([]);
+  selectedServicePlanId = '';
+  needsAttention = signal<ConversionAttempt[]>([]);
+
   ngOnInit() {
     this.loadOpportunities();
     this.membershipService.list().subscribe((res) => {
       this.members.set(res.data.memberships.filter((m) => m.membershipType === 'employee' && m.status === 'active'));
     });
     this.crm.getDashboardSummary().subscribe((res) => this.summary.set(res.data));
+    this.billing.listServicePlans().subscribe((res) => this.servicePlans.set(res.data.servicePlans));
+    if (this.org.hasPermission('leads.assign')) {
+      this.billing.listConversionAttempts('needs_attention').subscribe((res) => this.needsAttention.set(res.data.conversionAttempts));
+    }
   }
 
   maxStageCount(): number {
@@ -346,6 +360,60 @@ export class CrmPipelineComponent implements OnInit {
         this.actionMessage.set(err.error?.message || 'Failed to request enrichment.');
       },
     });
+  }
+
+  toggleBilling(opp: Opportunity) {
+    if (this.billingId() === opp.id) {
+      this.billingId.set(null);
+      return;
+    }
+    this.billingId.set(opp.id);
+    this.paymentLinks.set([]);
+    this.selectedServicePlanId = '';
+    this.billingLoading.set(true);
+    this.billing.listPaymentLinks(opp.id).subscribe({
+      next: (res) => {
+        this.paymentLinks.set(res.data.paymentLinkRequests);
+        this.billingLoading.set(false);
+      },
+      error: (err) => {
+        this.billingLoading.set(false);
+        this.actionMessage.set(err.error?.message || 'Failed to load payment links.');
+      },
+    });
+  }
+
+  createPaymentLink(opp: Opportunity) {
+    if (!this.selectedServicePlanId) return;
+    this.billingLoading.set(true);
+    this.billing.createPaymentLink(opp.id, this.selectedServicePlanId).subscribe({
+      next: (res) => {
+        this.paymentLinks.set([res.data.paymentLinkRequest, ...this.paymentLinks()]);
+        this.billingLoading.set(false);
+      },
+      error: (err) => {
+        this.billingLoading.set(false);
+        this.actionMessage.set(err.error?.message || 'Failed to create payment link.');
+      },
+    });
+  }
+
+  convertToClient(opp: Opportunity) {
+    if (!confirm(`Convert "${opp.organization?.name}" to a client? This marks the opportunity Closed Won and sets up billing.`)) return;
+    this.billing.convertToClient(opp.id, this.selectedServicePlanId || undefined).subscribe({
+      next: (res) => {
+        this.actionMessage.set(res.data.alreadyConverted ? 'This opportunity was already converted.' : 'Converted to client.');
+        this.replaceOpportunity({ ...opp, stage: 'Closed Won' });
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to convert to client.'),
+    });
+  }
+
+  copyPaymentLink(url: string) {
+    navigator.clipboard?.writeText(url).then(
+      () => this.actionMessage.set('Payment link copied to clipboard.'),
+      () => this.actionMessage.set('Could not copy automatically — select and copy the link manually.')
+    );
   }
 
   private replaceOpportunity(updated: Opportunity) {

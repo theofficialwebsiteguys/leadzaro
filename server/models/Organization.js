@@ -71,6 +71,7 @@ module.exports = (sequelize) => {
     Organization.hasMany(models.Opportunity, { foreignKey: 'organizationId', as: 'opportunities' });
     Organization.hasMany(models.Contact, { foreignKey: 'organizationId', as: 'contacts' });
     Organization.hasMany(models.Location, { foreignKey: 'organizationId', as: 'locations' });
+    Organization.hasOne(models.BillingAccount, { foreignKey: 'organizationId', as: 'billingAccount' });
   };
 
   return Organization;

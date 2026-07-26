@@ -30,6 +30,13 @@ const WebsiteAudit = require('./WebsiteAudit')(sequelize);
 const InboundSubmission = require('./InboundSubmission')(sequelize);
 const Enrichment = require('./Enrichment')(sequelize);
 
+const ServicePlan = require('./ServicePlan')(sequelize);
+const WebhookEvent = require('./WebhookEvent')(sequelize);
+const PaymentLinkRequest = require('./PaymentLinkRequest')(sequelize);
+const ConversionAttempt = require('./ConversionAttempt')(sequelize);
+const BillingAccount = require('./BillingAccount')(sequelize);
+const Subscription = require('./Subscription')(sequelize);
+
 const models = {
   User,
   Lead,
@@ -58,6 +65,12 @@ const models = {
   WebsiteAudit,
   InboundSubmission,
   Enrichment,
+  ServicePlan,
+  WebhookEvent,
+  PaymentLinkRequest,
+  ConversionAttempt,
+  BillingAccount,
+  Subscription,
 };
 
 // Run associations

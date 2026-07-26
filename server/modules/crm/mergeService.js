@@ -70,6 +70,12 @@ async function previewMerge(winnerId, loserId, agencyOrganizationId) {
   if (winner.archivedAt) throw invalid('Cannot merge into an archived opportunity', 422);
   if (loser.mergedIntoOpportunityId) throw invalid('That opportunity has already been merged into another one', 409);
   if (loser.archivedAt) throw invalid('This opportunity is already archived', 422);
+  // Merge is a prospect-deduplication tool. Once an organization has
+  // converted to a real client (Phase 3), nothing about "merge" should
+  // be able to move Contacts/Locations onto or off of it, or archive the
+  // opportunity that represents a completed conversion.
+  if (winner.organization.type !== 'prospect') throw invalid('Cannot merge into an opportunity whose organization is no longer a prospect', 422);
+  if (loser.organization.type !== 'prospect') throw invalid('Cannot merge an opportunity whose organization is no longer a prospect', 422);
 
   const [winnerContacts, loserContacts, winnerLocations, loserLocations] = await Promise.all([
     Contact.findAll({ where: { organizationId: winner.organizationId, archivedAt: null, deletedAt: null } }),
@@ -146,6 +152,10 @@ async function merge(winnerId, loserId, agencyOrganizationId, actorUserId, reaso
 async function undoMerge(loserId, agencyOrganizationId, actorUserId) {
   const loser = await getActiveOpportunity(loserId, agencyOrganizationId);
   if (!loser.mergedIntoOpportunityId) throw invalid('This opportunity was not merged into another one');
+  if (loser.organization.type !== 'prospect') throw invalid('Cannot undo a merge whose organization is no longer a prospect', 422);
+
+  const winner = await getActiveOpportunity(loser.mergedIntoOpportunityId, agencyOrganizationId);
+  if (winner.organization.type !== 'prospect') throw invalid('Cannot move Contacts/Locations off an organization that is no longer a prospect', 422);
 
   const mergeEntry = await AuditLog.findOne({
     where: { action: 'opportunity.merged', targetId: loser.id },
