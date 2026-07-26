@@ -11,5 +11,6 @@ router.use('/impersonation', require('../../modules/impersonation/routes'));
 router.use('/crm', require('../../modules/crm/routes'));
 router.use('/public', require('../../modules/public/routes'));
 router.use('/billing', require('../../modules/billing/routes'));
+router.use('/projects', require('../../modules/projects/routes'));
 
 module.exports = router;

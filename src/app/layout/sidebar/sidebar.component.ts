@@ -30,6 +30,7 @@ export class SidebarComponent implements OnInit {
     { label: 'Search Leads', icon: 'search',        route: '/app/search',       permission: 'leads.search' },
     { label: 'Saved Leads',  icon: 'leads',          route: '/app/leads',        permission: 'leads.read' },
     { label: 'Pipeline',     icon: 'funnel',         route: '/app/pipeline',     permission: 'leads.read' },
+    { label: 'Projects',     icon: 'folder',         route: '/app/projects',     permission: 'projects.view' },
     { label: 'Outreach',     icon: 'outreach',       route: '/app/outreach',     permission: 'outreach.read' },
     { label: 'Subscription', icon: 'subscription',   route: '/app/subscription' },
     { label: 'Settings',     icon: 'settings',       route: '/app/settings' },

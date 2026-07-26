@@ -80,6 +80,22 @@ test('migrations apply cleanly to an empty database', async () => {
 
     const { rows: roleCount } = await client.query('SELECT COUNT(*) FROM "Roles"');
     expect(Number(roleCount[0].count)).toBeGreaterThanOrEqual(15);
+
+    // Phase 4's opening backfill migration (20260727120002): the seeded
+    // demo-client organization predates Phase 3 and has no
+    // ConversionAttempt at all — the critical correction an independent
+    // review required was that Project.agencyOrganizationId must still
+    // come from Organization.managingAgencyOrganizationId directly, not
+    // be left null because no ConversionAttempt exists to source it from.
+    const { rows: demoProjectRows } = await client.query(`
+      SELECT p."agencyOrganizationId", p."sourceConversionAttemptId", o."managingAgencyOrganizationId"
+      FROM "Projects" p JOIN "Organizations" o ON o.id = p."organizationId"
+      WHERE o.slug = 'demo-client'
+    `);
+    expect(demoProjectRows).toHaveLength(1);
+    expect(demoProjectRows[0].agencyOrganizationId).not.toBeNull();
+    expect(demoProjectRows[0].agencyOrganizationId).toBe(demoProjectRows[0].managingAgencyOrganizationId);
+    expect(demoProjectRows[0].sourceConversionAttemptId).toBeNull();
   } finally {
     await client.end();
   }

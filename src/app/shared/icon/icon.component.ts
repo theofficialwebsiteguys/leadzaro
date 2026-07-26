@@ -127,6 +127,9 @@ import { Component, input } from '@angular/core';
           <polyline points="17 8 12 3 7 8"/>
           <line x1="12" y1="3" x2="12" y2="15"/>
         }
+        @case ('folder') {
+          <path d="M4 4h5l2 3h9a1 1 0 0 1 1 1v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
+        }
         @default {
           <circle cx="12" cy="12" r="10"/>
         }

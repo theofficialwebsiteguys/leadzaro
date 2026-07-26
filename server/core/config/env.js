@@ -18,29 +18,30 @@ const KNOWN_PLACEHOLDER_VALUES = new Set([
 ]);
 
 /**
- * Fails fast in production when required configuration is missing or is
- * still a known development/placeholder value. In non-production
- * environments this only warns, so local/dev setup is never blocked.
+ * Each check appends to `errors`/`warnings` rather than throwing
+ * directly — kept as small, independent functions (one per concern) so
+ * this file's overall cognitive complexity doesn't keep growing every
+ * time a new external-service provider is added (Phase 4 added two;
+ * Phases 5-8 will add several more each).
  */
-function validateEnv() {
-  const errors = [];
-  const warnings = [];
-
+function checkCoreSecrets(errors, warnings) {
   const jwtSecret = process.env.JWT_SECRET || '';
   if (KNOWN_INSECURE_DEFAULTS.has(jwtSecret) || jwtSecret.length < 32) {
     const msg = 'JWT_SECRET is missing, too short, or a known development default.';
-    IS_PRODUCTION ? errors.push(msg) : warnings.push(msg);
+    (IS_PRODUCTION ? errors : warnings).push(msg);
   }
 
   if (!process.env.DB_PASS || process.env.DB_PASS === 'leadzaro_pass') {
     const msg = 'DB_PASS is missing or the known local-development default.';
-    IS_PRODUCTION ? errors.push(msg) : warnings.push(msg);
+    (IS_PRODUCTION ? errors : warnings).push(msg);
   }
 
   if (!process.env.DB_NAME || !process.env.DB_USER || !process.env.DB_HOST) {
     errors.push('DB_NAME, DB_USER, and DB_HOST are all required.');
   }
+}
 
+function checkProductionHardening(errors, warnings) {
   const googleKey = process.env.GOOGLE_PLACES_API_KEY || '';
   if (IS_PRODUCTION && (KNOWN_PLACEHOLDER_VALUES.has(googleKey) || !googleKey)) {
     warnings.push('GOOGLE_PLACES_API_KEY is not configured; lead search will fall back to demo data.');
@@ -53,15 +54,46 @@ function validateEnv() {
   if (IS_PRODUCTION && process.env.SESSION_COOKIE_SECURE === 'false') {
     errors.push('SESSION_COOKIE_SECURE must not be disabled in production.');
   }
+}
 
-  const stripeProvider = process.env.STRIPE_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock');
-  if (stripeProvider === 'live') {
-    const stripeKey = process.env.STRIPE_SECRET_KEY || '';
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
-    if (KNOWN_PLACEHOLDER_VALUES.has(stripeKey) || !stripeKey || KNOWN_PLACEHOLDER_VALUES.has(webhookSecret) || !webhookSecret) {
-      errors.push('STRIPE_PROVIDER=live but STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET are missing or still placeholder values.');
-    }
+/**
+ * A live-mode external-service provider whose required credential env
+ * vars are missing/placeholder is a production-blocking misconfiguration
+ * (never silently fall back to mock/disabled once an operator has
+ * explicitly asked for 'live'). One call per provider, added here as
+ * each phase wires one up — keeps `validateEnv` itself a flat, short list
+ * instead of one branch per provider growing its complexity indefinitely.
+ */
+function checkLiveProviderCredentials(errors, {
+  providerEnvVar, defaultProvider, requiredVars,
+}) {
+  const provider = process.env[providerEnvVar] || defaultProvider;
+  if (provider !== 'live') return;
+  const missing = requiredVars.filter((name) => {
+    const value = process.env[name] || '';
+    return !value || KNOWN_PLACEHOLDER_VALUES.has(value);
+  });
+  if (missing.length) {
+    errors.push(`${providerEnvVar}=live but ${missing.join('/')} ${missing.length > 1 ? 'are' : 'is'} missing or still a placeholder value.`);
   }
+}
+
+/**
+ * Fails fast in production when required configuration is missing or is
+ * still a known development/placeholder value. In non-production
+ * environments this only warns, so local/dev setup is never blocked.
+ */
+function validateEnv() {
+  const errors = [];
+  const warnings = [];
+
+  checkCoreSecrets(errors, warnings);
+  checkProductionHardening(errors, warnings);
+
+  const defaultProvider = IS_PRODUCTION ? 'disabled' : 'mock';
+  checkLiveProviderCredentials(errors, { providerEnvVar: 'STRIPE_PROVIDER', defaultProvider, requiredVars: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'] });
+  checkLiveProviderCredentials(errors, { providerEnvVar: 'GOOGLE_CALENDAR_PROVIDER', defaultProvider, requiredVars: ['GOOGLE_CALENDAR_CREDENTIALS_JSON'] });
+  checkLiveProviderCredentials(errors, { providerEnvVar: 'STORAGE_PROVIDER', defaultProvider, requiredVars: ['GCS_CREDENTIALS_JSON', 'GCS_BUCKET_NAME'] });
 
   if (warnings.length) {
     for (const w of warnings) {
@@ -122,6 +154,17 @@ const env = {
   STRIPE_PROVIDER: process.env.STRIPE_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '',
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
+
+  // No real Google Calendar/Cloud Storage credentials exist yet. Same
+  // reasoning as ENRICHMENT_PROVIDER/STRIPE_PROVIDER: mock in dev, but
+  // disabled in production unless explicitly opted into.
+  GOOGLE_CALENDAR_PROVIDER: process.env.GOOGLE_CALENDAR_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
+  GOOGLE_CALENDAR_CREDENTIALS_JSON: process.env.GOOGLE_CALENDAR_CREDENTIALS_JSON || '',
+  GOOGLE_CALENDAR_ID: process.env.GOOGLE_CALENDAR_ID || '',
+
+  STORAGE_PROVIDER: process.env.STORAGE_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
+  GCS_CREDENTIALS_JSON: process.env.GCS_CREDENTIALS_JSON || '',
+  GCS_BUCKET_NAME: process.env.GCS_BUCKET_NAME || '',
 };
 
 module.exports = { env, validateEnv };

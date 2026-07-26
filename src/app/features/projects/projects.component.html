@@ -1,0 +1,148 @@
+<div class="page">
+  <h1>Projects</h1>
+  <p class="text-muted">
+    {{ org.membership()?.membershipType === 'client' ? 'Your project with ' + org.organization()?.name : projects().length + ' project(s) across your agency' }}
+  </p>
+
+  @if (actionMessage()) {
+    <div class="alert alert-info mb-4">{{ actionMessage() }}</div>
+  }
+
+  @if (loading()) {
+    <p>Loading…</p>
+  } @else if (projects().length === 0) {
+    <div class="card"><div class="card-body">No projects yet.</div></div>
+  } @else {
+    <div class="projects-layout">
+      @if (projects().length > 1) {
+        <div class="card project-list">
+          <div class="card-header"><strong>All Projects</strong></div>
+          <div class="project-list-items">
+            @for (p of projects(); track p.id) {
+              <button class="project-list-item" [class.active]="selectedId() === p.id" (click)="select(p.id)">
+                <span class="font-medium">{{ p.organization?.name }}</span>
+                <span class="text-sm text-muted">{{ p.stage }}</span>
+              </button>
+            }
+          </div>
+        </div>
+      }
+
+      @if (selected(); as project) {
+        <div class="project-detail">
+          <div class="card mb-4">
+            <div class="card-header"><strong>{{ project.organization?.name }}</strong></div>
+            <div class="card-body">
+              <div class="detail-row"><span class="label">Stage</span><span>{{ project.stage }}</span></div>
+              <div class="detail-row">
+                <span class="label">Health</span>
+                <span class="health-badge" [class]="'health-' + project.healthStatus">{{ project.healthStatus }}</span>
+              </div>
+              @if (project.launchedAt) {
+                <div class="detail-row"><span class="label">Launched</span><span>{{ project.launchedAt | date:'MMM d, y' }}</span></div>
+              }
+            </div>
+          </div>
+
+          <div class="card mb-4" *hasPermission="'projects.change_stage'">
+            <div class="card-header"><strong>Change Stage</strong></div>
+            <div class="card-body">
+              <select [(ngModel)]="stageTarget" class="input mb-2">
+                @for (s of stages; track s) {
+                  <option [value]="s">{{ s }}</option>
+                }
+              </select>
+
+              @if (stageChecklist(); as checklist) {
+                <div class="alert alert-warning mb-2">
+                  <strong>This stage has a checklist:</strong>
+                  <ul>
+                    @for (item of checklist; track item) {
+                      <li>{{ item }}</li>
+                    }
+                  </ul>
+                  <label class="checkbox-row">
+                    <input type="checkbox" [(ngModel)]="stageConfirmed" />
+                    I've verified the checklist above
+                  </label>
+                  <input class="input mt-2" placeholder="Or provide an override reason" [(ngModel)]="stageOverrideReason" />
+                </div>
+              }
+
+              @if (stageError()) {
+                <div class="alert alert-danger mb-2">{{ stageError() }}</div>
+              }
+
+              <button class="btn btn-primary" (click)="submitStageChange()">Update Stage</button>
+            </div>
+          </div>
+
+          <div class="card mb-4" *hasPermission="'projects.manage'">
+            <div class="card-header"><strong>Health Status</strong></div>
+            <div class="card-body">
+              <select [(ngModel)]="healthTarget" class="input mb-2">
+                <option value="on_track">On Track</option>
+                <option value="at_risk">At Risk</option>
+                <option value="off_track">Off Track</option>
+              </select>
+              <button class="btn btn-secondary" (click)="submitHealthChange()">Update Health</button>
+            </div>
+          </div>
+
+          <div class="card mb-4">
+            <div class="card-header"><strong>Team</strong></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Name</th><th>Role</th><th></th></tr></thead>
+                <tbody>
+                  @for (a of assignments(); track a.id) {
+                    <tr>
+                      <td>{{ a.user?.name }}</td>
+                      <td>{{ a.roleSlot }}</td>
+                      <td>
+                        <button class="btn btn-sm" *hasPermission="'projects.manage'" (click)="removeAssignment(a.id)">Remove</button>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+
+            <div class="card-body" *hasPermission="'projects.manage'">
+              <div class="assign-form">
+                <select [(ngModel)]="newAssignmentUserId" class="input">
+                  <option value="">Select team member…</option>
+                  @for (m of members(); track m.id) {
+                    <option [value]="m.userId">{{ m.user?.name }}</option>
+                  }
+                </select>
+                <select [(ngModel)]="newAssignmentRoleSlot" class="input">
+                  <option value="">Select role…</option>
+                  @for (slot of roleSlots; track slot) {
+                    <option [value]="slot">{{ slot }}</option>
+                  }
+                </select>
+                <button class="btn btn-secondary" (click)="addAssignment()">Add</button>
+              </div>
+            </div>
+          </div>
+
+          @if (financialsLoaded()) {
+            <div class="card mb-4">
+              <div class="card-header"><strong>Financials</strong> <span class="text-sm text-muted">(agency-only)</span></div>
+              <div class="card-body">
+                <label class="field-label">Estimated Cost ($)</label>
+                <input class="input mb-2" [(ngModel)]="estimatedCostDollars" placeholder="0.00" />
+                <label class="field-label">Actual Cost ($)</label>
+                <input class="input mb-2" [(ngModel)]="actualCostDollars" placeholder="0.00" />
+                <label class="field-label">Notes</label>
+                <textarea class="input mb-2" [(ngModel)]="marginNotes" rows="2"></textarea>
+                <button class="btn btn-secondary" (click)="saveFinancials()">Save Financials</button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>

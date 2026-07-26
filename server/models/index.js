@@ -37,6 +37,10 @@ const ConversionAttempt = require('./ConversionAttempt')(sequelize);
 const BillingAccount = require('./BillingAccount')(sequelize);
 const Subscription = require('./Subscription')(sequelize);
 
+const Project = require('./Project')(sequelize);
+const ProjectAssignment = require('./ProjectAssignment')(sequelize);
+const ProjectFinancials = require('./ProjectFinancials')(sequelize);
+
 const models = {
   User,
   Lead,
@@ -71,6 +75,9 @@ const models = {
   ConversionAttempt,
   BillingAccount,
   Subscription,
+  Project,
+  ProjectAssignment,
+  ProjectFinancials,
 };
 
 // Run associations

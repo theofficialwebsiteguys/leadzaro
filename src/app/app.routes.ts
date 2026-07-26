@@ -58,6 +58,10 @@ export const routes: Routes = [
         loadComponent: () => import('./features/crm-pipeline/crm-pipeline.component').then((m) => m.CrmPipelineComponent),
       },
       {
+        path: 'projects',
+        loadComponent: () => import('./features/projects/projects.component').then((m) => m.ProjectsComponent),
+      },
+      {
         path: 'leads/:id',
         loadComponent: () => import('./features/lead-detail/lead-detail.component').then((m) => m.LeadDetailComponent),
       },

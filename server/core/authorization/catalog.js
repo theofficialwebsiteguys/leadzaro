@@ -35,6 +35,9 @@ const PERMISSIONS = [
   { key: 'impersonation.use', category: 'admin', description: 'View the app as another member (impersonation)' },
   { key: 'billing.manage_webhooks', category: 'billing', description: 'View and manually reprocess failed Stripe webhook events' },
   { key: 'billing.manage_service_plans', category: 'billing', description: 'Manage the internal service/plan catalog and its Stripe product/price mapping' },
+  { key: 'projects.view', category: 'projects', description: "View one's own client organization's project" },
+  { key: 'projects.manage', category: 'projects', description: 'Manage project assignments and settings' },
+  { key: 'projects.change_stage', category: 'projects', description: 'Change a project\'s stage, including overriding an incomplete soft-gate checklist' },
 ];
 
 const PERMISSION_KEYS = new Set(PERMISSIONS.map((p) => p.key));
@@ -94,7 +97,7 @@ const EMPLOYEE_ROLES = [
     name: 'Sales Manager',
     permissions: [...SALES_PERMISSIONS, 'leads.merge', 'audit.view'],
   },
-  { key: 'project_manager', name: 'Project Manager', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS] },
+  { key: 'project_manager', name: 'Project Manager', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'projects.manage', 'projects.change_stage'] },
   { key: 'designer', name: 'Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS] },
   { key: 'advanced_designer', name: 'Advanced Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS] },
   { key: 'developer', name: 'Developer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS] },
@@ -103,12 +106,20 @@ const EMPLOYEE_ROLES = [
 ].map((role) => ({
   ...role,
   scope: 'employee',
-  permissions: Array.from(new Set([...role.permissions, ...BASE_SELF_SERVICE_PERMISSIONS])),
+  // projects.view is granted to every employee role uniformly (§ 2d:
+  // "any active employee membership at the owning agency can read a
+  // project's internal content") — narrower controls (projects.manage,
+  // projects.change_stage) are the roles that actually differ.
+  permissions: Array.from(new Set([...role.permissions, ...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view'])),
 }));
 
-// Client roles have no module to grant permissions over yet (client portal
-// arrives in Phase 4); Phase 1 only needs them to exist so a seeded test
-// client organization/member can demonstrate the impersonation foundation.
+// Client roles existed since Phase 1 with no module to grant permissions
+// over; Phase 4 (the client portal) is that first real module — every
+// client role gets projects.view uniformly for now, matching how they
+// already uniformly get BASE_SELF_SERVICE_PERMISSIONS (finer per-role
+// distinctions, e.g. a Viewer's more limited access, are a later
+// refinement once there's an actual per-role requirement to encode, not
+// a Phase 4 requirement today).
 const CLIENT_ROLES = [
   { key: 'client_owner', name: 'Client Owner' },
   { key: 'project_contact', name: 'Project Contact' },
@@ -119,7 +130,7 @@ const CLIENT_ROLES = [
 ].map((role) => ({
   ...role,
   scope: 'client',
-  permissions: [...BASE_SELF_SERVICE_PERMISSIONS],
+  permissions: [...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view'],
 }));
 
 const ALL_ROLES = [...EMPLOYEE_ROLES, ...CLIENT_ROLES];

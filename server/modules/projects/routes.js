@@ -1,0 +1,33 @@
+'use strict';
+
+const router = require('express').Router();
+const { body } = require('express-validator');
+const { authenticate } = require('../../middleware/auth');
+const { resolveContext, requirePermission } = require('../../core/authorization/context');
+const { validate } = require('../../middleware/validate');
+const controller = require('./projectController');
+
+router.use(authenticate, resolveContext());
+
+router.get('/', requirePermission('projects.view'), controller.list);
+router.get('/:id', requirePermission('projects.view'), controller.getById);
+
+router.patch('/:id/stage', requirePermission('projects.change_stage'), [
+  body('stage').notEmpty(),
+], validate, controller.changeStage);
+
+router.patch('/:id/health', requirePermission('projects.manage'), [
+  body('healthStatus').notEmpty(),
+], validate, controller.updateHealthStatus);
+
+router.get('/:id/assignments', requirePermission('projects.view'), controller.listAssignments);
+router.post('/:id/assignments', requirePermission('projects.manage'), [
+  body('userId').notEmpty(),
+  body('roleSlot').notEmpty(),
+], validate, controller.addAssignment);
+router.delete('/:id/assignments/:assignmentId', requirePermission('projects.manage'), controller.removeAssignment);
+
+router.get('/:id/financials', requirePermission('projects.manage'), controller.getFinancials);
+router.patch('/:id/financials', requirePermission('projects.manage'), controller.updateFinancials);
+
+module.exports = router;
