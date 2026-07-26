@@ -128,6 +128,42 @@
           </div>
 
           <div class="card mb-4">
+            <div class="card-header"><strong>Messages</strong></div>
+            <div class="channels-layout">
+              <div class="channel-list">
+                @for (c of channels(); track c.id) {
+                  <button class="channel-item" [class.active]="selectedChannelId() === c.id" (click)="selectChannel(c.id)">
+                    {{ c.name }}
+                    @if (c.visibility === 'internal') { <span class="text-sm text-muted">(internal)</span> }
+                  </button>
+                }
+              </div>
+              <div class="channel-messages">
+                <div class="message-list">
+                  @for (m of messages(); track m.id) {
+                    <div class="message">
+                      <div class="message-meta">
+                        <strong>{{ m.author?.name }}</strong>
+                        <span class="text-sm text-muted">{{ m.createdAt | date:'MMM d, h:mm a' }}</span>
+                      </div>
+                      <div>{{ m.body }}</div>
+                      @if (!m.convertedToTaskId) {
+                        <button class="btn btn-sm" *hasPermission="'tasks.manage'" (click)="convertMessageToTask(m.id)">Convert to Task</button>
+                      } @else {
+                        <span class="text-sm text-muted">Converted to a task</span>
+                      }
+                    </div>
+                  }
+                </div>
+                <div class="message-compose" *hasPermission="'messages.post'">
+                  <textarea class="input" rows="2" placeholder="Write a message…" [(ngModel)]="newMessageBody"></textarea>
+                  <button class="btn btn-primary" (click)="postMessage()">Send</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card mb-4">
             <div class="card-header">
               <strong>Tasks</strong>
               <div class="view-toggle">

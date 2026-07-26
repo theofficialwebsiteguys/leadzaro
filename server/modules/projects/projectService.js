@@ -1,12 +1,12 @@
 'use strict';
 
 const {
-  ProjectAssignment, User, Project,
+  ProjectAssignment, User, Project, ProjectChannel, Organization,
 } = require('../../models');
 const {
-  listProjectsForRequester, getProjectByIdForRequester, getProjectFinancials, findOrCreateProjectFinancials,
+  listProjectsForRequester, getProjectByIdForRequester, getProjectFinancials, findOrCreateProjectFinancials, findProjectByOrganizationIdSystemLevel,
 } = require('../../core/authorization/clientVisibleModels');
-const { STAGES, STAGE_CHECKLISTS } = require('../../core/projects/projectCatalog');
+const { STAGES, STAGE_CHECKLISTS, CHANNEL_DEFAULTS } = require('../../core/projects/projectCatalog');
 
 function invalid(message, statusCode = 422) {
   const err = new Error(message);
@@ -123,8 +123,64 @@ async function updateFinancials({
   return financials;
 }
 
+/**
+ * Closes the loop Phase 3 deliberately left open (see docs/leadzaro/
+ * phase-3-completion-report.md "Legacy/architecture boundary" and
+ * current-phase-plan.md § 2a): the Phase-4-opening migration backfilled
+ * a Project for every *pre-existing* client organization, but does
+ * nothing for a conversion that happens from here forward — Phase 3's
+ * own conversion code has no knowledge that Project exists. Called from
+ * both server/modules/billing/webhookService.js and billingController.js
+ * (the exact two places `triggerClientInvitationIfNew` is already
+ * called from) immediately after every genuinely-new conversion, so
+ * every future client gets a Project + its default channel set exactly
+ * once, same as every pre-existing one already got via the migration.
+ *
+ * No requester context exists at this call site (a webhook has no
+ * HTTP session; the manual-conversion controller's actor is the
+ * *sales* rep converting the deal, not someone acting within Projects
+ * module authorization) — hence `findProjectByOrganizationIdSystemLevel`
+ * rather than the normal per-requester lookup.
+ */
+async function ensureProjectForConversion(conversionResult) {
+  if (conversionResult.alreadyConverted) return null;
+  const { conversionAttempt } = conversionResult;
+  const organizationId = conversionAttempt.resultingClientOrganizationId;
+
+  const existing = await findProjectByOrganizationIdSystemLevel(organizationId);
+  if (existing) return existing;
+
+  const organization = await Organization.findByPk(organizationId);
+  if (!organization?.managingAgencyOrganizationId) {
+    throw invalid(`Organization ${organizationId} has no managingAgencyOrganizationId; refusing to create an untenanted Project`, 500);
+  }
+
+  const project = await Project.create({
+    organizationId,
+    agencyOrganizationId: organization.managingAgencyOrganizationId,
+    ownerUserId: conversionAttempt.createdByUserId || null,
+    sourceConversionAttemptId: conversionAttempt.id,
+  });
+
+  await ProjectChannel.bulkCreate(CHANNEL_DEFAULTS.map((channel) => ({
+    projectId: project.id,
+    organizationId,
+    agencyOrganizationId: organization.managingAgencyOrganizationId,
+    key: channel.key,
+    name: channel.name,
+    visibility: channel.visibility,
+  })));
+
+  if (conversionAttempt.projectSetupPending) {
+    await conversionAttempt.update({ projectSetupPending: false });
+  }
+
+  return project;
+}
+
 module.exports = {
   listProjects,
+  ensureProjectForConversion,
   getProject,
   changeStage,
   updateHealthStatus,

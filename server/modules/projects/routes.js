@@ -31,5 +31,6 @@ router.get('/:id/financials', requirePermission('projects.manage'), controller.g
 router.patch('/:id/financials', requirePermission('projects.manage'), controller.updateFinancials);
 
 router.use('/:projectId/tasks', require('../tasks/routes'));
+router.use('/:projectId/channels', require('../messaging/routes'));
 
 module.exports = router;

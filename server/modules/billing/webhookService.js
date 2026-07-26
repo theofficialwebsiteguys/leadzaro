@@ -4,6 +4,7 @@ const { WebhookEvent, PaymentLinkRequest, Subscription } = require('../../models
 const { getStripeAdapter } = require('../../core/integrations/stripe/stripeAdapter');
 const { convertOpportunityToClient, recordNeedsAttention } = require('./conversionService');
 const { triggerClientInvitationIfNew } = require('./clientInvitationService');
+const { ensureProjectForConversion } = require('../projects/projectService');
 
 const POSTGRES_UNIQUE_VIOLATION = '23505';
 
@@ -181,6 +182,7 @@ async function handleCheckoutCompleted(event, webhookEvent) {
     }
   }
   await triggerClientInvitationIfNew(result);
+  await ensureProjectForConversion(result);
 }
 
 /**

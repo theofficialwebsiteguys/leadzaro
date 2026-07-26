@@ -3,12 +3,14 @@ import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { ProjectService } from '../../core/services/project.service';
 import { TaskService } from '../../core/services/task.service';
+import { MessagingService } from '../../core/services/messaging.service';
 import { MembershipService } from '../../core/services/membership.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
 import {
   Project, ProjectAssignment, ProjectFinancials, PROJECT_STAGES, PROJECT_ROLE_SLOTS,
 } from '../../core/models/project.model';
 import { Task, TASK_STATUSES, TASK_PRIORITIES } from '../../core/models/task.model';
+import { ProjectChannel, Message } from '../../core/models/message.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 
@@ -22,6 +24,7 @@ import { HasPermissionDirective } from '../../core/directives/has-permission.dir
 export class ProjectsComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly taskService = inject(TaskService);
+  private readonly messagingService = inject(MessagingService);
   private readonly membershipService = inject(MembershipService);
   readonly org = inject(OrganizationContextService);
 
@@ -40,6 +43,11 @@ export class ProjectsComponent implements OnInit {
   newTaskTitle = '';
   newTaskAssigneeUserId = '';
   newTaskIsClientVisible = false;
+
+  channels = signal<ProjectChannel[]>([]);
+  selectedChannelId = signal<string | null>(null);
+  messages = signal<Message[]>([]);
+  newMessageBody = '';
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -98,6 +106,7 @@ export class ProjectsComponent implements OnInit {
     });
     this.projectService.listAssignments(id).subscribe((res) => this.assignments.set(res.data.assignments));
     this.loadTasks(id);
+    this.loadChannels(id);
     if (this.org.hasPermission('projects.manage')) {
       this.projectService.getFinancials(id).subscribe((res) => {
         this.financials.set(res.data.financials);
@@ -190,6 +199,44 @@ export class ProjectsComponent implements OnInit {
     const id = this.selectedId();
     if (!id) return;
     this.taskService.archive(id, task.id).subscribe(() => this.loadTasks(id));
+  }
+
+  loadChannels(projectId: string) {
+    this.messagingService.listChannels(projectId).subscribe((res) => {
+      this.channels.set(res.data.channels);
+      if (res.data.channels.length > 0) {
+        const current = this.selectedChannelId();
+        const stillExists = current && res.data.channels.some((c) => c.id === current);
+        this.selectChannel(stillExists ? current! : res.data.channels[0].id);
+      }
+    });
+  }
+
+  selectChannel(channelId: string) {
+    this.selectedChannelId.set(channelId);
+    const id = this.selectedId();
+    if (!id) return;
+    this.messagingService.listMessages(id, channelId).subscribe((res) => this.messages.set(res.data.messages));
+  }
+
+  postMessage() {
+    const projectId = this.selectedId();
+    const channelId = this.selectedChannelId();
+    if (!projectId || !channelId || !this.newMessageBody.trim()) return;
+    this.messagingService.postMessage(projectId, channelId, this.newMessageBody).subscribe(() => {
+      this.newMessageBody = '';
+      this.messagingService.listMessages(projectId, channelId).subscribe((res) => this.messages.set(res.data.messages));
+    });
+  }
+
+  convertMessageToTask(messageId: string) {
+    const projectId = this.selectedId();
+    const channelId = this.selectedChannelId();
+    if (!projectId || !channelId) return;
+    this.messagingService.convertToTask(projectId, channelId, messageId).subscribe(() => {
+      this.loadTasks(projectId);
+      this.actionMessage.set('Message converted to a task');
+    });
   }
 
   saveFinancials() {

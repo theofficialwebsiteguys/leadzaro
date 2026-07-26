@@ -47,4 +47,27 @@ const STAGE_CHECKLISTS = {
   'Ongoing Support': ['Launch checklist fully complete'],
 };
 
-module.exports = { STAGES, STAGE_CHECKLISTS };
+/**
+ * Default channels seeded for every Project (architecture § 11): the 7
+ * named collaboration channels, all `visibility: 'client'` (both the
+ * agency and the client organization participate), plus one additional
+ * employee-only channel — "employees also have client-hidden project
+ * channels and notes." Shared by both the one-time backfill migrations
+ * and `projectService.ensureProjectForConversion` (the ongoing hook for
+ * every conversion from here forward), so the default set is defined
+ * exactly once.
+ */
+const CHANNEL_DEFAULTS = [
+  { key: 'general', name: 'General Project', visibility: 'client' },
+  { key: 'content', name: 'Content and Assets', visibility: 'client' },
+  { key: 'design', name: 'Design Feedback', visibility: 'client' },
+  { key: 'dev', name: 'Development Questions', visibility: 'client' },
+  { key: 'billing', name: 'Billing', visibility: 'client' },
+  { key: 'launch', name: 'Launch and Domains', visibility: 'client' },
+  { key: 'support', name: 'Ongoing Support', visibility: 'client' },
+  { key: 'internal', name: 'Internal Notes', visibility: 'internal' },
+];
+
+module.exports = {
+  STAGES, STAGE_CHECKLISTS, CHANNEL_DEFAULTS,
+};

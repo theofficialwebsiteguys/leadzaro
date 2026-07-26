@@ -42,6 +42,8 @@ const ProjectAssignment = require('./ProjectAssignment')(sequelize);
 const ProjectFinancials = require('./ProjectFinancials')(sequelize);
 const Task = require('./Task')(sequelize);
 const TimeEntry = require('./TimeEntry')(sequelize);
+const ProjectChannel = require('./ProjectChannel')(sequelize);
+const Message = require('./Message')(sequelize);
 
 const models = {
   User,
@@ -82,6 +84,8 @@ const models = {
   ProjectFinancials,
   Task,
   TimeEntry,
+  ProjectChannel,
+  Message,
 };
 
 // Run associations

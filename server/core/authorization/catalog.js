@@ -39,6 +39,7 @@ const PERMISSIONS = [
   { key: 'projects.manage', category: 'projects', description: 'Manage project assignments and settings' },
   { key: 'projects.change_stage', category: 'projects', description: 'Change a project\'s stage, including overriding an incomplete soft-gate checklist' },
   { key: 'tasks.manage', category: 'projects', description: 'Create, update, and log time against project tasks' },
+  { key: 'messages.post', category: 'projects', description: 'Post messages in a project channel visible to the requester' },
 ];
 
 const PERMISSION_KEYS = new Set(PERMISSIONS.map((p) => p.key));
@@ -107,20 +108,21 @@ const EMPLOYEE_ROLES = [
 ].map((role) => ({
   ...role,
   scope: 'employee',
-  // projects.view is granted to every employee role uniformly (§ 2d:
-  // "any active employee membership at the owning agency can read a
-  // project's internal content") — narrower controls (projects.manage,
-  // projects.change_stage) are the roles that actually differ.
-  permissions: Array.from(new Set([...role.permissions, ...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view'])),
+  // projects.view/messages.post are granted to every employee role
+  // uniformly (§ 2d: "any active employee membership at the owning
+  // agency can read a project's internal content") — narrower controls
+  // (projects.manage, projects.change_stage, tasks.manage) are the
+  // roles that actually differ.
+  permissions: Array.from(new Set([...role.permissions, ...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view', 'messages.post'])),
 }));
 
 // Client roles existed since Phase 1 with no module to grant permissions
 // over; Phase 4 (the client portal) is that first real module — every
 // client role gets projects.view uniformly for now, matching how they
-// already uniformly get BASE_SELF_SERVICE_PERMISSIONS (finer per-role
-// distinctions, e.g. a Viewer's more limited access, are a later
-// refinement once there's an actual per-role requirement to encode, not
-// a Phase 4 requirement today).
+// already uniformly get BASE_SELF_SERVICE_PERMISSIONS. messages.post is
+// withheld from `viewer` specifically — the one finer-grained
+// distinction Phase 4 actually has a concrete need for: a role named
+// "Viewer" should not be able to post into a project's channels.
 const CLIENT_ROLES = [
   { key: 'client_owner', name: 'Client Owner' },
   { key: 'project_contact', name: 'Project Contact' },
@@ -131,7 +133,9 @@ const CLIENT_ROLES = [
 ].map((role) => ({
   ...role,
   scope: 'client',
-  permissions: [...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view'],
+  permissions: role.key === 'viewer'
+    ? [...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view']
+    : [...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view', 'messages.post'],
 }));
 
 const ALL_ROLES = [...EMPLOYEE_ROLES, ...CLIENT_ROLES];

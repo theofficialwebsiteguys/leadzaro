@@ -4,6 +4,7 @@ const paymentLinkService = require('./paymentLinkService');
 const conversionService = require('./conversionService');
 const webhookService = require('./webhookService');
 const { triggerClientInvitationIfNew } = require('./clientInvitationService');
+const { ensureProjectForConversion } = require('../projects/projectService');
 const {
   ConversionAttempt, BillingAccount, Organization, Subscription, WebhookEvent, ServicePlan,
 } = require('../../models');
@@ -113,6 +114,17 @@ async function manualConvert(req, res, next) {
       actorUserId: req.user.id,
     });
     await triggerClientInvitationIfNew(result);
+
+    // Best-effort: the conversion itself already succeeded and is real.
+    // A rep who just closed a deal should never see "conversion failed"
+    // because of a Phase 4 bookkeeping problem creating its Project —
+    // that's recorded here for investigation, not surfaced to them.
+    try {
+      await ensureProjectForConversion(result);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[billing] failed to create Project for converted opportunity ${req.params.id}:`, err.message);
+    }
 
     await recordAudit({
       organizationId: orgId, actorUserId: req.user.id, action: 'opportunity.converted_manual', targetType: 'Opportunity', targetId: req.params.id, metadata: { alreadyConverted: result.alreadyConverted }, req,
