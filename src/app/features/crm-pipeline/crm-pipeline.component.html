@@ -200,7 +200,14 @@
           <tbody>
             @for (opp of opportunities(); track opp.id) {
               <tr>
-                <td class="font-medium">{{ opp.organization?.name }}</td>
+                <td>
+                  <div class="font-medium">{{ opp.organization?.name }}</div>
+                  @if (opp.inboundSubmission; as inbound) {
+                    <div class="text-xs text-muted" [title]="'UTM: ' + (inbound.utmSource || '—') + ' / ' + (inbound.utmMedium || '—') + ' / ' + (inbound.utmCampaign || '—')">
+                      Inbound &middot; {{ inbound.landingPageSlug }}
+                    </div>
+                  }
+                </td>
                 <td>
                   @if (org.hasPermission('crm.manage_pipeline')) {
                     <div class="stage-badge-wrap" [attr.data-stage]="opp.stage">

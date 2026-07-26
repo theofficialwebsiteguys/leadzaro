@@ -1,0 +1,86 @@
+.landing-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #F8FAFF 0%, #FFFFFF 320px);
+}
+
+.landing-header {
+  padding: 24px 32px;
+}
+
+.landing-logo {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  color: var(--primary-dark, #4338CA);
+}
+
+.landing-hero {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 48px;
+  align-items: start;
+
+  @media (max-width: 860px) {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+}
+
+.landing-copy {
+  padding-top: 24px;
+
+  h1 {
+    font-size: 2.25rem;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    line-height: 1.15;
+    color: #0F172A;
+    margin-bottom: 16px;
+
+    @media (max-width: 860px) { font-size: 1.75rem; }
+  }
+}
+
+.landing-subhead {
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: #475569;
+  max-width: 480px;
+}
+
+.landing-form-card {
+  background: #fff;
+  border: 1px solid var(--border, #E2E8F0);
+  border-radius: var(--radius-xl, 16px);
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.08);
+  padding: 32px;
+
+  h2 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-bottom: 20px;
+  }
+}
+
+.landing-success {
+  text-align: center;
+  padding: 20px 0;
+
+  h2 { margin-bottom: 8px; }
+  p { color: #475569; }
+}
+
+.btn-full { width: 100%; margin-top: 8px; }
+
+/* Off-screen, never focusable by keyboard/tab — real visitors never
+   encounter this; naive form-filling bots typically fill it anyway. */
+.honeypot-field {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}

@@ -9,5 +9,6 @@ router.use('/audit', require('../../modules/audit/routes'));
 router.use('/notifications', require('../../modules/notifications/routes'));
 router.use('/impersonation', require('../../modules/impersonation/routes'));
 router.use('/crm', require('../../modules/crm/routes'));
+router.use('/public', require('../../modules/public/routes'));
 
 module.exports = router;

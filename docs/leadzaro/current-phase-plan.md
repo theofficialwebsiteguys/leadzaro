@@ -1,46 +1,44 @@
-# Phase 2 Continuation Plan — Website Audits
+# Phase 2 Continuation Plan — Public Landing Pages, Inbound Forms, UTM Attribution
 
-This overwrites the prior Phase 2 working plan (preserved in git history), which covered scoring and the sales dashboard. This document covers the next slice: item 3 from `docs/leadzaro/NEXT_PHASE_PROMPT.md`'s remaining-items list — "Website audits + shareable report."
+This overwrites the prior Phase 2 working plan (preserved in git history), which covered website audits. This document covers item 4 from `docs/leadzaro/NEXT_PHASE_PROMPT.md`'s remaining-items list — "Public landing pages + inbound forms + UTM/source attribution."
 
 ## 1. Evidence audit
 
-- No `WebsiteAudit` (or equivalent) model, table, or route existed anywhere in the codebase before this slice.
-- The roadmap's "shareable report" language directly parallels Phase 1's invitation-link mechanism (`Invitation.tokenHash`, `server/core/security/tokens.js`'s `generateRawToken`/`hashToken`) — reused verbatim rather than inventing a second token scheme.
-- `Lead` already carries `hasWebsite`, `website`, `rating`, `reviewCount`, `category` — enough to generate a genuinely useful report without needing any new data source.
+- Master architecture § 20 ("Public acquisition") lists nine distinct offers ($99/month websites, custom websites, free audit, local services, restaurants, automotive, professional services, redesigns, ongoing management) and asks that submissions record landing page, UTM parameters, ad campaign, requested service, form progress, submission, payment link, conversion, and recurring revenue.
+- Payment link/conversion/recurring-revenue are Stripe/billing concerns — explicitly Phase 3 scope, not built here. This slice covers capture and CRM funneling only.
+- `Contact` and `Opportunity` already existed from the Phase 2 foundation with no management UI — this is the first real write path for `Contact` outside of the merge feature and test fixtures.
+- `Opportunity.sourceLeadId` was already nullable ("manually-created opportunities may have none" — a comment written before this slice existed) — this is the first real use of that nullability: an inbound-form Opportunity has no canonical Google Place behind it.
 
 ## 2. Design decisions
 
-- **No live fetch of the prospect's website.** Making the server issue outbound HTTP requests to an arbitrary lead/caller-supplied URL is a real SSRF surface (internal network/cloud-metadata access) — safely defending against that (hostname/IP allowlisting, per-redirect validation, timeouts) is substantial, security-critical work of its own, not something to bolt on as a side effect of a reporting feature. Per the standing external-services rule ("build the adapter interface + a real, useful mock/rule-based mode first, don't block on a live integration"), `server/core/crm/websiteAuditor.js` generates a genuinely useful report from data already on file (has-a-website, HTTPS scheme, Google review signals) in the same `{ score, summary, checks }` shape a future live-fetch implementation would return, so callers never need to change when that lands.
-- **Regenerating an audit updates the same row and keeps the same share link working**, rather than minting a new link every time — a prospect's bookmarked/forwarded link shouldn't break just because the sales rep refreshed the report.
-- **The share token is hashed at rest** (SHA-256, same as `Invitation.tokenHash`), which means the server can never redisplay a previously-issued raw token. This creates a real, deliberately-accepted UX trade-off: if the link is lost, the only way to get a working one again is `rotate-link`, which invalidates the old one — mirroring `invitationService.resendInvitation`'s token rotation exactly.
-- **The public report route exposes only report fields** (business name, website, score, summary, checks, generated-at) — never `opportunityId`, `agencyOrganizationId`, assignee, or any other internal CRM identifier, verified by a dedicated test asserting the exact key set of the public response.
+- **One flexible landing-page component, not nine bespoke pages.** `server/core/crm/inboundCampaigns.js` / `src/app/core/models/inbound.model.ts` hold a validated reference list (slug, headline, subhead) — matching the pipeline-stage-catalog reasoning (a new campaign is a data change, not a code change). All nine offers from the architecture doc are represented as data.
+- **Always resolves to a single default agency**, not a caller-selected one — a public visitor doesn't choose which agency they're contacting. `server/core/crm/defaultAgency.js` resolves it as "the oldest active agency-type Organization" rather than hard-coding a name/id, matching CLAUDE.md's standing instruction not to hard-code The Website Guys throughout domain logic. Verified by a dedicated test that creates other agencies afterward and confirms resolution is unaffected.
+- **No canonical `Lead` for inbound submissions.** `opportunityService.createFromLead` always upserts a `Lead` (a Google Place); inbound submissions have no Google Place behind them, so a new, separate `inboundLeadService.submitInboundLead` creates the prospect Organization/Opportunity/Contact directly, with `sourceLeadId: null`.
+- **The submitted contact becomes a real `Contact` row**, not a duplicated set of fields on a new table — reusing the Contact model built (but never written to outside tests) during the CRM foundation slice.
+- **Honeypot instead of CAPTCHA.** A hidden, off-screen, `tabindex="-1"`, `aria-hidden` form field that must stay empty; if filled, the submission is silently discarded but reports the same success response, so a bot doesn't learn it was caught. Paired with a dedicated, stricter rate limiter (`publicFormLimiter`, 10/15 min) on top of the existing global one. No paid anti-spam service required for a v1, per the standing external-services rule.
+- **A gap I found in my own review, not a request:** the whole point of capturing UTM/campaign attribution is for someone at the agency to actually see it, but the initial implementation never surfaced `InboundSubmission` through the existing opportunity list/detail endpoints. Fixed by adding it to `opportunityService.listForAgency`'s and `getInAgency`'s includes, and added a small "Inbound · {slug}" line under the business name in the Pipeline table (with UTM detail in a tooltip) — otherwise this feature would have captured data nobody could ever see.
 
-## 3. A real bug found and fixed along the way (not scope creep — it blocked this feature)
-
-Manual browser verification of the new public report page (visited from a genuinely anonymous, cookie-less browser context, simulating a real prospect) found that it redirected straight to `/login` instead of rendering. Root cause: `src/app/core/interceptors/auth.interceptor.ts` had a `catchError` with two `if (err.status === 401)` checks — the second one fired unconditionally on **any** 401, including the silent bootstrap-refresh call every page load makes (`AuthService.bootstrap()`, wired into `app.config.ts`'s `provideAppInitializer`), which normally 401s for any anonymous visitor as its expected, correct outcome. That 401 was being treated as "your session just died, force a logout and redirect" for every public page load — landing, login, register, accept-invite, and now the audit report — not just this new one.
-
-Fixed by making the exempt-endpoint check (`AUTH_RETRY_EXEMPT`, which already existed and already correctly covered `/api/v1/auth/refresh`) short-circuit before the forced-redirect branch, so an expected 401 from a background/anonymous call never triggers a logout or navigation. Added `src/app/core/interceptors/auth.interceptor.spec.ts` (no prior spec existed for this interceptor) covering: an exempt 401 does not redirect, a non-exempt 401 with no token does redirect, and a non-exempt 401 with a token attempts a silent refresh before giving up.
-
-## 4. Acceptance matrix
+## 3. Acceptance matrix
 
 | Requirement | Implementation | Tests | Status |
 |---|---|---|---|
-| Rule-based audit (no live fetch) | `server/core/crm/websiteAuditor.js` | `crmWebsiteAudit.test.js` | Done |
-| One audit per opportunity, regenerate-in-place | `websiteAuditService.generateAudit` | `crmWebsiteAudit.test.js` | Done |
-| Share link hashed at rest, stable across regeneration | `WebsiteAudit.shareTokenHash` + `generateAudit` | `crmWebsiteAudit.test.js` | Done |
-| Lost link recoverable via explicit rotation | `POST .../website-audit/rotate-link` | `crmWebsiteAudit.test.js` | Done |
-| Public report exposes only report fields | `websiteAuditService.getPublicByToken` | `crmWebsiteAudit.test.js` (asserts exact key set) | Done |
-| Public route reachable pre-authenticate | `routes.js` route ordering (mirrors invitations) | Real anonymous-browser-context verification | Done |
-| Audit/generate/view scoped to caller's agency | `getOpportunityInAgency` | `crmWebsiteAudit.test.js` cross-agency test | Done |
-| Public audit page renders for a real anonymous visitor | `PublicAuditComponent` | Real headless-Chrome session, isolated browser context | Done (after the interceptor fix above) |
+| Nine campaign landing pages, driven by data not bespoke code | `inboundCampaigns.js` / `inbound.model.ts` | Manual review of all nine entries | Done |
+| Public, unauthenticated submission endpoint | `POST /api/v1/public/inbound-leads` | `publicInboundLead.test.js` | Done |
+| Creates Organization + Opportunity + Contact + InboundSubmission | `inboundLeadService.submitInboundLead` | `publicInboundLead.test.js` | Done |
+| Resolves to a single default agency, not hard-coded | `defaultAgency.js` | `publicInboundLead.test.js` | Done |
+| Honeypot silently discards spam with an identical success response | `submitInboundLead` early-return | `publicInboundLead.test.js` | Done |
+| UTM/referrer captured client-side and persisted | `InboundLeadService.captureAttribution` + `InboundSubmission` columns | `publicInboundLead.test.js` + real browser session with UTM query params | Done |
+| Rate-limited against abuse | `publicFormLimiter` | Manual code review (not load-tested) | Done |
+| Attribution actually visible to the agency | `listForAgency`/`getInAgency` includes + Pipeline UI badge | `publicInboundLead.test.js` (list + detail assertions) | Done |
+| Public page reachable by a genuinely anonymous visitor | `PublicLandingComponent`, no guard | Real headless-Chrome session, cookie-less context | Done |
 
-## 5. Testing performed
+## 4. Testing performed
 
-- `npm run test:backend`: 52/52 passing (12 suites) — up from 48.
-- `ng test`: 18/18 passing (up from 15 — added the interceptor spec).
+- `npm run test:backend`: 56/56 passing (13 suites) — up from 52.
+- `ng test`: 18/18 passing (unchanged from the website-audit slice — no new frontend unit specs needed beyond what was already covered).
 - `ng build`: clean (only the pre-existing inherited landing-page budget warning).
-- Real headless-Chrome sessions against an isolated, purpose-created synthetic agency: generated an audit, viewed it in the Pipeline UI, captured the share link, then opened that exact link in a **separate, fully isolated browser context** (no cookies at all) to simulate a genuine anonymous prospect — confirmed it renders the full report correctly. All synthetic data removed afterward.
+- Real headless-Chrome session against the actual dev database (unavoidable — the public endpoint always resolves to the real default agency, there's no synthetic-org escape hatch for this one): visited `/get-started/free-audit?utm_source=google&utm_medium=cpc&utm_campaign=smoketest-campaign` in a fresh, cookie-less browser context, confirmed it did not redirect to `/login` (re-confirming the auth-interceptor fix generalizes to this new public route too), submitted the form, confirmed the success state, then independently verified via direct model query that the resulting Contact/Opportunity/InboundSubmission were created correctly under the real "The Website Guys" agency with the right UTM values — and immediately deleted all of it. No trace left in real data.
 
-## 6. Remaining Phase 2 backlog (unchanged, still deferred)
+## 5. Remaining Phase 2 backlog (unchanged, still deferred)
 
-Public landing pages/inbound forms/UTM attribution, enrichment adapter, assisted outreach sequences, optional territories, saved search campaigns, Contact/Location management UI. See `docs/leadzaro/NEXT_PHASE_PROMPT.md`.
+Enrichment adapter, assisted outreach sequences, optional territories, saved search campaigns, Contact/Location management UI (though this slice's inbound form is now the first real write path for Contact — a full management UI for editing/listing Contacts directly is still not built).

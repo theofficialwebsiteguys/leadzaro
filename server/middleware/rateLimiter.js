@@ -24,4 +24,17 @@ const searchLimiter = rateLimit({
   message: { success: false, message: 'Too many search requests, please slow down.' },
 });
 
-module.exports = { rateLimiter, authLimiter, searchLimiter };
+// Public, unauthenticated form submissions (inbound marketing pages) create
+// real database records — stricter than the generic API limiter to blunt
+// spam/scripted abuse, on top of the honeypot field in the form itself.
+const publicFormLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many submissions, please try again later.' },
+});
+
+module.exports = {
+  rateLimiter, authLimiter, searchLimiter, publicFormLimiter,
+};

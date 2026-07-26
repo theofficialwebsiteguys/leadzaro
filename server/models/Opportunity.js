@@ -81,6 +81,7 @@ module.exports = (sequelize) => {
     Opportunity.belongsTo(models.User, { foreignKey: 'assignedToUserId', as: 'assignedTo' });
     Opportunity.belongsTo(models.Opportunity, { foreignKey: 'mergedIntoOpportunityId', as: 'mergedInto' });
     Opportunity.hasOne(models.WebsiteAudit, { foreignKey: 'opportunityId', as: 'websiteAudit' });
+    Opportunity.hasOne(models.InboundSubmission, { foreignKey: 'opportunityId', as: 'inboundSubmission' });
   };
 
   return Opportunity;

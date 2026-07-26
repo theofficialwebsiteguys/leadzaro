@@ -30,6 +30,12 @@ export const routes: Routes = [
     loadComponent: () => import('./features/public-audit/public-audit.component').then((m) => m.PublicAuditComponent),
   },
   {
+    // Public marketing/acquisition landing pages feeding the same
+    // inbound CRM — no auth.
+    path: 'get-started/:slug',
+    loadComponent: () => import('./features/public-landing/public-landing.component').then((m) => m.PublicLandingComponent),
+  },
+  {
     path: 'app',
     canActivate: [authGuard],
     loadComponent: () => import('./layout/dashboard-layout/dashboard-layout.component').then((m) => m.DashboardLayoutComponent),

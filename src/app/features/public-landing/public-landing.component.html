@@ -1,0 +1,74 @@
+@if (!campaign()) {
+  <div class="landing-page">
+    <div class="landing-card">
+      <h2>Page not found</h2>
+      <p>This page isn't available. <a href="/">Return home</a>.</p>
+    </div>
+  </div>
+} @else {
+  <div class="landing-page">
+    <header class="landing-header">
+      <div class="landing-logo">⚡ The Website Guys</div>
+    </header>
+
+    <main class="landing-hero">
+      <div class="landing-copy">
+        <h1>{{ campaign()!.headline }}</h1>
+        <p class="landing-subhead">{{ campaign()!.subhead }}</p>
+      </div>
+
+      <div class="landing-form-card">
+        @if (submitted()) {
+          <div class="landing-success">
+            <h2>Thanks!</h2>
+            <p>We got your request and someone from our team will be in touch soon.</p>
+          </div>
+        } @else {
+          <h2>Tell us about your business</h2>
+          @if (submitError()) {
+            <div class="alert alert-error">{{ submitError() }}</div>
+          }
+          <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+            <div class="form-group">
+              <label class="form-label" for="businessName">Business name</label>
+              <input id="businessName" type="text" class="form-control" formControlName="businessName" placeholder="Acme Plumbing" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="contactName">Your name</label>
+              <input id="contactName" type="text" class="form-control" formControlName="contactName" placeholder="Jane Smith" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="contactEmail">Email</label>
+              <input id="contactEmail" type="email" class="form-control" formControlName="contactEmail" placeholder="you@company.com" />
+              @if (form.get('contactEmail')?.invalid && form.get('contactEmail')?.touched) {
+                <span class="form-error">Enter a valid email address</span>
+              }
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="contactPhone">Phone</label>
+              <input id="contactPhone" type="tel" class="form-control" formControlName="contactPhone" placeholder="(555) 555-0100" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="message">Anything else we should know?</label>
+              <textarea id="message" class="form-control" formControlName="message" rows="3" placeholder="Optional"></textarea>
+            </div>
+
+            <!-- Honeypot: invisible to real visitors, off-screen and never tab-focused. -->
+            <div class="honeypot-field" aria-hidden="true">
+              <label for="website">Leave this field blank</label>
+              <input id="website" type="text" formControlName="website" tabindex="-1" autocomplete="off" />
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-full" [disabled]="submitting() || form.invalid">
+              @if (submitting()) {
+                Sending…
+              } @else {
+                Get Started
+              }
+            </button>
+          </form>
+        }
+      </div>
+    </main>
+  </div>
+}

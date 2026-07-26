@@ -27,6 +27,7 @@ const Opportunity = require('./Opportunity')(sequelize);
 const Contact = require('./Contact')(sequelize);
 const Location = require('./Location')(sequelize);
 const WebsiteAudit = require('./WebsiteAudit')(sequelize);
+const InboundSubmission = require('./InboundSubmission')(sequelize);
 
 const models = {
   User,
@@ -54,6 +55,7 @@ const models = {
   Contact,
   Location,
   WebsiteAudit,
+  InboundSubmission,
 };
 
 // Run associations

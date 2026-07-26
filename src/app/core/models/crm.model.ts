@@ -40,6 +40,14 @@ export interface OpportunityAssignee {
   email: string;
 }
 
+export interface OpportunityInboundSubmission {
+  landingPageSlug: string;
+  requestedService: string;
+  utmSource?: string | null;
+  utmMedium?: string | null;
+  utmCampaign?: string | null;
+}
+
 export interface Opportunity {
   id: string;
   organizationId: string;
@@ -56,6 +64,7 @@ export interface Opportunity {
   organization?: OpportunityOrganization;
   assignedTo?: OpportunityAssignee | null;
   sourceLead?: OpportunitySourceLead;
+  inboundSubmission?: OpportunityInboundSubmission | null;
 }
 
 export interface DuplicateGroup {

@@ -3,10 +3,11 @@
 const crypto = require('node:crypto');
 const { Op } = require('sequelize');
 const {
-  sequelize, Opportunity, Organization, Lead, OrganizationMembership, MembershipRole, Role, User,
+  sequelize, Opportunity, Organization, Lead, OrganizationMembership, MembershipRole, Role, User, InboundSubmission,
 } = require('../../models');
 const { STAGES, CLOSED_STAGES } = require('../../core/crm/pipelineCatalog');
 const { computeAutoScore } = require('../../core/crm/scoring');
+const { slugify } = require('../../core/crm/slugify');
 
 const SALES_CAPABLE_ROLE_KEYS = ['sales_representative', 'sales_manager', 'administrator'];
 
@@ -14,14 +15,6 @@ function invalid(message, statusCode = 422) {
   const err = new Error(message);
   err.statusCode = statusCode;
   return err;
-}
-
-function slugify(text) {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '')
-    .slice(0, 60) || 'prospect';
 }
 
 /**
@@ -96,6 +89,11 @@ function listForAgency(agencyOrganizationId, {
     include: [
       { model: Organization, as: 'organization' },
       { model: User, as: 'assignedTo', attributes: ['id', 'name', 'email'] },
+      {
+        model: InboundSubmission,
+        as: 'inboundSubmission',
+        attributes: ['landingPageSlug', 'requestedService', 'utmSource', 'utmMedium', 'utmCampaign'],
+      },
     ],
     order: [['updatedAt', 'DESC']],
     limit,
@@ -109,6 +107,7 @@ async function getInAgency(id, agencyOrganizationId) {
     include: [
       { model: Organization, as: 'organization' },
       { model: Lead, as: 'sourceLead' },
+      { model: InboundSubmission, as: 'inboundSubmission' },
       { model: User, as: 'assignedTo', attributes: ['id', 'name', 'email'] },
     ],
   });
