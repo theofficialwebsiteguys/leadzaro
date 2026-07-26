@@ -30,4 +30,6 @@ router.delete('/:id/assignments/:assignmentId', requirePermission('projects.mana
 router.get('/:id/financials', requirePermission('projects.manage'), controller.getFinancials);
 router.patch('/:id/financials', requirePermission('projects.manage'), controller.updateFinancials);
 
+router.use('/:projectId/tasks', require('../tasks/routes'));
+
 module.exports = router;

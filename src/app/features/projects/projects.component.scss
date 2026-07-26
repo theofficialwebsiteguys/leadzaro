@@ -82,6 +82,51 @@
   margin-bottom: 4px;
 }
 
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.view-toggle {
+  display: flex;
+  gap: 4px;
+
+  button.active {
+    background: var(--primary, #4f46e5);
+    color: #fff;
+  }
+}
+
+.board {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+}
+
+.board-column {
+  flex: 1;
+  min-width: 200px;
+  background: var(--bg-2, #f3f4f6);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.board-column-header {
+  font-weight: 600;
+  text-transform: capitalize;
+  margin-bottom: 8px;
+  font-size: 0.9em;
+}
+
+.board-card {
+  background: #fff;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
 @media (max-width: 768px) {
   .projects-layout {
     flex-direction: column;

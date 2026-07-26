@@ -1,12 +1,14 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { ProjectService } from '../../core/services/project.service';
+import { TaskService } from '../../core/services/task.service';
 import { MembershipService } from '../../core/services/membership.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
 import {
   Project, ProjectAssignment, ProjectFinancials, PROJECT_STAGES, PROJECT_ROLE_SLOTS,
 } from '../../core/models/project.model';
+import { Task, TASK_STATUSES, TASK_PRIORITIES } from '../../core/models/task.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 
@@ -19,11 +21,25 @@ import { HasPermissionDirective } from '../../core/directives/has-permission.dir
 })
 export class ProjectsComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
+  private readonly taskService = inject(TaskService);
   private readonly membershipService = inject(MembershipService);
   readonly org = inject(OrganizationContextService);
 
   readonly stages = PROJECT_STAGES;
   readonly roleSlots = PROJECT_ROLE_SLOTS;
+  readonly taskStatuses = TASK_STATUSES;
+  readonly taskPriorities = TASK_PRIORITIES;
+
+  tasks = signal<Task[]>([]);
+  taskView = signal<'list' | 'board'>('list');
+  tasksByStatus = computed(() => {
+    const groups: Record<string, Task[]> = { todo: [], in_progress: [], blocked: [], done: [] };
+    for (const t of this.tasks()) groups[t.status]?.push(t);
+    return groups;
+  });
+  newTaskTitle = '';
+  newTaskAssigneeUserId = '';
+  newTaskIsClientVisible = false;
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -81,6 +97,7 @@ export class ProjectsComponent implements OnInit {
       this.healthTarget = res.data.project.healthStatus;
     });
     this.projectService.listAssignments(id).subscribe((res) => this.assignments.set(res.data.assignments));
+    this.loadTasks(id);
     if (this.org.hasPermission('projects.manage')) {
       this.projectService.getFinancials(id).subscribe((res) => {
         this.financials.set(res.data.financials);
@@ -142,6 +159,37 @@ export class ProjectsComponent implements OnInit {
     this.projectService.removeAssignment(id, assignmentId).subscribe(() => {
       this.assignments.update((list) => list.filter((a) => a.id !== assignmentId));
     });
+  }
+
+  loadTasks(projectId: string) {
+    this.taskService.list(projectId).subscribe((res) => this.tasks.set(res.data.tasks));
+  }
+
+  createTask() {
+    const id = this.selectedId();
+    if (!id || !this.newTaskTitle.trim()) return;
+    this.taskService.create(id, {
+      title: this.newTaskTitle,
+      assigneeUserId: this.newTaskAssigneeUserId || undefined,
+      isClientVisible: this.newTaskIsClientVisible,
+    }).subscribe(() => {
+      this.newTaskTitle = '';
+      this.newTaskAssigneeUserId = '';
+      this.newTaskIsClientVisible = false;
+      this.loadTasks(id);
+    });
+  }
+
+  updateTaskStatus(task: Task, status: string) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.taskService.update(id, task.id, { status: status as Task['status'] }).subscribe(() => this.loadTasks(id));
+  }
+
+  archiveTask(task: Task) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.taskService.archive(id, task.id).subscribe(() => this.loadTasks(id));
   }
 
   saveFinancials() {

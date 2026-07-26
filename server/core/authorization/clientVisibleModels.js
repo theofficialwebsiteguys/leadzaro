@@ -12,7 +12,7 @@
  * A raw `Project.findAll()` anywhere else in the codebase throws.
  */
 
-const { Project, ProjectFinancials, Organization } = require('../../models');
+const { Project, ProjectFinancials, Organization, Task } = require('../../models');
 
 function scoped(options = {}) {
   return { ...options, __visibilityScoped: true };
@@ -82,10 +82,37 @@ async function findOrCreateProjectFinancials(context, projectId) {
   return financials;
 }
 
+/**
+ * Task denormalizes organizationId/agencyOrganizationId directly (see
+ * Task.js) specifically so its own top-level query can be scoped
+ * without ever needing to `include` the guarded Project model — the
+ * ADR 0007 "included association bypasses the hook" gap doesn't apply
+ * here because Project is never included in these queries at all.
+ * Client membership additionally requires isClientVisible: true — a
+ * task is internal by default.
+ */
+function taskWhereForRequester(context, extraWhere = {}) {
+  if (context.membership.membershipType === 'client') {
+    return { ...extraWhere, organizationId: context.organization.id, isClientVisible: true };
+  }
+  return { ...extraWhere, agencyOrganizationId: context.organization.id };
+}
+
+function listTasksForRequester(context, extraWhere = {}) {
+  return Task.findAll(scoped({ where: taskWhereForRequester(context, extraWhere), order: [['position', 'ASC'], ['createdAt', 'ASC']] }));
+}
+
+function getTaskByIdForRequester(context, taskId) {
+  return Task.findOne(scoped({ where: taskWhereForRequester(context, { id: taskId }) }));
+}
+
 module.exports = {
   listProjectsForRequester,
   getProjectByIdForRequester,
   getProjectFinancials,
   findOrCreateProjectFinancials,
   projectWhereForRequester,
+  taskWhereForRequester,
+  listTasksForRequester,
+  getTaskByIdForRequester,
 };

@@ -127,6 +127,78 @@
             </div>
           </div>
 
+          <div class="card mb-4">
+            <div class="card-header">
+              <strong>Tasks</strong>
+              <div class="view-toggle">
+                <button class="btn btn-sm" [class.active]="taskView() === 'list'" (click)="taskView.set('list')">List</button>
+                <button class="btn btn-sm" [class.active]="taskView() === 'board'" (click)="taskView.set('board')">Board</button>
+              </div>
+            </div>
+
+            @if (taskView() === 'list') {
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Assignee</th><th>Due</th><th>Client-visible</th><th></th></tr></thead>
+                  <tbody>
+                    @for (t of tasks(); track t.id) {
+                      <tr>
+                        <td>{{ t.title }}</td>
+                        <td>
+                          @if (org.hasPermission('tasks.manage')) {
+                            <select [ngModel]="t.status" (ngModelChange)="updateTaskStatus(t, $event)" class="input input-sm">
+                              @for (s of taskStatuses; track s) { <option [value]="s">{{ s }}</option> }
+                            </select>
+                          } @else {
+                            <span>{{ t.status }}</span>
+                          }
+                        </td>
+                        <td>{{ t.priority }}</td>
+                        <td>{{ t.assignee?.name || '—' }}</td>
+                        <td>{{ t.dueDate ? (t.dueDate | date:'MMM d') : '—' }}</td>
+                        <td>{{ t.isClientVisible ? 'Yes' : 'No' }}</td>
+                        <td>
+                          <button class="btn btn-sm" *hasPermission="'tasks.manage'" (click)="archiveTask(t)">Archive</button>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else {
+              <div class="board card-body">
+                @for (status of taskStatuses; track status) {
+                  <div class="board-column">
+                    <div class="board-column-header">{{ status }}</div>
+                    @for (t of tasksByStatus()[status]; track t.id) {
+                      <div class="board-card">
+                        <div class="font-medium">{{ t.title }}</div>
+                        <div class="text-sm text-muted">{{ t.assignee?.name || 'Unassigned' }}</div>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            }
+
+            <div class="card-body" *hasPermission="'tasks.manage'">
+              <div class="assign-form">
+                <input class="input" placeholder="New task title" [(ngModel)]="newTaskTitle" />
+                <select [(ngModel)]="newTaskAssigneeUserId" class="input">
+                  <option value="">Unassigned</option>
+                  @for (m of members(); track m.id) {
+                    <option [value]="m.userId">{{ m.user?.name }}</option>
+                  }
+                </select>
+                <label class="checkbox-row">
+                  <input type="checkbox" [(ngModel)]="newTaskIsClientVisible" />
+                  Client-visible
+                </label>
+                <button class="btn btn-secondary" (click)="createTask()">Add Task</button>
+              </div>
+            </div>
+          </div>
+
           @if (financialsLoaded()) {
             <div class="card mb-4">
               <div class="card-header"><strong>Financials</strong> <span class="text-sm text-muted">(agency-only)</span></div>
