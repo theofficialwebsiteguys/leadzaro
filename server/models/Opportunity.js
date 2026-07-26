@@ -56,6 +56,14 @@ module.exports = (sequelize) => {
       type: DataTypes.UUID,
       allowNull: true,
     },
+    // Set when this opportunity was merged away as a duplicate — points
+    // at the surviving ("winner") opportunity. Merging archives, it never
+    // deletes; this column plus the merge AuditLog entry are what
+    // undo-merge uses to reverse the operation.
+    mergedIntoOpportunityId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
   }, {
     indexes: [
       {
@@ -71,6 +79,7 @@ module.exports = (sequelize) => {
     Opportunity.belongsTo(models.Organization, { foreignKey: 'organizationId', as: 'organization' });
     Opportunity.belongsTo(models.Lead, { foreignKey: 'sourceLeadId', as: 'sourceLead' });
     Opportunity.belongsTo(models.User, { foreignKey: 'assignedToUserId', as: 'assignedTo' });
+    Opportunity.belongsTo(models.Opportunity, { foreignKey: 'mergedIntoOpportunityId', as: 'mergedInto' });
   };
 
   return Opportunity;

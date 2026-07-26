@@ -4,8 +4,17 @@ const { authenticate } = require('../../middleware/auth');
 const { resolveContext, requirePermission, requireAnyPermission } = require('../../core/authorization/context');
 const { validate } = require('../../middleware/validate');
 const controller = require('./opportunityController');
+const mergeController = require('./mergeController');
 
 router.use(authenticate, resolveContext());
+
+router.get('/duplicates', requirePermission('crm.manage_pipeline'), mergeController.listDuplicates);
+router.get('/merge/preview', requirePermission('crm.manage_pipeline'), mergeController.preview);
+router.post('/merge', requirePermission('crm.manage_pipeline'), [
+  body('winnerId').notEmpty(),
+  body('loserId').notEmpty(),
+], validate, mergeController.merge);
+router.post('/opportunities/:id/undo-merge', requirePermission('crm.manage_pipeline'), mergeController.undoMerge);
 
 router.get('/opportunities', requirePermission('leads.read'), controller.list);
 router.post('/opportunities', requirePermission('leads.save'), [
