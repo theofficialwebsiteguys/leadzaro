@@ -164,6 +164,49 @@
           </div>
 
           <div class="card mb-4">
+            <div class="card-header"><strong>Client Requests</strong></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Category</th><th>Description</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                  @for (r of clientRequests(); track r.id) {
+                    <tr>
+                      <td>{{ r.category }}</td>
+                      <td>{{ r.description }}</td>
+                      <td>
+                        @if (org.hasPermission('requests.manage')) {
+                          <select [ngModel]="r.status" (ngModelChange)="updateRequestStatus(r, $event)" class="input input-sm">
+                            <option value="queued">queued</option>
+                            <option value="in_progress">in_progress</option>
+                            <option value="waiting_on_client">waiting_on_client</option>
+                            <option value="completed">completed</option>
+                            <option value="declined">declined</option>
+                          </select>
+                        } @else {
+                          <span>{{ r.status }}</span>
+                        }
+                      </td>
+                      <td>{{ r.convertedToTaskId ? 'Converted to task' : '' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <div class="card-body" *hasPermission="'requests.create'">
+              <div class="assign-form">
+                <select [(ngModel)]="newRequestCategory" class="input">
+                  <option value="">Select category…</option>
+                  @for (cat of requestCategories; track cat) {
+                    <option [value]="cat">{{ cat }}</option>
+                  }
+                </select>
+                <input class="input" placeholder="Describe what you need" [(ngModel)]="newRequestDescription" />
+                <button class="btn btn-secondary" (click)="submitRequest()">Submit Request</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card mb-4">
             <div class="card-header">
               <strong>Tasks</strong>
               <div class="view-toggle">

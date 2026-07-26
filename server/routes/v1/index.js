@@ -12,5 +12,6 @@ router.use('/crm', require('../../modules/crm/routes'));
 router.use('/public', require('../../modules/public/routes'));
 router.use('/billing', require('../../modules/billing/routes'));
 router.use('/projects', require('../../modules/projects/routes'));
+router.use('/requests', require('../../modules/requests/queueRoutes'));
 
 module.exports = router;

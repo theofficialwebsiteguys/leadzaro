@@ -13,7 +13,7 @@
  */
 
 const {
-  Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User,
+  Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -156,6 +156,28 @@ function getMessageByIdForRequester(context, messageId) {
 }
 
 /**
+ * ClientRequest/ContentInboxItem have no separate client/internal
+ * visibility split (unlike Task/ProjectChannel) — every request a
+ * client submits is inherently visible to both them and the agency
+ * handling it. The guard still matters purely for tenant isolation.
+ */
+function listClientRequestsForRequester(context, extraWhere = {}) {
+  return ClientRequest.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), order: [['createdAt', 'DESC']] }));
+}
+
+function getClientRequestByIdForRequester(context, requestId) {
+  return ClientRequest.findOne(scoped({ where: tenantWhereForRequester(context, { id: requestId }) }));
+}
+
+function listContentInboxItemsForRequester(context, extraWhere = {}) {
+  return ContentInboxItem.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), order: [['createdAt', 'DESC']] }));
+}
+
+function getContentInboxItemByIdForRequester(context, itemId) {
+  return ContentInboxItem.findOne(scoped({ where: tenantWhereForRequester(context, { id: itemId }) }));
+}
+
+/**
  * The one exception to "every read goes through a requester context":
  * system-level operations with no HTTP requester at all (currently:
  * `projectService.ensureProjectForConversion`, triggered by a Stripe
@@ -184,4 +206,8 @@ module.exports = {
   messageWhereForRequester,
   listMessagesForRequester,
   getMessageByIdForRequester,
+  listClientRequestsForRequester,
+  getClientRequestByIdForRequester,
+  listContentInboxItemsForRequester,
+  getContentInboxItemByIdForRequester,
 };

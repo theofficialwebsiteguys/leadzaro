@@ -4,6 +4,7 @@ import { DatePipe } from '@angular/common';
 import { ProjectService } from '../../core/services/project.service';
 import { TaskService } from '../../core/services/task.service';
 import { MessagingService } from '../../core/services/messaging.service';
+import { RequestService } from '../../core/services/request.service';
 import { MembershipService } from '../../core/services/membership.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
 import {
@@ -11,6 +12,7 @@ import {
 } from '../../core/models/project.model';
 import { Task, TASK_STATUSES, TASK_PRIORITIES } from '../../core/models/task.model';
 import { ProjectChannel, Message } from '../../core/models/message.model';
+import { ClientRequest, REQUEST_CATEGORIES } from '../../core/models/clientRequest.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 
@@ -25,6 +27,7 @@ export class ProjectsComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly taskService = inject(TaskService);
   private readonly messagingService = inject(MessagingService);
+  private readonly requestService = inject(RequestService);
   private readonly membershipService = inject(MembershipService);
   readonly org = inject(OrganizationContextService);
 
@@ -32,6 +35,7 @@ export class ProjectsComponent implements OnInit {
   readonly roleSlots = PROJECT_ROLE_SLOTS;
   readonly taskStatuses = TASK_STATUSES;
   readonly taskPriorities = TASK_PRIORITIES;
+  readonly requestCategories = REQUEST_CATEGORIES;
 
   tasks = signal<Task[]>([]);
   taskView = signal<'list' | 'board'>('list');
@@ -48,6 +52,10 @@ export class ProjectsComponent implements OnInit {
   selectedChannelId = signal<string | null>(null);
   messages = signal<Message[]>([]);
   newMessageBody = '';
+
+  clientRequests = signal<ClientRequest[]>([]);
+  newRequestCategory = '';
+  newRequestDescription = '';
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -107,6 +115,7 @@ export class ProjectsComponent implements OnInit {
     this.projectService.listAssignments(id).subscribe((res) => this.assignments.set(res.data.assignments));
     this.loadTasks(id);
     this.loadChannels(id);
+    this.loadRequests(id);
     if (this.org.hasPermission('projects.manage')) {
       this.projectService.getFinancials(id).subscribe((res) => {
         this.financials.set(res.data.financials);
@@ -237,6 +246,26 @@ export class ProjectsComponent implements OnInit {
       this.loadTasks(projectId);
       this.actionMessage.set('Message converted to a task');
     });
+  }
+
+  loadRequests(projectId: string) {
+    this.requestService.list(projectId).subscribe((res) => this.clientRequests.set(res.data.requests));
+  }
+
+  submitRequest() {
+    const id = this.selectedId();
+    if (!id || !this.newRequestCategory || !this.newRequestDescription.trim()) return;
+    this.requestService.create(id, this.newRequestCategory, this.newRequestDescription).subscribe(() => {
+      this.newRequestCategory = '';
+      this.newRequestDescription = '';
+      this.loadRequests(id);
+    });
+  }
+
+  updateRequestStatus(req: ClientRequest, status: string) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.requestService.updateStatus(id, req.id, status).subscribe(() => this.loadRequests(id));
   }
 
   saveFinancials() {
