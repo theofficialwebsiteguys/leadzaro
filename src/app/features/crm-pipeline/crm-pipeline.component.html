@@ -274,6 +274,9 @@
                       <button class="btn btn-ghost btn-sm" (click)="toggleAudit(opp)">
                         {{ auditingId() === opp.id ? 'Hide Audit' : 'Website Audit' }}
                       </button>
+                      <button class="btn btn-ghost btn-sm" (click)="toggleEnrichment(opp)">
+                        {{ enrichingId() === opp.id ? 'Hide Enrich' : 'Enrich' }}
+                      </button>
                       <button class="btn btn-ghost btn-sm danger-btn" *hasPermission="['leads.archive', 'crm.manage_pipeline']" (click)="archive(opp)" title="Archive opportunity">
                         <lz-icon name="x" [size]="13" />
                       </button>
@@ -318,6 +321,45 @@
                             <button class="btn btn-ghost btn-sm" (click)="rotateAuditLink(opp)">Reset Link</button>
                             <button class="btn btn-ghost btn-sm" (click)="generateAudit(opp)">Regenerate</button>
                           </div>
+                        </div>
+                      }
+                    }
+                  </td>
+                </tr>
+              }
+              @if (enrichingId() === opp.id) {
+                <tr class="audit-row">
+                  <td colspan="6">
+                    @if (enrichmentLoading()) {
+                      <div class="loading-state" style="padding:20px 0"><div class="spinner spinner-sm"></div><span>Loading enrichment…</span></div>
+                    } @else if (enrichmentNotRequested()) {
+                      <div class="audit-panel">
+                        <p class="text-sm text-muted">No enrichment has been requested for this opportunity yet.</p>
+                        <button class="btn btn-primary btn-sm" *hasPermission="'crm.manage_pipeline'" (click)="requestEnrichment(opp)">Request Enrichment</button>
+                      </div>
+                    } @else {
+                      @if (enrichmentData(); as enrichment) {
+                        <div class="audit-panel">
+                          @if (enrichment.status === 'not_configured') {
+                            <p class="text-sm text-muted">No enrichment provider is configured for this environment.</p>
+                          } @else {
+                            <div class="audit-header">
+                              <span class="badge badge-new">{{ enrichment.provider }}</span>
+                              <span class="text-sm text-muted">Requested {{ enrichment.requestedAt | date:'MMM d, y, h:mm a' }}</span>
+                            </div>
+                            @if (enrichment.data?.note) {
+                              <p class="text-sm text-muted">{{ enrichment.data?.note }}</p>
+                            }
+                            <ul class="audit-checks">
+                              @if (enrichment.data?.industry) {
+                                <li><span class="font-medium">Industry</span><span class="text-sm text-muted">{{ enrichment.data?.industry }}</span></li>
+                              }
+                              @if (enrichment.data?.estimatedEmployeeCount) {
+                                <li><span class="font-medium">Estimated employees</span><span class="text-sm text-muted">{{ enrichment.data?.estimatedEmployeeCount }}</span></li>
+                              }
+                            </ul>
+                          }
+                          <button class="btn btn-ghost btn-sm" *hasPermission="'crm.manage_pipeline'" (click)="requestEnrichment(opp)">Refresh</button>
                         </div>
                       }
                     }

@@ -109,6 +109,20 @@ export interface PipelineSummary {
   teamBreakdown: TeamPipelineRow[];
 }
 
+export interface Enrichment {
+  id: string;
+  opportunityId: string;
+  provider: string;
+  status: 'success' | 'not_configured' | 'failed';
+  data: {
+    industry?: string;
+    estimatedEmployeeCount?: string;
+    socialProfiles?: { facebook: string | null; instagram: string | null; linkedin: string | null };
+    note?: string;
+  } | null;
+  requestedAt: string;
+}
+
 export interface WebsiteAuditCheck {
   key: string;
   label: string;

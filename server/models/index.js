@@ -28,6 +28,7 @@ const Contact = require('./Contact')(sequelize);
 const Location = require('./Location')(sequelize);
 const WebsiteAudit = require('./WebsiteAudit')(sequelize);
 const InboundSubmission = require('./InboundSubmission')(sequelize);
+const Enrichment = require('./Enrichment')(sequelize);
 
 const models = {
   User,
@@ -56,6 +57,7 @@ const models = {
   Location,
   WebsiteAudit,
   InboundSubmission,
+  Enrichment,
 };
 
 // Run associations

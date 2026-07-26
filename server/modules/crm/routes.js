@@ -7,6 +7,7 @@ const controller = require('./opportunityController');
 const mergeController = require('./mergeController');
 const dashboardController = require('./dashboardController');
 const websiteAuditController = require('./websiteAuditController');
+const enrichmentController = require('./enrichmentController');
 
 // Public: a shared audit report link must be viewable without being
 // logged in. Mounted before the authenticate/resolveContext gate below,
@@ -51,5 +52,8 @@ router.post('/opportunities/:id/restore', requireAnyPermission(['leads.archive',
 router.get('/opportunities/:id/website-audit', requirePermission('leads.read'), websiteAuditController.getForOpportunity);
 router.post('/opportunities/:id/website-audit', requirePermission('crm.manage_pipeline'), websiteAuditController.generate);
 router.post('/opportunities/:id/website-audit/rotate-link', requirePermission('crm.manage_pipeline'), websiteAuditController.rotateLink);
+
+router.get('/opportunities/:id/enrichment', requirePermission('leads.read'), enrichmentController.getForOpportunity);
+router.post('/opportunities/:id/enrich', requirePermission('crm.manage_pipeline'), enrichmentController.enrich);
 
 module.exports = router;

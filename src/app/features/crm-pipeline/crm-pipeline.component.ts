@@ -6,7 +6,7 @@ import { MembershipService } from '../../core/services/membership.service';
 import { AuthService } from '../../core/services/auth.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
 import {
-  DuplicateGroup, Opportunity, PIPELINE_STAGES, PipelineSummary, WebsiteAudit,
+  DuplicateGroup, Enrichment, Opportunity, PIPELINE_STAGES, PipelineSummary, WebsiteAudit,
 } from '../../core/models/crm.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
@@ -64,6 +64,11 @@ export class CrmPipelineComponent implements OnInit {
   auditData = signal<WebsiteAudit | null>(null);
   auditShareUrl = signal<string | null>(null);
   auditNotGenerated = signal(false);
+
+  enrichingId = signal<string | null>(null);
+  enrichmentLoading = signal(false);
+  enrichmentData = signal<Enrichment | null>(null);
+  enrichmentNotRequested = signal(false);
 
   ngOnInit() {
     this.loadOpportunities();
@@ -304,6 +309,43 @@ export class CrmPipelineComponent implements OnInit {
       () => this.actionMessage.set('Share link copied to clipboard.'),
       () => this.actionMessage.set('Could not copy automatically — select and copy the link manually.')
     );
+  }
+
+  toggleEnrichment(opp: Opportunity) {
+    if (this.enrichingId() === opp.id) {
+      this.enrichingId.set(null);
+      return;
+    }
+    this.enrichingId.set(opp.id);
+    this.enrichmentData.set(null);
+    this.enrichmentNotRequested.set(false);
+    this.enrichmentLoading.set(true);
+    this.crm.getEnrichment(opp.id).subscribe({
+      next: (res) => {
+        this.enrichmentData.set(res.data.enrichment);
+        this.enrichmentLoading.set(false);
+      },
+      error: (err) => {
+        this.enrichmentLoading.set(false);
+        if (err.status === 404) this.enrichmentNotRequested.set(true);
+        else this.actionMessage.set(err.error?.message || 'Failed to load enrichment.');
+      },
+    });
+  }
+
+  requestEnrichment(opp: Opportunity) {
+    this.enrichmentLoading.set(true);
+    this.crm.requestEnrichment(opp.id).subscribe({
+      next: (res) => {
+        this.enrichmentData.set(res.data.enrichment);
+        this.enrichmentNotRequested.set(false);
+        this.enrichmentLoading.set(false);
+      },
+      error: (err) => {
+        this.enrichmentLoading.set(false);
+        this.actionMessage.set(err.error?.message || 'Failed to request enrichment.');
+      },
+    });
   }
 
   private replaceOpportunity(updated: Opportunity) {

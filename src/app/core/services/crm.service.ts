@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
-  DuplicateGroup, MergePreview, Opportunity, PipelineSummary, PublicWebsiteAuditReport, WebsiteAudit,
+  DuplicateGroup, Enrichment, MergePreview, Opportunity, PipelineSummary, PublicWebsiteAuditReport, WebsiteAudit,
 } from '../models/crm.model';
 import { PaginatedResponse } from '../models/lead.model';
 
@@ -94,5 +94,13 @@ export class CrmService {
 
   getPublicWebsiteAudit(token: string): Observable<{ data: PublicWebsiteAuditReport }> {
     return this.http.get<{ data: PublicWebsiteAuditReport }>(`/api/v1/crm/public-audit/${token}`);
+  }
+
+  getEnrichment(opportunityId: string): Observable<{ data: { enrichment: Enrichment } }> {
+    return this.http.get<{ data: { enrichment: Enrichment } }>(`/api/v1/crm/opportunities/${opportunityId}/enrichment`);
+  }
+
+  requestEnrichment(opportunityId: string): Observable<{ data: { enrichment: Enrichment } }> {
+    return this.http.post<{ data: { enrichment: Enrichment } }>(`/api/v1/crm/opportunities/${opportunityId}/enrich`, {});
   }
 }

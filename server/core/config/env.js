@@ -96,6 +96,14 @@ const env = {
   INVITATION_TOKEN_TTL_HOURS: parseInt(process.env.INVITATION_TOKEN_TTL_HOURS, 10) || 168,
   PASSWORD_RESET_TOKEN_TTL_MINUTES: parseInt(process.env.PASSWORD_RESET_TOKEN_TTL_MINUTES, 10) || 60,
   EMAIL_VERIFICATION_TOKEN_TTL_HOURS: parseInt(process.env.EMAIL_VERIFICATION_TOKEN_TTL_HOURS, 10) || 48,
+
+  // No real enrichment provider exists yet (see docs/leadzaro/ADRs).
+  // Defaults to a clearly-labeled mock in development (useful for
+  // building/demoing the feature) but disabled in production unless an
+  // operator explicitly opts in — showing fabricated business data to a
+  // real sales team as if it came from a real provider would be worse
+  // than showing nothing.
+  ENRICHMENT_PROVIDER: process.env.ENRICHMENT_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
 };
 
 module.exports = { env, validateEnv };
