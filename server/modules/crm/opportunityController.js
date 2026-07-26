@@ -4,7 +4,7 @@ const { notify } = require('../../core/notifications/notificationService');
 const {
   success, created, error,
 } = require('../../utils/response');
-const { formatPaginatedResponse } = require('../../utils/pagination');
+const { getPagination, formatPaginatedResponse } = require('../../utils/pagination');
 
 function handleServiceError(err, res, next) {
   if (err.statusCode) return error(res, err.message, err.statusCode);
@@ -37,11 +37,11 @@ async function create(req, res, next) {
 
 async function list(req, res, next) {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const { page, limit, offset } = getPagination(req.query);
     const { rows, count } = await opportunityService.listForAgency(req.context.organization.id, {
-      ...req.query, page, limit,
+      ...req.query, limit, offset,
     });
-    return success(res, formatPaginatedResponse(rows, count, Number(page), Number(limit)));
+    return success(res, formatPaginatedResponse(rows, count, page, limit));
   } catch (err) {
     next(err);
   }

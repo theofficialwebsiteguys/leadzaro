@@ -61,6 +61,15 @@ async function previewMerge(winnerId, loserId, agencyOrganizationId) {
   const winner = await getActiveOpportunity(winnerId, agencyOrganizationId);
   const loser = await getActiveOpportunity(loserId, agencyOrganizationId);
   if (winner.id === loser.id) throw invalid('Cannot merge an opportunity into itself');
+  // getActiveOpportunity only excludes deleted rows (undoMerge needs to
+  // look up an already-archived loser), so archived-but-not-merged is
+  // still possible here and must be rejected explicitly. The
+  // already-merged case is checked first so it gets its more specific
+  // 409 rather than the generic "already archived" 422 — merging always
+  // archives, so every already-merged loser is also archived.
+  if (winner.archivedAt) throw invalid('Cannot merge into an archived opportunity', 422);
+  if (loser.mergedIntoOpportunityId) throw invalid('That opportunity has already been merged into another one', 409);
+  if (loser.archivedAt) throw invalid('This opportunity is already archived', 422);
 
   const [winnerContacts, loserContacts, winnerLocations, loserLocations] = await Promise.all([
     Contact.findAll({ where: { organizationId: winner.organizationId, archivedAt: null, deletedAt: null } }),
@@ -83,7 +92,6 @@ async function previewMerge(winnerId, loserId, agencyOrganizationId) {
  */
 async function merge(winnerId, loserId, agencyOrganizationId, actorUserId, reason) {
   const { winner, loser } = await previewMerge(winnerId, loserId, agencyOrganizationId);
-  if (loser.mergedIntoOpportunityId) throw invalid('That opportunity has already been merged into another one', 409);
 
   return sequelize.transaction(async (transaction) => {
     const movedContacts = await Contact.findAll({
@@ -143,6 +151,12 @@ async function undoMerge(loserId, agencyOrganizationId, actorUserId) {
     where: { action: 'opportunity.merged', targetId: loser.id },
     order: [['createdAt', 'DESC']],
   });
+  // Without this entry there is no reliable record of what moved or
+  // what the prior stage/score were — proceeding anyway would silently
+  // unarchive the opportunity while leaving its Contacts/Locations
+  // stranded on the winner, and report success regardless.
+  if (!mergeEntry) throw invalid('Merge audit record not found; cannot safely undo this merge', 409);
+
   const movedContactIds = mergeEntry?.metadata?.movedContactIds || [];
   const movedLocationIds = mergeEntry?.metadata?.movedLocationIds || [];
   const priorState = mergeEntry?.metadata?.priorState || {};

@@ -100,6 +100,98 @@ describe('CRM duplicate detection and merge', () => {
     expect(loserLocation.organizationId).toBe(second.organization.id);
   });
 
+  test('merge is rejected if the winner or loser is already archived (not via a prior merge)', async () => {
+    const org = await createOrganization(sequelize.models, { type: 'agency' });
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_manager'] });
+    const login = await loginAs(app, user.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const a = await createOpportunity(auth, 'Archived Winner Co', 'archW');
+    const b = await createOpportunity(auth, 'Archived Winner Co!!', 'archL');
+    const c = await createOpportunity(auth, 'Archived Loser Co', 'archW2');
+    const d = await createOpportunity(auth, 'Archived Loser Co!!', 'archL2');
+
+    await auth(request(app).post(`/api/v1/crm/opportunities/${a.opportunity.id}/archive`));
+    const winnerArchived = await auth(request(app).post('/api/v1/crm/merge').send({
+      winnerId: a.opportunity.id, loserId: b.opportunity.id,
+    }));
+    expect(winnerArchived.status).toBe(422);
+
+    await auth(request(app).post(`/api/v1/crm/opportunities/${d.opportunity.id}/archive`));
+    const loserArchived = await auth(request(app).post('/api/v1/crm/merge').send({
+      winnerId: c.opportunity.id, loserId: d.opportunity.id,
+    }));
+    expect(loserArchived.status).toBe(422);
+  });
+
+  test('merge preview requires winnerId and loserId query params (rather than silently matching an arbitrary opportunity)', async () => {
+    const org = await createOrganization(sequelize.models, { type: 'agency' });
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_manager'] });
+    const login = await loginAs(app, user.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    await createOpportunity(auth, 'Some Other Business', 'validate1');
+
+    const missingBoth = await auth(request(app).get('/api/v1/crm/merge/preview'));
+    expect(missingBoth.status).toBe(422);
+
+    const missingLoser = await auth(request(app).get('/api/v1/crm/merge/preview').query({ winnerId: 'not-a-real-id' }));
+    expect(missingLoser.status).toBe(422);
+  });
+
+  test('a merged-away opportunity cannot be restored via plain restore (must use undo-merge)', async () => {
+    const org = await createOrganization(sequelize.models, { type: 'agency' });
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_manager'] });
+    const login = await loginAs(app, user.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const winner = await createOpportunity(auth, 'Restore Guard Winner', 'restoreW');
+    const loser = await createOpportunity(auth, 'Restore Guard Loser', 'restoreL');
+
+    const merge = await auth(request(app).post('/api/v1/crm/merge').send({
+      winnerId: winner.opportunity.id, loserId: loser.opportunity.id,
+    }));
+    expect(merge.status).toBe(200);
+
+    const restoreAttempt = await auth(request(app).post(`/api/v1/crm/opportunities/${loser.opportunity.id}/restore`));
+    expect(restoreAttempt.status).toBe(409);
+
+    // The opportunity must still be archived and still point at the winner — the
+    // rejected restore attempt must not have partially applied.
+    const { Opportunity } = sequelize.models;
+    const stillMerged = await Opportunity.findByPk(loser.opportunity.id);
+    expect(stillMerged.archivedAt).not.toBeNull();
+    expect(stillMerged.mergedIntoOpportunityId).toBe(winner.opportunity.id);
+  });
+
+  test('undo-merge fails cleanly rather than silently under-restoring when its audit record is missing', async () => {
+    const org = await createOrganization(sequelize.models, { type: 'agency' });
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_manager'] });
+    const login = await loginAs(app, user.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const winner = await createOpportunity(auth, 'Undo Guard Winner', 'undoGuardW');
+    const loser = await createOpportunity(auth, 'Undo Guard Loser', 'undoGuardL');
+
+    const merge = await auth(request(app).post('/api/v1/crm/merge').send({
+      winnerId: winner.opportunity.id, loserId: loser.opportunity.id,
+    }));
+    expect(merge.status).toBe(200);
+
+    // Simulate the audit trail being unavailable (e.g. purged by a retention policy).
+    const { AuditLog } = sequelize.models;
+    await AuditLog.destroy({ where: { action: 'opportunity.merged', targetId: loser.opportunity.id } });
+
+    const undoAttempt = await auth(request(app).post(`/api/v1/crm/opportunities/${loser.opportunity.id}/undo-merge`));
+    expect(undoAttempt.status).toBe(409);
+
+    // Must still be archived/merged — a failed undo must not have partially applied.
+    const { Opportunity } = sequelize.models;
+    const stillMerged = await Opportunity.findByPk(loser.opportunity.id);
+    expect(stillMerged.archivedAt).not.toBeNull();
+    expect(stillMerged.mergedIntoOpportunityId).toBe(winner.opportunity.id);
+  });
+
   test('merge and preview are rejected across agency boundaries', async () => {
     const agencyA = await createOrganization(sequelize.models, { type: 'agency' });
     const agencyB = await createOrganization(sequelize.models, { type: 'agency' });

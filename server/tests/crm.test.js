@@ -97,6 +97,43 @@ describe('CRM opportunities', () => {
     expect(claimAttempt.status).toBe(409);
   });
 
+  test('round-robin load count excludes closed opportunities, so a rep with only closed deals is not treated as busier than one with open work', async () => {
+    const org = await createOrganization(sequelize.models, { type: 'agency' });
+    const { user: manager, password: managerPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_manager'] });
+    const { user: repA, password: repAPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_representative'] });
+    const { user: repB, password: repBPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_representative'] });
+
+    const managerLogin = await loginAs(app, manager.email, managerPassword);
+    const repALogin = await loginAs(app, repA.email, repAPassword);
+    const repBLogin = await loginAs(app, repB.email, repBPassword);
+
+    // repA closes out two deals (no longer open work)...
+    for (const suffix of ['closed1', 'closed2']) {
+      const created = await request(app).post('/api/v1/crm/opportunities')
+        .set('Authorization', `Bearer ${repALogin.token}`)
+        .send({ leadData: { name: `Closed Deal ${suffix}`, googlePlaceId: uniquePlaceId(suffix) } });
+      await request(app).put(`/api/v1/crm/opportunities/${created.body.data.opportunity.id}`)
+        .set('Authorization', `Bearer ${managerLogin.token}`)
+        .send({ stage: 'Closed Won' });
+    }
+
+    // ...while repB has one open opportunity.
+    await request(app).post('/api/v1/crm/opportunities')
+      .set('Authorization', `Bearer ${repBLogin.token}`)
+      .send({ leadData: { name: 'RR Open Deal', googlePlaceId: uniquePlaceId('rropen') } });
+
+    // A fresh opportunity (assigned to the manager on creation) should
+    // round-robin to repA: repA's open load is 0 (closed deals excluded),
+    // even though repA has more total historical opportunities than repB.
+    const fresh = await request(app).post('/api/v1/crm/opportunities')
+      .set('Authorization', `Bearer ${managerLogin.token}`)
+      .send({ leadData: { name: 'RR Target Fresh', googlePlaceId: uniquePlaceId('rrfresh') } });
+    const roundRobin = await request(app).post(`/api/v1/crm/opportunities/${fresh.body.data.opportunity.id}/round-robin-assign`)
+      .set('Authorization', `Bearer ${managerLogin.token}`);
+    expect(roundRobin.status).toBe(200);
+    expect(roundRobin.body.data.opportunity.assignedToUserId).toBe(repA.id);
+  });
+
   test('opportunities are isolated between two different agency organizations (cross-agency proof)', async () => {
     // Second, independent fixture agency — per the mandated Phase 2
     // architecture review, a single-real-agency test suite cannot prove

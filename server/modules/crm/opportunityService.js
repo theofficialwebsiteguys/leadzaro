@@ -5,7 +5,7 @@ const { Op } = require('sequelize');
 const {
   sequelize, Opportunity, Organization, Lead, OrganizationMembership, MembershipRole, Role, User,
 } = require('../../models');
-const { STAGES } = require('../../core/crm/pipelineCatalog');
+const { STAGES, CLOSED_STAGES } = require('../../core/crm/pipelineCatalog');
 
 const SALES_CAPABLE_ROLE_KEYS = ['sales_representative', 'sales_manager', 'administrator'];
 
@@ -73,14 +73,13 @@ async function createFromLead({
 }
 
 function listForAgency(agencyOrganizationId, {
-  stage, assignedToUserId, archived, page = 1, limit = 20,
+  stage, assignedToUserId, archived, limit = 20, offset = 0,
 } = {}) {
   const where = { agencyOrganizationId, deletedAt: null };
   where.archivedAt = archived === 'true' ? { [Op.ne]: null } : null;
   if (stage) where.stage = stage;
   if (assignedToUserId) where.assignedToUserId = assignedToUserId;
 
-  const offset = (Number(page) - 1) * Number(limit);
   return Opportunity.findAndCountAll({
     where,
     include: [
@@ -88,7 +87,7 @@ function listForAgency(agencyOrganizationId, {
       { model: User, as: 'assignedTo', attributes: ['id', 'name', 'email'] },
     ],
     order: [['updatedAt', 'DESC']],
-    limit: Number(limit),
+    limit,
     offset,
   });
 }
@@ -156,7 +155,14 @@ async function roundRobinAssign(id, agencyOrganizationId) {
 
   const counts = await Opportunity.findAll({
     where: {
-      agencyOrganizationId, assignedToUserId: eligibleUserIds, archivedAt: null, deletedAt: null,
+      agencyOrganizationId,
+      assignedToUserId: eligibleUserIds,
+      archivedAt: null,
+      deletedAt: null,
+      // Closed opportunities are no longer open work — counting them
+      // toward "load" would make a rep's past wins/losses make them look
+      // busier than they are and starve them of new assignments.
+      stage: { [Op.notIn]: [...CLOSED_STAGES] },
     },
     attributes: ['assignedToUserId', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
     group: ['assignedToUserId'],
@@ -187,6 +193,12 @@ async function archive(id, agencyOrganizationId) {
 async function restore(id, agencyOrganizationId) {
   const opportunity = await getInAgency(id, agencyOrganizationId);
   if (!opportunity.archivedAt) throw invalid('Opportunity is not archived');
+  // A merged-away opportunity must go through undo-merge, which also
+  // moves its Contacts/Locations back and restores prior stage/score —
+  // plain restore would unarchive it while leaving those behind.
+  if (opportunity.mergedIntoOpportunityId) {
+    throw invalid('This opportunity was merged into another one — use undo-merge to restore it', 409);
+  }
   const conflict = await Opportunity.findOne({
     where: {
       agencyOrganizationId, sourceLeadId: opportunity.sourceLeadId, archivedAt: null, deletedAt: null, id: { [Op.ne]: opportunity.id },
