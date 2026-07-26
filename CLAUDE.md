@@ -22,3 +22,7 @@ Operating rules for Claude Code in this repository. These are permanent and appl
 ## Escalation
 
 For major architecture, authorization, billing, migration, code-generation, source-control, or deployment decisions — or when a meaningful failure survives two normal repair attempts — use the `fable-phase-reviewer` subagent (read-only, high-effort review) rather than resolving it purely inline. See `.claude/agents/fable-phase-reviewer.md` for exact trigger conditions.
+
+## Autonomous execution
+
+Never end a turn by asking whether to continue when an active phase or roadmap item remains. A completed vertical slice is only a checkpoint. Automatically select and begin the next required action. After completing a phase report and Git checkpoint, immediately begin the next phase unless a documented hard-stop condition applies.

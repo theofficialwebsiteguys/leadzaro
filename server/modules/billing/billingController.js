@@ -5,7 +5,7 @@ const conversionService = require('./conversionService');
 const webhookService = require('./webhookService');
 const { triggerClientInvitationIfNew } = require('./clientInvitationService');
 const {
-  ConversionAttempt, BillingAccount, Organization, Subscription, WebhookEvent,
+  ConversionAttempt, BillingAccount, Organization, Subscription, WebhookEvent, ServicePlan,
 } = require('../../models');
 const { getStripeAdapter } = require('../../core/integrations/stripe/stripeAdapter');
 const { recordAudit } = require('../../core/audit/auditService');
@@ -20,6 +20,51 @@ async function listServicePlans(req, res, next) {
   try {
     const servicePlans = await paymentLinkService.listServicePlans();
     return success(res, { servicePlans });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Records a ServicePlan's real Stripe product/price ids (roadmap:
+ * "Stripe products/prices mapping"). Manual, not an auto-sync against
+ * the Stripe API — this phase has no real Stripe credentials in this
+ * environment to sync against (see .env.example / docs/leadzaro/
+ * stripe-setup.md). Once populated, paymentLinkService.resolvePriceIds
+ * uses these directly instead of the mock-only placeholder fallback.
+ *
+ * Deliberately not scoped by req.context.organization: ServicePlan has
+ * no agencyOrganizationId at all — it's a genuinely platform-global
+ * catalog, exactly like WebhookEvents, because Stripe is integrated as
+ * one platform-level account rather than per-agency Connect (see
+ * docs/leadzaro/current-phase-plan.md § 7a). Any administrator/billing-
+ * role user in any agency can update this mapping; that's intentional
+ * under the current single-real-tenant product scope (master
+ * architecture § 3: "multi-agency SaaS launch" is out of initial
+ * scope), not an oversight.
+ */
+async function updateServicePlanStripeMapping(req, res, next) {
+  try {
+    const servicePlan = await ServicePlan.findByPk(req.params.id);
+    if (!servicePlan) return error(res, 'Service plan not found', 404);
+
+    const { stripeProductId, stripePriceId } = req.body;
+    await servicePlan.update({
+      stripeProductId: stripeProductId ?? servicePlan.stripeProductId,
+      stripePriceId: stripePriceId ?? servicePlan.stripePriceId,
+    });
+
+    await recordAudit({
+      organizationId: req.context.organization.id,
+      actorUserId: req.user.id,
+      action: 'service_plan.stripe_mapping_updated',
+      targetType: 'ServicePlan',
+      targetId: servicePlan.id,
+      metadata: { stripeProductId: servicePlan.stripeProductId, stripePriceId: servicePlan.stripePriceId },
+      req,
+    });
+
+    return success(res, { servicePlan }, 'Stripe mapping updated');
   } catch (err) {
     next(err);
   }
@@ -63,6 +108,7 @@ async function manualConvert(req, res, next) {
       opportunityId: req.params.id,
       agencyOrganizationId: orgId,
       servicePlanId: req.body.servicePlanId || null,
+      addOnServicePlanIds: req.body.addOnServicePlanIds || [],
       source: 'manual',
       actorUserId: req.user.id,
     });
@@ -191,6 +237,7 @@ async function getCustomerPortalLink(req, res, next) {
 
 module.exports = {
   listServicePlans,
+  updateServicePlanStripeMapping,
   createPaymentLink,
   listPaymentLinks,
   manualConvert,

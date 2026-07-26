@@ -38,6 +38,7 @@ async function convertOpportunityToClient({
   opportunityId,
   agencyOrganizationId,
   servicePlanId,
+  addOnServicePlanIds = [],
   stripeCustomerId,
   stripeSubscriptionId,
   source,
@@ -78,6 +79,12 @@ async function convertOpportunityToClient({
         subscription = await Subscription.create({
           billingAccountId: billingAccount.id,
           servicePlanId,
+          // Add-ons stay on this one Subscription row rather than
+          // becoming separate rows: a real Stripe subscription has one
+          // id covering all its line items (base plan + add-ons), and
+          // stripeSubscriptionId is unique here — one row per Stripe
+          // subscription is the correct mapping, not one row per plan.
+          addOnServicePlanIds,
           stripeSubscriptionId: stripeSubscriptionId || null,
           status: 'active',
         }, { transaction });

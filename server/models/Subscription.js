@@ -26,6 +26,15 @@ module.exports = (sequelize) => {
       allowNull: true,
       unique: true,
     },
+    // Add-on plans selected alongside the primary servicePlanId at
+    // Payment Link creation. One Subscription row per Stripe subscription
+    // id (a real Stripe subscription covers multiple line items under
+    // one id), so add-ons live here as a list, not as additional rows.
+    addOnServicePlanIds: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: [],
+    },
     status: {
       type: DataTypes.STRING(20),
       allowNull: false,

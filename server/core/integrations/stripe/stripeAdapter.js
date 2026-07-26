@@ -113,7 +113,7 @@ class MockStripeAdapter extends StripeAdapter {
    * event carrying the same metadata a real Payment Link checkout would. */
   // eslint-disable-next-line class-methods-use-this
   buildCheckoutCompletedEvent({
-    opportunityId, agencyOrganizationId, stripeCustomerId, stripeSubscriptionId, eventId,
+    opportunityId, agencyOrganizationId, stripeCustomerId, stripeSubscriptionId, stripePaymentLinkId, eventId,
   }) {
     return {
       id: eventId || `mock_evt_${crypto.randomUUID()}`,
@@ -123,6 +123,11 @@ class MockStripeAdapter extends StripeAdapter {
           id: `mock_cs_${crypto.randomUUID()}`,
           customer: stripeCustomerId || `mock_cus_${crypto.randomUUID()}`,
           subscription: stripeSubscriptionId || `mock_sub_${crypto.randomUUID()}`,
+          // Real Stripe's own field identifying which Payment Link (if
+          // any) a checkout session originated from — null unless a
+          // test explicitly supplies it, matching a checkout started
+          // some other way (e.g. a Dashboard-created invoice).
+          payment_link: stripePaymentLinkId || null,
           metadata: { leadzaroOpportunityId: opportunityId, leadzaroAgencyOrganizationId: agencyOrganizationId },
         },
       },

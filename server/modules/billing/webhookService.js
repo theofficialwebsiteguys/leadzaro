@@ -135,29 +135,52 @@ async function handleCheckoutCompleted(event, webhookEvent) {
     return;
   }
 
-  // Resolve which service plan this checkout was for, if it originated
-  // from one of our own Payment Link requests.
-  const linkRequest = await PaymentLinkRequest.findOne({
-    where: { opportunityId, agencyOrganizationId },
-    order: [['createdAt', 'DESC']],
-  });
+  // Resolve which service plan this checkout was for. An opportunity can
+  // have more than one PaymentLinkRequest (a rep re-quoting a different
+  // plan) — matching by "most recently created" would silently attach
+  // the wrong plan/add-ons to the Subscription and flip the wrong link's
+  // status if the customer paid an older link while a newer one also
+  // exists. session.payment_link (real Stripe's own field identifying
+  // exactly which Payment Link a checkout originated from) is the
+  // correct match; falling back to "most recent" only when it's absent
+  // (the mock adapter, unless a test explicitly supplies it).
+  const linkRequest = session.payment_link
+    ? await PaymentLinkRequest.findOne({ where: { opportunityId, agencyOrganizationId, stripePaymentLinkId: session.payment_link } })
+    : await PaymentLinkRequest.findOne({ where: { opportunityId, agencyOrganizationId }, order: [['createdAt', 'DESC']] });
 
+  let result;
   try {
-    const result = await convertOpportunityToClient({
+    result = await convertOpportunityToClient({
       opportunityId,
       agencyOrganizationId,
       servicePlanId: linkRequest?.servicePlanId || null,
+      addOnServicePlanIds: linkRequest?.addOnServicePlanIds || [],
       stripeCustomerId: session.customer || null,
       stripeSubscriptionId: session.subscription || null,
       source: 'webhook',
       webhookEventId: webhookEvent.id,
     });
-    await triggerClientInvitationIfNew(result);
   } catch (err) {
     await recordNeedsAttention({
       opportunityId, agencyOrganizationId, source: 'webhook', webhookEventId: webhookEvent.id, failureReason: err.message,
     });
+    return;
   }
+
+  // Best-effort past this point: the conversion itself already succeeded
+  // and is real. A failure flipping the link's status or sending the
+  // invitation must never retroactively mark this webhook event/
+  // conversion as needs_attention — that would misrepresent a genuine
+  // success as unresolved on the manager-facing worklist.
+  if (linkRequest && !result.alreadyConverted) {
+    try {
+      await linkRequest.update({ status: 'paid' });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[billing] failed to flip PaymentLinkRequest ${linkRequest.id} to paid after a successful conversion:`, err.message);
+    }
+  }
+  await triggerClientInvitationIfNew(result);
 }
 
 /**

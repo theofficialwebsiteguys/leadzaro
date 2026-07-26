@@ -153,6 +153,16 @@ Lives on `ConversionAttempt` as proposed. Corrected: it is an immutable record o
 - `MockStripeAdapter` gets four new event-builder helpers mirroring real Stripe's snake_case/unix-timestamp field shapes, so handler code is identical whether driven by the mock or a real webhook.
 - Flagged for whenever real Stripe credentials exist: the exact Invoice/Subscription field-path assumptions (`invoice.subscription`, `current_period_start/end`) should be re-verified against the actual Stripe API version this integration ends up pinned to — nothing in this codebase pins one yet, and this phase has no real test-mode credentials to verify against directly.
 
+## 9. Phase closeout — roadmap-completeness gap fixes and final full-phase review
+
+Before writing the Phase 3 completion report, the actual roadmap outcome list (`docs/planning/06_PHASES_2_TO_8_ROADMAP.md`) was re-checked against current code, surfacing three real gaps closed here: `PaymentLinkRequest.status` never flipped to `'paid'` on checkout completion; add-on service plans selected at Payment Link creation never reached the resulting `Subscription`; and there was no way to record a `ServicePlan`'s Stripe product/price mapping (`billing.manage_service_plans` permission + `PATCH /billing/service-plans/:id/stripe-mapping`).
+
+A final full-phase `fable-phase-reviewer` pass (covering the whole phase, not just this increment) then found two High-severity issues in this closing work, both fixed before completion:
+- An opportunity can have more than one `PaymentLinkRequest`; matching by "most recently created" (the original gap-fix) would attach the wrong plan to the `Subscription` and flip the wrong link's status if an older link was the one actually paid. Fixed to match by Stripe's own `session.payment_link` field when present.
+- The partial unique index backstop behind the phase's major gate had never actually been exercised by any test — the existing concurrency test only ever exercises the row lock, never reaching the `INSERT` the index guards. Added a test that bypasses the lock entirely to prove the constraint independently.
+
+See `docs/leadzaro/phase-3-completion-report.md` § "Review pass 2" for the full findings/resolution table and `docs/leadzaro/setup/stripe-setup.md` for the operator-facing Stripe configuration walkthrough (external-integration setup documentation).
+
 ## 8. Implementation results (second slice: subscription lifecycle sync, failed-payment visibility, client-user invitation)
 
 - All corrected § 7 decisions implemented as designed. `webhookService.js` now dispatches five event types through a shared `HANDLERS` map (`checkout.session.completed` plus the four new lifecycle types); `dispatch()` is shared between real webhook delivery (`processWebhook`) and the new manual recovery path (`processWebhookEventById`), so the handler-selection logic exists in exactly one place.

@@ -3,7 +3,7 @@
 const request = require('supertest');
 const app = require('../app');
 const {
-  sequelize, Organization, ConversionAttempt, BillingAccount, WebhookEvent, ServicePlan, Subscription, Contact, Invitation,
+  sequelize, Organization, ConversionAttempt, BillingAccount, WebhookEvent, ServicePlan, Subscription, Contact, Invitation, PaymentLinkRequest,
 } = require('../models');
 const { createOrganization, createRoleAssignedMember, loginAs } = require('./helpers/factory');
 const { getStripeAdapter } = require('../core/integrations/stripe/stripeAdapter');
@@ -107,19 +107,20 @@ describe('Billing: webhook processing and conversion idempotency', () => {
     expect(conversionsAfterRetry.length).toBe(1);
   });
 
-  test('two concurrent conversion attempts for the same opportunity (simulating a webhook racing a manual conversion) result in exactly one completed ConversionAttempt', async () => {
+  test('two concurrent conversion attempts for the same opportunity (simulating a webhook racing a manual conversion) result in exactly one completed ConversionAttempt, BillingAccount, and Subscription', async () => {
     const org = await createOrganization(sequelize.models, { type: 'agency' });
     const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_manager'] });
     const login = await loginAs(app, user.email, password);
     const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
     const opp = await createOpportunity(auth, 'Race Condition Test Biz', 'racecond');
+    const servicePlan = await ServicePlan.findOne({ where: { key: 'starter_website' } });
 
     const [resultA, resultB] = await Promise.all([
       conversionService.convertOpportunityToClient({
-        opportunityId: opp.opportunity.id, agencyOrganizationId: opp.opportunity.agencyOrganizationId, source: 'manual',
+        opportunityId: opp.opportunity.id, agencyOrganizationId: opp.opportunity.agencyOrganizationId, servicePlanId: servicePlan.id, source: 'manual',
       }),
       conversionService.convertOpportunityToClient({
-        opportunityId: opp.opportunity.id, agencyOrganizationId: opp.opportunity.agencyOrganizationId, source: 'manual',
+        opportunityId: opp.opportunity.id, agencyOrganizationId: opp.opportunity.agencyOrganizationId, servicePlanId: servicePlan.id, source: 'manual',
       }),
     ]);
 
@@ -133,6 +134,38 @@ describe('Billing: webhook processing and conversion idempotency', () => {
     expect(completed.length).toBe(1);
     const billingAccounts = await BillingAccount.findAll({ where: { organizationId: opp.organization.id } });
     expect(billingAccounts.length).toBe(1);
+    const subscriptions = await Subscription.findAll({ where: { billingAccountId: billingAccounts[0].id } });
+    expect(subscriptions.length).toBe(1);
+  });
+
+  test('the partial unique index on ConversionAttempts(opportunityId) WHERE status=completed holds even when the row lock is bypassed entirely', async () => {
+    // This directly proves the database-level backstop itself, not just
+    // convertOpportunityToClient's normal lock-guarded path (the test
+    // above only ever exercises the lock — the second call there blocks
+    // on the Opportunity row lock and resolves via the plain
+    // ConversionAttempt.findOne check, never reaching the INSERT the
+    // unique index actually guards). Two raw inserts racing directly
+    // against the table, with no lock and no pre-check at all, is what
+    // "even if a future code path forgets the lock" actually means.
+    const org = await createOrganization(sequelize.models, { type: 'agency' });
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_manager'] });
+    const login = await loginAs(app, user.email, password);
+    const authed = (r) => r.set('Authorization', `Bearer ${login.token}`);
+    const opp = await createOpportunity(authed, 'Bypass Lock Race Test Biz', 'bypasslock');
+
+    const insertOne = () => ConversionAttempt.create({
+      opportunityId: opp.opportunity.id, agencyOrganizationId: opp.opportunity.agencyOrganizationId, source: 'manual', status: 'completed',
+    });
+
+    const results = await Promise.allSettled([insertOne(), insertOne()]);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(fulfilled.length).toBe(1);
+    expect(rejected.length).toBe(1);
+    expect(rejected[0].reason.name).toBe('SequelizeUniqueConstraintError');
+
+    const completed = await ConversionAttempt.findAll({ where: { opportunityId: opp.opportunity.id, status: 'completed' } });
+    expect(completed.length).toBe(1);
   });
 
   test('manual conversion after a webhook already converted the same opportunity is a no-op', async () => {
@@ -510,6 +543,106 @@ describe('Billing: automatic client-user invitation on conversion', () => {
 
     const invitations = await Invitation.findAll({ where: { email: 'dup-test-primary@example.test' } });
     expect(invitations.length).toBe(1);
+  });
+});
+
+describe('Billing: payment link status and add-on plans reach the resulting Subscription', () => {
+  test('a checkout completion flips its PaymentLinkRequest to paid, and carries the selected add-on plans onto the Subscription', async () => {
+    const org = await createOrganization(sequelize.models, { type: 'agency' });
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_manager'] });
+    const login = await loginAs(app, user.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+    const opp = await createOpportunity(auth, 'Addon Plan Test Biz', 'addonplan');
+
+    const basePlan = await ServicePlan.findOne({ where: { key: 'starter_website' } });
+    const addOnPlan = await ServicePlan.findOne({ where: { key: 'ongoing_management' } });
+
+    const linkRes = await auth(request(app).post(`/api/v1/crm/opportunities/${opp.opportunity.id}/payment-links`).send({
+      servicePlanId: basePlan.id, addOnServicePlanIds: [addOnPlan.id],
+    }));
+    expect(linkRes.status).toBe(200);
+    const linkRequestId = linkRes.body.data.paymentLinkRequest.id;
+
+    const adapter = getStripeAdapter();
+    const event = adapter.buildCheckoutCompletedEvent({
+      opportunityId: opp.opportunity.id, agencyOrganizationId: opp.opportunity.agencyOrganizationId,
+    });
+    const res = await request(app).post('/api/v1/billing/webhooks/stripe').send(event);
+    expect(res.status).toBe(200);
+
+    const linkRequestAfter = await PaymentLinkRequest.findByPk(linkRequestId);
+    expect(linkRequestAfter.status).toBe('paid');
+
+    const billingAccount = await BillingAccount.findOne({ where: { organizationId: opp.organization.id } });
+    const subscription = await Subscription.findOne({ where: { billingAccountId: billingAccount.id } });
+    expect(subscription.servicePlanId).toBe(basePlan.id);
+    expect(subscription.addOnServicePlanIds).toEqual([addOnPlan.id]);
+  });
+
+  test('when an opportunity has more than one Payment Link, the checkout is matched to the one actually paid (by Stripe payment_link id), not just the most recently created one', async () => {
+    const org = await createOrganization(sequelize.models, { type: 'agency' });
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_manager'] });
+    const login = await loginAs(app, user.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+    const opp = await createOpportunity(auth, 'Multi Link Test Biz', 'multilink');
+
+    const olderPlan = await ServicePlan.findOne({ where: { key: 'starter_website' } });
+    const newerPlan = await ServicePlan.findOne({ where: { key: 'custom_website' } });
+
+    const olderLinkRes = await auth(request(app).post(`/api/v1/crm/opportunities/${opp.opportunity.id}/payment-links`).send({ servicePlanId: olderPlan.id }));
+    expect(olderLinkRes.status).toBe(200);
+    const olderLink = olderLinkRes.body.data.paymentLinkRequest;
+
+    // A rep re-quotes with a different plan afterward — a second, newer
+    // PaymentLinkRequest now exists for the same opportunity.
+    const newerLinkRes = await auth(request(app).post(`/api/v1/crm/opportunities/${opp.opportunity.id}/payment-links`).send({ servicePlanId: newerPlan.id }));
+    expect(newerLinkRes.status).toBe(200);
+    const newerLink = newerLinkRes.body.data.paymentLinkRequest;
+
+    // The customer actually pays the OLDER link, not the newer one.
+    const adapter = getStripeAdapter();
+    const event = adapter.buildCheckoutCompletedEvent({
+      opportunityId: opp.opportunity.id, agencyOrganizationId: opp.opportunity.agencyOrganizationId, stripePaymentLinkId: olderLink.stripePaymentLinkId,
+    });
+    const res = await request(app).post('/api/v1/billing/webhooks/stripe').send(event);
+    expect(res.status).toBe(200);
+
+    const billingAccount = await BillingAccount.findOne({ where: { organizationId: opp.organization.id } });
+    const subscription = await Subscription.findOne({ where: { billingAccountId: billingAccount.id } });
+    expect(subscription.servicePlanId).toBe(olderPlan.id);
+
+    const olderLinkAfter = await PaymentLinkRequest.findByPk(olderLink.id);
+    const newerLinkAfter = await PaymentLinkRequest.findByPk(newerLink.id);
+    expect(olderLinkAfter.status).toBe('paid');
+    expect(newerLinkAfter.status).toBe('created');
+  });
+});
+
+describe('Billing: Stripe product/price mapping', () => {
+  test('billing.manage_service_plans is required, and updates persist', async () => {
+    const org = await createOrganization(sequelize.models, { type: 'agency' });
+    const { user: adminUser, password: adminPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['administrator'] });
+    const { user: repUser, password: repPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: org.id, roleKeys: ['sales_manager'] });
+    const adminLogin = await loginAs(app, adminUser.email, adminPassword);
+    const authAdmin = (r) => r.set('Authorization', `Bearer ${adminLogin.token}`);
+    const repLogin = await loginAs(app, repUser.email, repPassword);
+    const authRep = (r) => r.set('Authorization', `Bearer ${repLogin.token}`);
+
+    const servicePlan = await ServicePlan.findOne({ where: { key: 'custom_website' } });
+
+    const forbidden = await authRep(request(app).patch(`/api/v1/billing/service-plans/${servicePlan.id}/stripe-mapping`).send({
+      stripeProductId: 'prod_test123', stripePriceId: 'price_test123',
+    }));
+    expect(forbidden.status).toBe(403);
+
+    const allowed = await authAdmin(request(app).patch(`/api/v1/billing/service-plans/${servicePlan.id}/stripe-mapping`).send({
+      stripeProductId: 'prod_test123', stripePriceId: 'price_test123',
+    }));
+    expect(allowed.status).toBe(200);
+
+    await servicePlan.reload();
+    expect(servicePlan.stripeProductId).toBe('prod_test123');
+    expect(servicePlan.stripePriceId).toBe('price_test123');
   });
 });
 
