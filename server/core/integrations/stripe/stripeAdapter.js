@@ -128,6 +128,53 @@ class MockStripeAdapter extends StripeAdapter {
       },
     };
   }
+
+  /** Test/dev helper only — builds a synthetic invoice event. Mirrors
+   * real Stripe's Invoice field shape (snake_case, unix-second
+   * timestamps) so handler code is identical whether driven by the mock
+   * or a real webhook. `subscription: null` simulates a one-off invoice
+   * unrelated to any subscription. */
+  // eslint-disable-next-line class-methods-use-this
+  buildInvoiceEvent({
+    type, stripeSubscriptionId, stripeCustomerId, periodStart, periodEnd, eventId,
+  }) {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    return {
+      id: eventId || `mock_evt_${crypto.randomUUID()}`,
+      type,
+      data: {
+        object: {
+          id: `mock_in_${crypto.randomUUID()}`,
+          customer: stripeCustomerId || `mock_cus_${crypto.randomUUID()}`,
+          subscription: stripeSubscriptionId === undefined ? `mock_sub_${crypto.randomUUID()}` : stripeSubscriptionId,
+          period_start: periodStart || nowSeconds,
+          period_end: periodEnd || nowSeconds + 30 * 24 * 60 * 60,
+        },
+      },
+    };
+  }
+
+  /** Test/dev helper only — builds a synthetic customer.subscription.*
+   * event. Mirrors real Stripe's Subscription field shape. */
+  // eslint-disable-next-line class-methods-use-this
+  buildSubscriptionEvent({
+    type, stripeSubscriptionId, stripeCustomerId, status, currentPeriodStart, currentPeriodEnd, eventId,
+  }) {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    return {
+      id: eventId || `mock_evt_${crypto.randomUUID()}`,
+      type,
+      data: {
+        object: {
+          id: stripeSubscriptionId || `mock_sub_${crypto.randomUUID()}`,
+          customer: stripeCustomerId || `mock_cus_${crypto.randomUUID()}`,
+          status: status || 'active',
+          current_period_start: currentPeriodStart || nowSeconds,
+          current_period_end: currentPeriodEnd || nowSeconds + 30 * 24 * 60 * 60,
+        },
+      },
+    };
+  }
 }
 
 class DisabledStripeAdapter extends StripeAdapter {

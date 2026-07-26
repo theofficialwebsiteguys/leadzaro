@@ -99,17 +99,22 @@ test('full rollback and re-migration is safe (idempotent-safe against legacy tab
   }
 
   // Re-migrate onto the now-empty (but previously-migrated) database. Only
-  // the one seeded demo-client user should exist — no real legacy users.
+  // two seeded users should exist — no real legacy users: the demo-client
+  // user (Phase 1) and the non-loginable system user (Phase 3, § 7b) used
+  // as the actor for webhook-triggered client invitations.
   runCli(['db:migrate']);
   const client = await dbClient();
   try {
-    const { rows } = await client.query('SELECT email FROM "Users"');
-    expect(rows).toHaveLength(1);
-    expect(rows[0].email).toBe('demo-client@thewebsiteguys.internal');
+    const { rows } = await client.query('SELECT email FROM "Users" ORDER BY email ASC');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.email)).toEqual([
+      'demo-client@thewebsiteguys.internal',
+      'system@internal.leadzaro.local',
+    ]);
   } finally {
     await client.end();
   }
-});
+}, 30000);
 
 test('organization-scope migration safely merges a legacy duplicate SavedLead collision', async () => {
   runCli(['db:migrate:undo:all']);
@@ -177,7 +182,7 @@ test('organization-scope migration safely merges a legacy duplicate SavedLead co
   } finally {
     await verify.end();
   }
-});
+}, 30000);
 
 test('Phase 2 Opportunity backfill creates exactly one prospect Organization per (organization, lead) pair, even when an active and an archived SavedLead both exist for it', async () => {
   runCli(['db:migrate:undo:all']);
@@ -254,4 +259,4 @@ test('Phase 2 Opportunity backfill creates exactly one prospect Organization per
   } finally {
     await verify.end();
   }
-});
+}, 30000);

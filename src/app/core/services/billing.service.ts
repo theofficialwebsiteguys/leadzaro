@@ -1,7 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { ConversionAttempt, ConvertResult, PaymentLinkRequest, ServicePlan } from '../models/billing.model';
+import {
+  ConversionAttempt, ConvertResult, PaymentLinkRequest, ServicePlan, Subscription,
+} from '../models/billing.model';
 
 @Injectable({ providedIn: 'root' })
 export class BillingService {
@@ -26,5 +28,10 @@ export class BillingService {
   listConversionAttempts(status?: string): Observable<{ data: { conversionAttempts: ConversionAttempt[] } }> {
     const url = status ? `/api/v1/billing/conversion-attempts?status=${encodeURIComponent(status)}` : '/api/v1/billing/conversion-attempts';
     return this.http.get<{ data: { conversionAttempts: ConversionAttempt[] } }>(url);
+  }
+
+  listSubscriptions(status?: string): Observable<{ data: { subscriptions: Subscription[] } }> {
+    const url = status ? `/api/v1/billing/subscriptions?status=${encodeURIComponent(status)}` : '/api/v1/billing/subscriptions';
+    return this.http.get<{ data: { subscriptions: Subscription[] } }>(url);
   }
 }

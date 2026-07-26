@@ -112,6 +112,28 @@
         </div>
       </div>
     }
+
+    @if (pastDueSubscriptions().length > 0) {
+      <div class="card mb-4">
+        <div class="card-header"><h3>Billing — Past-Due Subscriptions</h3></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Client</th><th>Status</th><th>Current Period Ends</th></tr>
+            </thead>
+            <tbody>
+              @for (sub of pastDueSubscriptions(); track sub.id) {
+                <tr>
+                  <td class="font-medium">{{ sub.billingAccount?.organization?.name }}</td>
+                  <td class="text-sm text-muted">{{ sub.status }}</td>
+                  <td class="text-sm text-muted">{{ sub.currentPeriodEnd | date:'MMM d, y' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
   }
 
   @if (actionMessage()) {

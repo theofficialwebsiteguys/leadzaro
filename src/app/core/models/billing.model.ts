@@ -36,3 +36,14 @@ export interface ConvertResult {
   conversionAttempt: ConversionAttempt;
   alreadyConverted: boolean;
 }
+
+export interface Subscription {
+  id: string;
+  billingAccountId: string;
+  servicePlanId: string;
+  stripeSubscriptionId?: string | null;
+  status: string;
+  currentPeriodStart?: string | null;
+  currentPeriodEnd?: string | null;
+  billingAccount?: { organization?: { id: string; name: string } };
+}

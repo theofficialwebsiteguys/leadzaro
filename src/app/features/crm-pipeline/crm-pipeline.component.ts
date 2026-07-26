@@ -9,7 +9,9 @@ import { OrganizationContextService } from '../../core/services/organization-con
 import {
   DuplicateGroup, Enrichment, Opportunity, PIPELINE_STAGES, PipelineSummary, WebsiteAudit,
 } from '../../core/models/crm.model';
-import { ConversionAttempt, PaymentLinkRequest, ServicePlan } from '../../core/models/billing.model';
+import {
+  ConversionAttempt, PaymentLinkRequest, ServicePlan, Subscription,
+} from '../../core/models/billing.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 import { IconComponent } from '../../shared/icon/icon.component';
@@ -79,6 +81,7 @@ export class CrmPipelineComponent implements OnInit {
   paymentLinks = signal<PaymentLinkRequest[]>([]);
   selectedServicePlanId = '';
   needsAttention = signal<ConversionAttempt[]>([]);
+  pastDueSubscriptions = signal<Subscription[]>([]);
 
   ngOnInit() {
     this.loadOpportunities();
@@ -89,6 +92,7 @@ export class CrmPipelineComponent implements OnInit {
     this.billing.listServicePlans().subscribe((res) => this.servicePlans.set(res.data.servicePlans));
     if (this.org.hasPermission('leads.assign')) {
       this.billing.listConversionAttempts('needs_attention').subscribe((res) => this.needsAttention.set(res.data.conversionAttempts));
+      this.billing.listSubscriptions('past_due').subscribe((res) => this.pastDueSubscriptions.set(res.data.subscriptions));
     }
   }
 

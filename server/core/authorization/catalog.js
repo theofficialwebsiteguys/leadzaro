@@ -33,6 +33,7 @@ const PERMISSIONS = [
   { key: 'audit.view', category: 'admin', description: 'View the organization audit log' },
   { key: 'sessions.manage_others', category: 'admin', description: 'Revoke another user\'s sessions' },
   { key: 'impersonation.use', category: 'admin', description: 'View the app as another member (impersonation)' },
+  { key: 'billing.manage_webhooks', category: 'billing', description: 'View and manually reprocess failed Stripe webhook events' },
 ];
 
 const PERMISSION_KEYS = new Set(PERMISSIONS.map((p) => p.key));
@@ -97,7 +98,7 @@ const EMPLOYEE_ROLES = [
   { key: 'advanced_designer', name: 'Advanced Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS] },
   { key: 'developer', name: 'Developer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS] },
   { key: 'support', name: 'Support', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS] },
-  { key: 'billing', name: 'Billing', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS] },
+  { key: 'billing', name: 'Billing', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'billing.manage_webhooks'] },
 ].map((role) => ({
   ...role,
   scope: 'employee',

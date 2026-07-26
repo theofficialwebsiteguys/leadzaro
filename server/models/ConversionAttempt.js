@@ -48,12 +48,24 @@ module.exports = (sequelize) => {
       type: DataTypes.UUID,
       allowNull: true,
     },
+    // Immutable record of the initial automatic client-user invite
+    // attempt only — never updated afterward, never a substitute for the
+    // independently-evolving Invitation.status. See clientInvitationService.js.
+    clientInvitationStatus: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+    },
+    invitationId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
   });
 
   ConversionAttempt.associate = (models) => {
     ConversionAttempt.belongsTo(models.Opportunity, { foreignKey: 'opportunityId', as: 'opportunity' });
     ConversionAttempt.belongsTo(models.WebhookEvent, { foreignKey: 'webhookEventId', as: 'webhookEvent' });
     ConversionAttempt.belongsTo(models.Organization, { foreignKey: 'resultingClientOrganizationId', as: 'resultingClientOrganization' });
+    ConversionAttempt.belongsTo(models.Invitation, { foreignKey: 'invitationId', as: 'invitation' });
   };
 
   return ConversionAttempt;
