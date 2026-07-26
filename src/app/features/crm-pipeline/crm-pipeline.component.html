@@ -1,0 +1,192 @@
+<div class="page">
+
+  <div class="page-header">
+    <div>
+      <h2>Pipeline</h2>
+      <p>{{ total() }} opportunities in {{ org.organization()?.name }}'s pipeline</p>
+    </div>
+    <button class="btn btn-primary" *hasPermission="'leads.save'" (click)="toggleCreateForm()">
+      <lz-icon name="plus" [size]="15" /> New Opportunity
+    </button>
+  </div>
+
+  @if (actionMessage()) {
+    <div class="alert alert-info mb-4">{{ actionMessage() }}</div>
+  }
+
+  @if (showCreateForm()) {
+    <div class="card mb-4">
+      <div class="card-header"><strong>New Opportunity</strong></div>
+      <div class="card-body">
+        @if (createError()) {
+          <div class="alert alert-error mb-4">{{ createError() }}</div>
+        }
+        <div class="create-form">
+          <div class="form-group">
+            <label class="form-label" for="opp-name">Business name</label>
+            <input id="opp-name" type="text" class="form-control" [(ngModel)]="newName" placeholder="Acme Plumbing" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="opp-phone">Phone</label>
+            <input id="opp-phone" type="text" class="form-control" [(ngModel)]="newPhone" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="opp-website">Website</label>
+            <input id="opp-website" type="text" class="form-control" [(ngModel)]="newWebsite" />
+          </div>
+          <button class="btn btn-primary" [disabled]="createSubmitting()" (click)="createOpportunity()">Create</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <div class="filters-bar">
+    <div class="filter-group">
+      <label class="form-label" for="stage-filter">Stage</label>
+      <select id="stage-filter" class="form-select" [ngModel]="stageFilter()" (ngModelChange)="applyStageFilter($event)">
+        <option value="">All Stages</option>
+        @for (s of stages; track s) {
+          <option [value]="s">{{ s }}</option>
+        }
+      </select>
+    </div>
+    <button class="btn btn-ghost btn-sm" [class.active]="myOnly()" (click)="toggleMyOnly()">
+      {{ myOnly() ? 'Showing Mine' : 'My Opportunities' }}
+    </button>
+    <button class="btn btn-ghost btn-sm" [class.active]="showArchived()" (click)="toggleArchived()">
+      {{ showArchived() ? 'Showing Archived' : 'Show Archived' }}
+    </button>
+    <button class="btn btn-ghost btn-sm" *hasPermission="'crm.manage_pipeline'" [class.active]="showDuplicates()" (click)="toggleDuplicates()">
+      <lz-icon name="funnel" [size]="13" /> {{ showDuplicates() ? 'Hide Duplicates' : 'Check Duplicates' }}
+    </button>
+  </div>
+
+  @if (showDuplicates()) {
+    <div class="card mb-4">
+      <div class="card-header"><strong>Possible Duplicates</strong></div>
+      <div class="card-body">
+        @if (duplicatesLoading()) {
+          <div class="loading-state"><div class="spinner spinner-sm"></div><span>Checking for duplicates…</span></div>
+        } @else if (duplicates().length === 0) {
+          <p class="text-sm text-muted">No likely duplicates found right now.</p>
+        } @else {
+          @for (group of duplicates(); track group.name) {
+            <div class="duplicate-group">
+              <div class="duplicate-group-name">{{ group.name }}</div>
+              <ul class="duplicate-list">
+                @for (o of group.opportunities; track o.id; let i = $index) {
+                  <li>
+                    <span class="text-sm text-muted">{{ o.stage }} &middot; created {{ o.createdAt | date:'MMM d, y' }}</span>
+                    @if (i === 0) {
+                      <span class="badge badge-interested">Kept</span>
+                    } @else {
+                      <button class="btn btn-ghost btn-sm" (click)="mergeIntoKept(group, o.id)">Merge into kept record</button>
+                    }
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        }
+      </div>
+    </div>
+  }
+
+  @if (loading()) {
+    <div class="loading-state"><div class="spinner"></div><span>Loading pipeline…</span></div>
+  } @else if (opportunities().length === 0) {
+    <div class="empty-state">
+      <div class="empty-icon"><lz-icon name="target" [size]="28" /></div>
+      <h3>Nothing here yet</h3>
+      <p>{{ showArchived() ? 'No archived opportunities match these filters.' : 'Add an opportunity to start building this pipeline.' }}</p>
+    </div>
+  } @else {
+
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Business</th>
+              <th>Stage</th>
+              <th>Assigned To</th>
+              <th>Score</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (opp of opportunities(); track opp.id) {
+              <tr>
+                <td class="font-medium">{{ opp.organization?.name }}</td>
+                <td>
+                  @if (org.hasPermission('crm.manage_pipeline')) {
+                    <div class="stage-badge-wrap" [attr.data-stage]="opp.stage">
+                      <span class="stage-badge-label">{{ opp.stage }}</span>
+                      <select class="stage-badge-select" [value]="opp.stage" (change)="updateStage(opp, $any($event.target).value)">
+                        @for (s of stages; track s) {
+                          <option [value]="s">{{ s }}</option>
+                        }
+                      </select>
+                    </div>
+                  } @else {
+                    <span class="stage-badge-wrap" [attr.data-stage]="opp.stage">
+                      <span class="stage-badge-label">{{ opp.stage }}</span>
+                    </span>
+                  }
+                </td>
+                <td class="text-sm">
+                  @if (assigningId() === opp.id) {
+                    <select class="form-select" (change)="assignTo(opp, $any($event.target).value)">
+                      <option value="">Choose…</option>
+                      @for (m of members(); track m.id) {
+                        <option [value]="m.userId">{{ m.user?.name }}</option>
+                      }
+                    </select>
+                  } @else {
+                    {{ memberName(opp.assignedToUserId) }}
+                  }
+                </td>
+                <td class="text-sm text-muted">{{ opp.score ?? '—' }}</td>
+                <td class="text-sm text-muted">{{ opp.createdAt | date:'MMM d, y' }}</td>
+                <td>
+                  <div class="row-actions">
+                    @if (showArchived()) {
+                      @if (opp.mergedIntoOpportunityId) {
+                        <button class="btn btn-primary btn-sm" (click)="undoMerge(opp)">Undo Merge</button>
+                      } @else {
+                        <button class="btn btn-primary btn-sm" (click)="restore(opp)">Restore</button>
+                      }
+                    } @else {
+                      @if (!opp.assignedToUserId) {
+                        <button class="btn btn-ghost btn-sm" *hasPermission="'leads.save'" (click)="claim(opp)">Claim</button>
+                      }
+                      <button class="btn btn-ghost btn-sm" *hasPermission="'leads.assign'" (click)="toggleAssign(opp)">Assign</button>
+                      <button class="btn btn-ghost btn-sm" *hasPermission="'leads.assign'" (click)="roundRobinAssign(opp)" title="Assign to the least-loaded eligible rep">Auto</button>
+                      <button class="btn btn-ghost btn-sm danger-btn" *hasPermission="['leads.archive', 'crm.manage_pipeline']" (click)="archive(opp)" title="Archive opportunity">
+                        <lz-icon name="x" [size]="13" />
+                      </button>
+                    }
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    @if (totalPages() > 1) {
+      <div class="pagination">
+        <button class="btn btn-ghost btn-sm" [disabled]="page() <= 1" (click)="loadOpportunities(page() - 1)">
+          <lz-icon name="arrow-right" [size]="14" style="transform:rotate(180deg)" /> Prev
+        </button>
+        <span class="text-sm text-muted">Page {{ page() }} of {{ totalPages() }}</span>
+        <button class="btn btn-ghost btn-sm" [disabled]="page() >= totalPages()" (click)="loadOpportunities(page() + 1)">
+          Next <lz-icon name="arrow-right" [size]="14" />
+        </button>
+      </div>
+    }
+  }
+
+</div>

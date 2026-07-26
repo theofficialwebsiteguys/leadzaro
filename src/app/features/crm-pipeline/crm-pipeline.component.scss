@@ -1,0 +1,100 @@
+.filters-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+
+  .btn.active { background: var(--primary-100); border-color: var(--primary-dark); color: var(--primary-dark); }
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  .form-select { min-width: 200px; }
+}
+
+.create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 480px;
+}
+
+/* Stage badge-select — styled pill with invisible native select on top,
+   mirrors the saved-leads status-badge-select pattern. */
+.stage-badge-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-full);
+  padding: 3px 10px;
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+
+  &[data-stage="Discovered"]                  { background: #F1F5F9; color: #475569; }
+  &[data-stage="New Lead"]                    { background: #F1F5F9; color: #475569; }
+  &[data-stage="Researching"]                  { background: #E0E7FF; color: #3730A3; }
+  &[data-stage="Attempting Contact"]           { background: #DBEAFE; color: #1E40AF; }
+  &[data-stage="Contacted"]                    { background: #DBEAFE; color: #1E40AF; }
+  &[data-stage="Engaged"]                      { background: var(--primary-100); color: var(--primary-dark); }
+  &[data-stage="Qualified"]                    { background: var(--primary-100); color: var(--primary-dark); }
+  &[data-stage="Proposal or Offer Prepared"]   { background: var(--warning-bg); color: var(--warning-text); }
+  &[data-stage="Payment Link Sent"]            { background: var(--warning-bg); color: var(--warning-text); }
+  &[data-stage="Closed Won"]                   { background: #D1FAE5; color: #064E3B; }
+  &[data-stage="Closed Lost"]                  { background: var(--danger-bg); color: var(--danger-text); }
+  &[data-stage="Nurture"]                      { background: #F1F5F9; color: #475569; }
+  &[data-stage="Do Not Contact"]               { background: var(--danger-bg); color: var(--danger-text); }
+}
+
+.stage-badge-label { pointer-events: none; }
+
+.stage-badge-select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+  font-size: .7rem;
+}
+
+.row-actions { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.danger-btn { color: var(--danger) !important; &:hover { background: var(--danger-bg) !important; } }
+
+.duplicate-group {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-light);
+  &:last-child { border-bottom: none; }
+}
+
+.duplicate-group-name {
+  font-weight: 600;
+  font-size: .875rem;
+  margin-bottom: 8px;
+}
+
+.duplicate-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+}
+
+.pagination { display: flex; align-items: center; gap: 16px; justify-content: center; margin-top: 24px; }
