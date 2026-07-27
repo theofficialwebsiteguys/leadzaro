@@ -1,74 +1,162 @@
-# Phase 4 Implementation Plan — Agency Operations and Website Guys Client Portal
+# Phase 5 — Website Builder Foundation: working plan
 
-## 1. Evidence audit
+Scope per `docs/planning/06_PHASES_2_TO_8_ROADMAP.md` "Phase 5" and `docs/planning/02_MASTER_PRODUCT_SYSTEM_ARCHITECTURE.md` §§ 13 (files/content scopes) and 14 (website builder). § 15 (Angular code generation) is read only for the schema-stability boundary Phase 6 depends on — this phase does not generate or run any Angular code.
 
-(unchanged from the pre-review draft — see git history for the full text.) Key facts re-confirmed by the review with direct code checks:
+Major gate: the schema, preview renderer, and version history must be stable before Phase 6 (Angular code generation) is introduced. Secondary gate carried from this phase's own outcome list: Basic/Professional/Advanced editing-level enforcement must be server-side, never frontend-hidden — exactly CLAUDE.md rule 4, applied to a graduated permission model instead of Phase 4's binary one.
 
-- The Phase-1 demo client organization (`server/migrations/20260725120004-seed-website-guys-and-rbac.js`) has a valid `managingAgencyOrganizationId` (backfilled by migration `20260725120008`) but **no `ConversionAttempt` row at all** — it predates Phase 3 and was never created via `conversionService.convertOpportunityToClient`. Every real Phase 3 client conversion, by contrast, always has a `ConversionAttempt` (both the webhook and manual-conversion paths share that one code path).
-- `managingAgencyOrganizationId` is set at prospect-creation time and never touched by conversion — safe, stable source of tenancy for every client organization, including the demo client.
-- **No ESLint config, lint script, or CI workflow exists anywhere in this repository** (checked directly: no `.eslintrc`/`eslint.config.js`, no `eslint` in `package.json` scripts or dependencies, no `.github/workflows`). This directly affects § 2g below — a lint-based enforcement mechanism would have zero automatic enforcement in this repo today, since nothing runs a linter automatically.
+This plan was drafted, then escalated to `fable-phase-reviewer` for a pre-implementation design review (a draft plan is not sufficient justification on its own for a phase this architecturally significant — see CLAUDE.md's escalation rule). The review returned 7 resolved open questions and 10 additional findings, three of which required revising the draft before any migration could be written. Every decision below reflects that review; corrections are marked explicitly, matching Phase 4's own completion-report convention of naming what changed and why.
 
-## 2. Key architecture decisions — reviewed by `fable-phase-reviewer`; this section reflects the corrected, accepted design
+## 1. Evidence audit — what already exists that this phase builds on
 
-### 2a. The Phase-4-opening backfill migration — accepted with a required correction
+- Every client `Organization` has exactly one `Project` (Phase 4). A `Website` belongs to a `Project` 1:1 in this phase — no multi-site-per-project support yet (a documented scope boundary, not an oversight; see § 5 below).
+- ADR 0007's client-visibility architecture (`visibilityGuard.js` + `clientVisibleModels.js`) is the only sanctioned way any guarded model is read. Every new Phase 5 model reachable by a client request uses it.
+- `File.SCOPES` already includes `'website_asset'`, added in Phase 4 in anticipation of this phase, but deliberately excluded from `File.CLIENT_FACING_SCOPES` at the time ("no inherent tie to a specific client-visible context" — see `clientVisibleModels.js`'s `filterClientVisibleFiles` comment). This phase supplies that context.
+- `advanced_designer` and `developer` employee roles have existed since Phase 1 with only `PLACEHOLDER_EMPLOYEE_PERMISSIONS` — this is explicitly the module they were reserved for.
+- The `ProjectAssignment` pattern (a per-project role-slot table, separate from the global permission catalog) is the established precedent for "broad permission gates the route; a narrower assignment-style table carries the finer distinction within it." Phase 5's editing-level enforcement reuses this shape.
+- Phase 4's own history contains two lessons this phase must not relearn the hard way: (a) `Meeting` originally shipped with no denormalized tenant columns, caught only by a mid-phase review; (b) `Message`/`ProjectChannel` originally let a visibility function trust its caller's order of operations instead of independently re-deriving the parent's visibility, causing a real (pre-commit) leak. Both are treated as up-front design rules below, not risks to rediscover in this phase's own closing review.
+- Phase 4's own *closing* review additionally found that `ProjectAssignment.addAssignment` didn't verify its target user actually belonged to the project's tenant — a cross-tenant PII exposure via the assignment-listing endpoint. `WebsiteEditorAssignment` (this phase's analogous table) builds that check in from the start.
 
-**Correction (found by direct code check, not just design review)**: `Project.agencyOrganizationId` must be copied from `Organization.managingAgencyOrganizationId` directly, **never** from `ConversionAttempt.agencyOrganizationId` — the demo client has no `ConversionAttempt` at all, and sourcing tenancy from it would leave that one `Project` row untenanted. Only `ownerUserId` and `sourceConversionAttemptId` are conditionally populated from a matching completed `ConversionAttempt` (`resultingClientOrganizationId = organization.id, status = 'completed'`) where one exists, tolerating `null` for the demo client. A migration test specifically asserts the demo client's resulting `Project.agencyOrganizationId` equals the Website Guys org id — the generic "one Project per client org" assertion alone would not catch this class of bug.
+## 2. Core models and corrected design decisions
 
-### 2b. Core schema — accepted with three required corrections
+### 2a. `DesignSystem` (design tokens + starting templates)
 
-- `Project`, `ProjectAssignment`, `Task`, `TimeEntry`, `ProjectChannel`, `Message`, `ClientRequest`, `ContentInboxItem`, `Meeting`, `File`, `CancellationRequest` as previously proposed (see git history for the full per-field list), with:
-- **Correction 1 (the major-gate wording itself)**: architecture § 10's major gate names "financial margins" explicitly. No cost/profitability field may live directly on `Project` — a boolean/flag can only protect a *row*, not a *field*, and `Project` rows must themselves be client-visible (stage/health/owner). A new `ProjectFinancials` table (one-to-one with `Project`, agency-only, never reachable by any client-facing route) holds internal cost/profitability data instead.
-- **Correction 2**: client-visibility for `File` requires **both** `isPrivate = false` **and** `scope` in an explicit client-facing allowlist (`project`, `task_attachment` on a client-visible task, `message_attachment` in a client-visible channel, `request_attachment`) — `isPrivate` alone is not sufficient, since e.g. a non-private `website_asset` file has no inherent tie to a specific client-visible context.
-- **Correction 3**: `Meeting` needs a denormalized `agencyOrganizationId` (and `organizationId`) column — every other new table in this phase has a direct tenant-scoping column; `Meeting` was the one gap, relying only on a join through `Project`.
-- **Correction 4**: `CancellationRequest` gets an explicit `initiatedBy` (`'client'|'agency'`) field — the workflow is described as client-initiated, but the state machine as proposed didn't distinguish who's actually driving a given transition.
+`id, agencyOrganizationId (nullable), organizationId (nullable), name, tokens (JSONB: colors/fonts/spacing/radii/shadows), isLibraryTemplate (boolean), forkedFromDesignSystemId (nullable, self-FK, lineage only — never consulted at runtime), createdByUserId`.
 
-### 2c. Project stage catalog and soft gates — accepted as proposed
+- A **library template** row has `agencyOrganizationId` set (or null for a platform-provided base library) and `organizationId: null` — visible only to employees (browsing to start a new client site), never to a client directly.
+- A **client instance** row has both `organizationId` and `agencyOrganizationId` set, created by **forking** (copying) a library template's `tokens` at `Website` creation time — never a live reference to the library row.
+- **Correction (review Q7)**: the original draft left open whether a client's design system should reference the library template directly with an override layer, or fork it. Fork was chosen: a live reference would let a later edit to the shared library template *retroactively and silently* change an already-published client site's tokens outside that client's own version/review/publish workflow — breaking the version-history immutability guarantee (a "published" `WebsiteVersion` snapshot would stop accurately representing what was actually live). `forkedFromDesignSystemId` is kept for lineage/reporting only.
+- Reuses `tenantWhereForRequester` directly, unmodified: a client-membership query matches on `organizationId` (only their own forked instance ever matches — library rows have `organizationId: null` and are automatically invisible to any client, with no extra logic needed); an employee-membership query matches on `agencyOrganizationId` (their own library templates *and* every client instance under them, exactly like `Project`).
 
-Architecture § 10's exact wording ("Transitions use soft gates... authorized users may proceed with an override reason. Launch has the strongest checklist") applies uniformly — "strongest checklist" describes the *rigor of the checklist*, not a different *gate mechanism* for Launch specifically. Override-with-reason restricted to `projects.manage`/`projects.change_stage`-holding roles (never designer/developer/support, never any client role) is a spec-consistent tightening of *who* counts as "authorized," not a deviation from the soft-gate design.
+### 2b. `Website`
 
-### 2d. The client-visibility authorization boundary — the phase's major gate; the original proposal (a shared helper, called per-endpoint) is **rejected as insufficient on its own**
+`id, projectId (unique), organizationId, agencyOrganizationId, designSystemId, name, startingMode ('template'|'page_kit'|'guided'|'blank'), draftSchema (JSONB), currentPublishedVersionId (nullable FK to WebsiteVersion), createdByUserId`.
 
-The review found this failure class has **already shipped once in this exact codebase**: Phase 1's impersonation feature originally had no tenant check at all until its own closing review caught it (documented in `server/migrations/20260725120008-add-organization-managing-agency.js`'s own comment). A "remember to call the helper" convention is the same shape of defense that already failed once here, now applied to a strictly higher-stakes boundary (cross-client data leakage, not an internal admin capability). Concrete failure mode: a future single-record detail endpoint (e.g. `GET /projects/:id/tasks/:taskId`), copied from a neighboring *employee-only* controller pattern (of which there will be many, since employees get broad access), would have no structural reason to route through a helper a developer might mentally file under "list endpoints only."
+- 1:1 with `Project` (unique index on `projectId`) — a documented scope boundary (§ 5).
+- `draftSchema` is the mutable, autosaved working state — the schema-first source of truth, shaped per architecture § 14's own example (`pages[].sections[]`, plus the content-scope keys added in § 2f below).
+- **Correction (review Q2)**: `Page`/`Section` are deliberately **not** normalized into their own tables this phase — they live entirely inside `draftSchema`/`WebsiteVersion.schema`, matching § 14's literal "the primary source of truth is a structured versioned website definition." The one required discipline: every page/route lookup goes through a single accessor function (e.g. `findPageInSchema(schema, route)`) from slice 1, even though it's just parsing JSON today — so that if a later phase (domain routing, SEO) needs a real indexed `Page` table for performance, that becomes an internal change behind an existing seam, not a call-site rewrite.
+- Standard guard (`installVisibilityGuard`), `tenantWhereForRequester` — no additional client/internal split needed at the `Website` row level itself (the split that matters is on `WebsiteVersion`, § 2c).
 
-**Corrected design — two layers, not one:**
+### 2c. `WebsiteVersion`
 
-1. **A sanctioned repository module** (`server/core/authorization/clientVisibleModels.js`) is the *only* way any controller reads `Task`, `Message`, `ProjectChannel`, `File`, `ClientRequest` (and `Project` itself, for the tenant half). It exports complete query functions (e.g. `listProjectTasks({ context, projectId })`, `getTaskById({ context, taskId })`), each of which always applies the correct scoping internally based on `context.membership.membershipType` — never a raw `where`-fragment a caller could forget to merge in.
-2. **A runtime Sequelize-hook guard on the models themselves**, not a lint rule. The review's own suggested enforcement was a custom ESLint `no-restricted-imports` rule — **rejected as the enforcement mechanism** once repository evidence showed this repo has no ESLint config, no lint script, and no CI workflow at all (checked directly, see § 1). A lint rule nothing ever runs automatically provides *weaker* real-world protection than the "remember to call the helper" convention it was meant to replace. Instead: a `beforeFind`/`beforeCount` hook on `Task`/`Message`/`ProjectChannel`/`File`/`ClientRequest` throws immediately unless the query's options carry an internal marker (`options.__visibilityScoped === true`) that only `clientVisibleModels.js` sets after applying the real filter. A controller that imports the raw model and queries it directly gets a loud, immediate runtime error — in every environment, including production, with no dependence on anyone running a linter — rather than a silent data leak. This is directly testable (a unit test asserts a raw `Task.findAll()` call throws; the repository module's own call succeeds and filters correctly), and needs no new toolchain, unlike standing up ESLint/CI from scratch.
-3. **Employee project-level scoping, resolved as an explicit decision**: any active employee membership at the owning agency can read a project's internal (non-client-visible) content, regardless of their own `ProjectAssignment` on that specific project — matching the architecture's description of company-wide employee context ("project-focused internal notes" implies internal notes are agency-employee-readable, distinct from the fully separate client-visibility boundary; `ProjectAssignment` governs *task assignment/ownership*, not *read access*). Recorded here explicitly rather than left implicit.
+`id, websiteId, organizationId, agencyOrganizationId (denormalized — correction below), versionNumber, label (nullable), schema (JSONB, immutable once created), isAutosave (boolean), status ('draft'|'pending_review'|'approved'|'published'), createdByUserId, publishedAt (nullable)`.
 
-This whole decision — the two-layer enforcement plus the reasoning for rejecting the lint-rule approach given this repo's actual toolchain — is recorded as ADR 0007.
+- **Correction (review Q1, approved as drafted)**: a full immutable JSONB snapshot per version, not a diff/event-log. `compare` = diff two known-good full documents at request time; `restore` = create a *new* version copying an old one's schema, never rewriting history — matching this codebase's existing immutable-audit-trail convention (`AuditLog`, `ConversionAttempt`). Autosave pruning (keep the N most recent per website; never prune named/published ones) bounds storage growth. This is explicitly *not* the operational-transform live-editing model § 14 rules out — those are orthogonal concerns (storage representation vs. real-time collaboration transport).
+- **Correction (review finding #2 — tenant denormalization)**: `organizationId`/`agencyOrganizationId` are denormalized directly onto this table, exactly like every other Phase 4 child table (`Task`, `Message`, `Meeting` after its own mid-phase fix) — never resolved via an `include` of the guarded `Website` model (ADR 0007's first empirically-found gap).
+- **Correction (review finding #1 — re-derived on reflection, not just tenant scoping)**: on closer analysis prompted by the review's caution, `WebsiteVersion` *does* have a genuine non-tenant visibility axis, the same shape as `Message`'s channel-visibility split: a client should see the currently published/approved version(s) and their own submitted versions (to track their own request's status), but **not** another user's in-progress draft/autosave work (e.g. a designer's unfinished Professional-tier changes). The guarded accessor therefore applies, for a client membership: `status IN ('published','approved') OR createdByUserId = context.user.id`, on top of tenant scoping — mirroring `taskWhereForRequester`'s `isClientVisible` addition and `channelWhereForRequester`'s `visibility` addition exactly. An employee membership sees every version, matching § 2d's "any active employee at the owning agency" precedent.
+- Every route that takes both a `websiteId` and a `versionId` path parameter re-validates `version.websiteId === websiteId`, matching the existing `Task`/`Channel` convention (`if (!task || task.projectId !== projectId) throw invalid(...)`).
 
-### 2e. External adapters — accepted as proposed
+### 2d. `SectionDefinition` (component/section library catalog)
 
-`GoogleCalendarAdapter`, `StorageProvider`/GCS adapter, mirroring the established `EmailAdapter`/`EnrichmentAdapter`/`StripeAdapter` pattern exactly. Built in parallel with the core schema work since neither touches the client-visibility boundary.
+`id, agencyOrganizationId (nullable — null means platform-provided/system-defined), name, componentKey, category, settingsSchema (JSONB — see § 2e), variants (JSONB), state ('managed'|'extended'|'registered_custom'|'detached'), previewImageUrl, isSystemDefined (boolean), createdByUserId (nullable for system rows)`.
 
-### 2f. Client dashboard "last-worked context" — accepted as proposed
+- **Correction (review finding #10)**: tenancy was left unspecified in the draft. Decision: agency-scoped, not a single global catalog — the phase's own "library governance" outcome implies agencies curate their own section libraries. `agencyOrganizationId: null` rows are platform-provided defaults visible to everyone; non-null rows are a specific agency's own custom/registered components, visible to that agency's employees and (read-only, for rendering their own site) clients under it.
+- Guarded, but with an OR-scoped accessor rather than plain `tenantWhereForRequester` equality: `listSectionDefinitionsForRequester(context)` matches `agencyOrganizationId IS NULL OR agencyOrganizationId = <the requester's own agency>` — for an employee, `context.organization.id`; for a client, `context.organization.managingAgencyOrganizationId` (already available on the loaded `Organization` row from `resolveContext()`). This is new shape, not a reuse of the existing helper, and must be reviewed for correctness in its own dedicated test the same way `taskWhereForRequester`'s addition was.
+- Component **states** (`managed`/`extended`/`registered_custom`/`detached`) are represented as data only in this phase — no real Angular code is generated or executed. Registered/detached rows are placeholders for Phase 6 to give real meaning to.
 
-Computed at request time, not persisted — mirrors Phase 2's dashboard.
+### 2e. Per-property editing-level and review classification (the secondary major gate)
 
-## 3. Testing priorities
+**Correction (review finding #3 — the most load-bearing fix from the review)**: the original draft proposed a single `minEditingLevel` scalar per `SectionDefinition` (per section, not per property). The review identified this as a genuine server-side authorization gap in the unsafe direction: a section that's mostly Basic-editable but exposes one Professional-tier property (e.g. background positioning on an otherwise-simple hero) would force a choice between wrongly blocking a legitimate Basic edit or wrongly *allowing* a Basic-assigned editor to change that one Professional-tier property.
 
-1. **The major gate, proven directly, including the structural-defense test the review specifically asked for**: a raw `Task.findAll()`/`Message.findAll()`/etc. call bypassing `clientVisibleModels.js` throws; the repository module's own calls correctly filter for a client-membership context (no internal Task, no internal ProjectChannel/Message, no other organization's Project, no other agency's data) and correctly do not filter for an employee-membership context within their own agency.
-2. Cross-agency isolation re-proven for every new agency-scoped entity, including `Meeting` (corrected to carry its own `agencyOrganizationId`).
-3. The Phase-4-opening backfill migration creates exactly one Project per existing client organization, **with a specific assertion that the demo client's resulting `Project.agencyOrganizationId` is correctly populated from `Organization.managingAgencyOrganizationId`, not left null**.
-4. `ProjectFinancials` is never reachable via any client-facing route, proven by a dedicated test, not just absent from today's route list.
-5. Soft-gate override requires a reason and is audited; a role without `projects.change_stage`/`projects.manage` cannot override; Launch is not a silent hard block but does require the same override permission.
-6. One user holding multiple `ProjectAssignment` role slots on one project.
-7. `File` client-visibility requires both `isPrivate = false` and an allowlisted `scope` — a non-private `website_asset` file is not client-visible by that rule alone.
-8. Regression: every Phase 1/2/3 workflow continues to pass unchanged.
+Fixed by moving classification to the property level. `SectionDefinition.settingsSchema` shape:
 
-## 4. External services
+```json
+{
+  "heading": { "type": "text", "editingLevel": "basic", "requiresReview": false },
+  "backgroundImage": { "type": "image", "editingLevel": "basic", "requiresReview": false },
+  "gridColumns": { "type": "number", "editingLevel": "professional", "requiresReview": false },
+  "customAnimationScript": { "type": "code", "editingLevel": "advanced", "requiresReview": true }
+}
+```
 
-No real Google Calendar or Google Cloud Storage credentials exist in this environment. Both adapters are built and fully tested against their mock implementations first.
+`requiresReview` is independent of `editingLevel` — per architecture § 13's own wording ("design, navigation, pages, legal copy, and other sensitive changes require employee review" regardless of who's editing), a Basic-tier field can still be flagged `requiresReview: true` (e.g. a legal-copy text field), and a Professional-tier field could in principle publish immediately if explicitly marked so. Sensible defaults: `editingLevel: professional|advanced` implies `requiresReview: true` unless explicitly overridden; navigation-structure and page-structure changes (adding/removing/reordering pages, not just editing a page's content) always require review regardless of level, enforced as a dedicated check in the mutation service, not just a per-property flag (since these are structural changes to `draftSchema.pages` itself, not a single section's settings).
+
+**Enforcement mechanism**: every mutating builder endpoint diffs the incoming patch against the prior state (`draftSchema` or the version being edited), classifies each *changed key* against its `SectionDefinition.settingsSchema` entry, and rejects (403) if any changed key's `editingLevel` exceeds the requester's own effective level (§ 2g) — not a single whole-section check. If any changed key (or a structural page/navigation change) has `requiresReview: true`, the resulting `WebsiteVersion.status` is forced to `pending_review` rather than `published`, regardless of who made the change.
+
+### 2f. Content scopes (architecture § 13's three named tiers)
+
+**Correction (review finding #5)**: the draft addressed page/section content (nested in `draftSchema.pages[].sections[].content`, already implied) and effectively website-global content, but left "organization content" entirely unaddressed. Decision, made explicit rather than left silently absent:
+
+- **Page/section content**: `draftSchema.pages[].sections[].content` (already in architecture § 14's own example).
+- **Website-global content**: a top-level `draftSchema.siteSettings` key (site title, global header/footer content, shared across every page).
+- **Organization content**: a top-level `draftSchema.organizationContent` key — reusable named content items (e.g. business NAP data, a reusable testimonial block) referenced by key from any section's `content`, scoped to the single `Website` this phase supports rather than a separate cross-site table. **Documented deliberate simplification**: if a later phase ever supports multiple websites per client organization, this would need promotion to its own `OrganizationContentBlock` table shared across those sites — out of scope here since this phase is explicitly 1:1 `Project`↔`Website`.
+
+Client publishing behavior per § 13 ("some fields publish immediately; design, navigation, pages, legal copy... require review") is the `requiresReview` mechanism in § 2e, applied uniformly across all three content scopes — there is no separate content-scope-specific review mechanism.
+
+### 2g. Editing-level enforcement, permissions, and roles
+
+Two authorization layers, mirroring Phase 4's own "broad permission + fine-grained scoping" pattern:
+
+1. **`builder.edit`** (broad route-level gate): `designer`, `advanced_designer`, `developer` (employee); `client_owner`, `marketing`, `content_editor` (client) — deliberately narrower than the "everyone except viewer" pattern used for messages/requests/meetings, since editing a live client website is a materially bigger action. `project_contact`/`billing_contact` do not get it.
+2. **`builder.publish`** (narrower — approving a `pending_review` version to `published`): `administrator`, `project_manager`, `advanced_designer`, `developer`. No client role ever gets this, matching `cancellations.manage`'s "business decision, not day-to-day work" precedent.
+3. **`WebsiteEditorAssignment`** (new table, mirroring `ProjectAssignment`): `id, websiteId, organizationId, agencyOrganizationId, userId, editingLevel ('basic'|'professional'|'advanced'), assignedByUserId`, unique on `(websiteId, userId)`.
+   - **Correction (review Q3)**: a new table, not an `editingLevel` field bolted onto `ProjectAssignment`. `ProjectAssignment`'s unique key is `(projectId, userId, roleSlot)` — a single user can hold multiple role-slot rows on one project, so there is no principled single answer for "this user's editing level" if it lived there. Editing level is a genuinely distinct axis (what you may touch on the *website*) from role slot (what function you serve on the *project*); conflating them was exactly the risk the draft itself flagged and the review confirmed.
+   - **Correction (review finding #9)**: before creating an assignment, the target user must have an active `OrganizationMembership` at the website's own `organizationId` (client assignee) or `agencyOrganizationId` (employee assignee) — the exact check Phase 4's closing review had to retrofit onto `ProjectAssignment.addAssignment` after finding it missing. Built in from the start here.
+   - **Correction (review finding #8)**: the assignment-creation path explicitly rejects `editingLevel: 'advanced'` whenever the target user's membership is `client` — Advanced tier is explicitly developer/employee territory per § 14 ("registered components," "controlled developer functionality"), and nothing in the original draft stopped a client from being assigned it by mistake or malice.
+   - Employee roles get an editing level *implicitly* from their role (`developer`/`advanced_designer` → advanced; `designer` → professional) without needing an explicit assignment row for the common case — an explicit `WebsiteEditorAssignment` is required only for client-side collaborators (and the rare case of restricting a specific employee below their role default). This mirrors Phase 4's "employee project access is implicit by agency membership" precedent.
+
+### 2h. `WebsiteComment` (visual feedback anchored to versions/components)
+
+**Correction (review finding #4)**: entirely absent from the original draft despite being a named, required outcome in both § 14 ("comments") and the roadmap ("visual feedback anchored to versions/components") — not deferred, simply missing. Minimal shape added now, since the major gate requires the schema stable before Phase 6, not stabilized-then-broken-again:
+
+`id, websiteId, organizationId, agencyOrganizationId, versionId (nullable — a comment can be anchored to a specific version or to the current draft), anchorKey (a path into the schema — e.g. a page route + section id, mirroring `WebsiteEditLock.sectionKey`), authorUserId, body, isInternal (boolean, default false — mirrors `ProjectChannel`'s client/internal split so employees can leave client-invisible internal notes), resolvedAt (nullable)`.
+
+Client-visibility accessor hides `isInternal: true` rows, matching the internal-channel-message precedent exactly. The comment *workflow* (threading, notifications) is intentionally thin this phase — only the anchored-feedback shape itself is required to satisfy the stability gate.
+
+### 2i. `WebsiteEditLock` and presence
+
+`WebsiteEditLock`: `id, websiteId, organizationId, agencyOrganizationId, sectionKey, lockedByUserId, lockedAt, expiresAt` — a heartbeat-renewed TTL lock (renew = update `expiresAt`; a lock past `expiresAt` is simply treated as available at read/acquire time, no cleanup job needed).
+
+`WebsitePresence`: `id, websiteId, organizationId, agencyOrganizationId, userId, sectionKey (nullable), lastSeenAt` — updated via a lightweight heartbeat call from the frontend every few seconds; a row is "present" if `lastSeenAt` is within a short window, filtered at read time, no cleanup job needed.
+
+**Correction (review Q6, approved as drafted)**: short-TTL poll-based presence, not real-time push. No WebSocket/SSE infrastructure exists anywhere in this codebase; § 14 explicitly rules out full operational-transform live editing "initially"; and this is orthogonal to the major gate (schema/renderer/version-history stability), so introducing real-time infrastructure now would be a disproportionate addition for "Foundation" scope. Both tables use plain tenant scoping (no client/internal split needed — knowing who's editing what, within a project everyone involved already has access to, isn't sensitive).
+
+### 2j. Form builder (client-editable forms)
+
+**Correction (review finding #7)**: the draft's slice order mentioned this but defined no shape at all, despite Phase 7 ("form submissions and routing") needing to route real submissions against whatever shape this phase defines. Decision, reserved now: a `SectionDefinition` with `componentKey: 'form'`, whose `content` shape is `{ fields: [{ key, label, type, required, options? }], submitTarget: { type: 'client_request'|'email'|'webhook', config: {} } }`. `client_request` reuses Phase 4's existing `ClientRequest` machinery (a form submission becomes a `ClientRequest` with a category derived from the form) — the only submission target this phase needs to actually wire up end-to-end; `email`/`webhook` are reserved shape for Phase 7, not implemented here.
+
+### 2k. Files: `website_asset` becomes client-facing
+
+**Correction (review Q4)**: `website_asset` is added to `File.CLIENT_FACING_SCOPES`, with a `relatedId` re-check mirroring `task_attachment`/`message_attachment` exactly — `filterClientVisibleFiles` gets a new branch: `else if (file.scope === 'website_asset') { if (await getWebsiteByIdForRequester(context, file.relatedId)) results.push(file); }`. No new scope value is introduced; the existing one is completed, exactly as Phase 4 anticipated.
+
+### 2l. Image optimization
+
+**Correction (review Q5, approved as drafted)**: architecture § 13's own wording ("optimized responsive variants without requiring a paid image-transformation service") is read literally — an in-process library (`sharp`) invoked at upload time inside `StorageProvider.upload()`'s existing call path, producing a small set of responsive variants alongside the original (never discarding it). No new adapter/interface; this is a transformation step, not a storage concern, so it does not belong in the `StorageProvider` interface itself.
+
+### 2m. Breakpoint overrides
+
+**Correction (review finding #6, resolved alongside § 2e)**: no dedicated column — reserved as a documented shape within any section's `settings`: `{ base: { ...values }, breakpoints: { mobile: { ...overrides }, tablet: { ...overrides } } }`. Both the version-compare diff (§ 2c) and the per-property editing-level classification (§ 2e) must be aware of this nested shape when walking a settings object, rather than treating `settings` as a flat key-value map.
+
+### 2n. Starting modes and library governance
+
+Four starting modes (`template`, `page_kit`, `guided`, `blank`) are represented as `Website.startingMode`, recorded for provenance; only `blank` and `template` need to produce a real starting `draftSchema` in this phase's first slice (a template's schema is copied in at creation time, same fork-not-reference principle as § 2a). `page_kit` (a partial, page-level starting point) and `guided` (a wizard-driven assembly) are deferred to a later slice once the section library (§ 2d) and starting-schema-generation path exist to build on. Library governance (curating/publishing/deprecating platform- or agency-level `DesignSystem`/`SectionDefinition` templates) is its own late slice, gated by `builder.manage` — a new permission granted to `administrator` + `project_manager` only, matching `projects.change_stage`'s "significant, not day-to-day" precedent.
+
+## 3. Permission/role summary
+
+| Permission | Grantees |
+|---|---|
+| `builder.edit` | designer, advanced_designer, developer (employee); client_owner, marketing, content_editor (client) |
+| `builder.publish` | administrator, project_manager, advanced_designer, developer |
+| `builder.manage` (library governance, editor assignments) | administrator, project_manager |
+
+## 4. Testing priorities (informed directly by ADR 0007's own history)
+
+1. Raw unscoped query throws, for every one of the 7 new guarded models.
+2. `WebsiteVersion`'s client-visibility split (published/approved/own-submissions only) — a direct regression test analogous to the one that caught Message's original bug, written *before* any caller could rely on the wrong order.
+3. Per-property editing-level rejection: a Basic-assigned editor attempting to change a single Professional-tier property within an otherwise-Basic-editable section is rejected, even though the section as a whole is editable at their level.
+4. `requiresReview` forcing `pending_review` status regardless of editing level, for both a per-property-flagged field and a structural page/navigation change.
+5. `WebsiteEditorAssignment` rejects `editingLevel: 'advanced'` for a client-membership target, and rejects an assignment for a user with no membership at the website's own tenant.
+6. `website_asset` file visibility: a client sees a `website_asset` file only when it's tied to their own visible `Website`, mirroring the existing `task_attachment` test shape exactly.
+7. Cross-agency isolation for every new table (the standard suite-wide pattern).
+8. `SectionDefinition`'s OR-scoped listing (system-defined + own-agency) — a dedicated test proving an agency never sees another agency's custom library, and a client sees their own managing agency's library, not a different agency's.
 
 ## 5. Suggested slice order
 
-1. `Project` + `ProjectAssignment` + `ProjectFinancials` + stage catalog + soft-gate override audit + the corrected Phase-4-opening backfill migration + the `clientVisibleModels.js`/Sequelize-hook enforcement infrastructure (built now, even though most of the models it will guard don't exist until later slices — `Project` itself is the first thing it scopes by tenant).
-2. `Task`/subtasks + `TimeEntry` + list/board/calendar view query shaping (backend) + basic frontend views — first real use of the `isClientVisible` guard.
-3. `ProjectChannel` + `Message` — the client-visibility boundary's highest-risk case (internal vs. client channels); tested exhaustively per § 3.1.
-4. `ClientRequest` + unified support queue + `ContentInboxItem`.
-5. `Meeting` + `GoogleCalendarAdapter` (mock/disabled).
-6. `File` + `StorageProvider`/GCS adapter (mock/disabled) — the corrected two-part visibility rule (§ 2b correction 2).
-7. Client dashboard ("last-worked context") + notifications wiring across everything above.
-8. `CancellationRequest` workflow (with the corrected `initiatedBy` field).
-9. Final full-phase review (isolation/security focus, mirroring Phase 3's closing pass) + completion report.
+1. `DesignSystem` + `Website` + `WebsiteVersion` (schema/versioning foundation, including the client-visibility split) + `blank`/`template` starting modes + the guard/accessor infrastructure extension. Highest-risk slice — escalate again before merging if anything in implementation diverges from this plan's resolved design.
+2. `SectionDefinition` library (including the OR-scoped tenancy accessor) + a minimal preview renderer that renders a `draftSchema` (the major gate's "renderer" half).
+3. `builder.edit`/`builder.publish` permissions + `WebsiteEditorAssignment` + per-property editing-level enforcement + `requiresReview` classification (the secondary major gate, in full — this is the slice the review most emphasized getting right).
+4. Autosave + named checkpoints + compare + restore (the major gate's "version history" half).
+5. Asset manager: `website_asset` → `CLIENT_FACING_SCOPES`, `sharp`-based responsive image variants.
+6. Content scopes (§ 2f) + the form builder (§ 2j, wired to `ClientRequest` as its one real submit target).
+7. `WebsiteComment` + `WebsiteEditLock` + `WebsitePresence`.
+8. `page_kit`/`guided` starting modes + template/section/design-system library governance (`builder.manage`).
+9. Final full-phase review (schema-stability + authorization focus, mirroring Phase 4's closing pass) + completion report.

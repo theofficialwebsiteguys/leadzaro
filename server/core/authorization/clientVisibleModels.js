@@ -12,8 +12,10 @@
  * A raw `Project.findAll()` anywhere else in the codebase throws.
  */
 
+const { Op } = require('sequelize');
 const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
+  DesignSystem, Website, WebsiteVersion,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -270,6 +272,96 @@ function getCancellationRequestByIdForRequester(context, requestId) {
 }
 
 /**
+ * DesignSystem reuses tenantWhereForRequester directly, unmodified
+ * (current-phase-plan.md § 2a). A library-template row has
+ * organizationId: null and agencyOrganizationId set — an employee
+ * context matches on agencyOrganizationId and sees both the library
+ * templates and every client instance under their agency; a client
+ * context matches on organizationId, which a library row's null value
+ * never satisfies, so library rows are automatically invisible to any
+ * client with no extra logic required.
+ */
+function listDesignSystemsForRequester(context, extraWhere = {}) {
+  return DesignSystem.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere) }));
+}
+
+function getDesignSystemByIdForRequester(context, designSystemId) {
+  return DesignSystem.findOne(scoped({ where: tenantWhereForRequester(context, { id: designSystemId }) }));
+}
+
+/**
+ * Website denormalizes organizationId/agencyOrganizationId directly,
+ * same reasoning as Task/Message/Meeting — a Website is 1:1 with a
+ * Project (current-phase-plan.md § 2b) and needs no additional
+ * client/internal split of its own; the split that matters lives on
+ * WebsiteVersion below.
+ */
+function listWebsitesForRequester(context, extraWhere = {}) {
+  return Website.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere) }));
+}
+
+function getWebsiteByIdForRequester(context, websiteId) {
+  return Website.findOne(scoped({ where: tenantWhereForRequester(context, { id: websiteId }) }));
+}
+
+function getWebsiteByProjectIdForRequester(context, projectId) {
+  return Website.findOne(scoped({ where: tenantWhereForRequester(context, { projectId }) }));
+}
+
+/**
+ * WebsiteVersion's visibility is NOT just tenant scoping — a client
+ * membership must never see another user's in-progress draft/autosave
+ * work (e.g. a designer's unfinished changes), only the currently
+ * published/approved version(s) and their own submissions (so they can
+ * track their own request's status). This is the same shape of
+ * additional condition as taskWhereForRequester's isClientVisible check
+ * and channelWhereForRequester's visibility check — found by direct
+ * design-review analysis before any code was written, precisely because
+ * ADR 0007's Message/ProjectChannel history showed this exact class of
+ * omission ships silently if not checked for up front.
+ */
+function websiteVersionWhereForRequester(context, extraWhere = {}) {
+  const base = tenantWhereForRequester(context, extraWhere);
+  if (context.membership.membershipType !== 'client') return base;
+  return {
+    ...base,
+    [Op.or]: [
+      { status: ['published', 'approved'] },
+      { createdByUserId: context.user.id },
+    ],
+  };
+}
+
+function listWebsiteVersionsForRequester(context, extraWhere = {}) {
+  return WebsiteVersion.findAll(scoped({ where: websiteVersionWhereForRequester(context, extraWhere), order: [['versionNumber', 'DESC']] }));
+}
+
+function getWebsiteVersionByIdForRequester(context, versionId) {
+  return WebsiteVersion.findOne(scoped({ where: websiteVersionWhereForRequester(context, { id: versionId }) }));
+}
+
+/**
+ * Deliberately bypasses the client-visibility filter above — not a
+ * requester-facing read, just an internal numbering lookup used after
+ * the caller has already verified access to the parent Website via
+ * getWebsiteByIdForRequester. Computing "next version number" from a
+ * client-filtered view would be a real correctness bug, not just a
+ * visibility one: a client's filtered list could be missing a higher-
+ * numbered version an employee already created (e.g. their own in-
+ * progress Professional-tier work), so a client's next checkpoint would
+ * collide with that already-used number and fail the unique constraint
+ * on (websiteId, versionNumber) — this counts every version regardless
+ * of who created it, exactly matching what the constraint itself
+ * guards against.
+ */
+async function getNextVersionNumberForWebsite(websiteId) {
+  const latest = await WebsiteVersion.findOne(scoped({
+    where: { websiteId }, order: [['versionNumber', 'DESC']],
+  }));
+  return (latest?.versionNumber || 0) + 1;
+}
+
+/**
  * The one exception to "every read goes through a requester context":
  * system-level operations with no HTTP requester at all (currently:
  * `projectService.ensureProjectForConversion`, triggered by a Stripe
@@ -308,4 +400,12 @@ module.exports = {
   getFileByIdForRequester,
   listCancellationRequestsForRequester,
   getCancellationRequestByIdForRequester,
+  listDesignSystemsForRequester,
+  getDesignSystemByIdForRequester,
+  listWebsitesForRequester,
+  getWebsiteByIdForRequester,
+  getWebsiteByProjectIdForRequester,
+  listWebsiteVersionsForRequester,
+  getWebsiteVersionByIdForRequester,
+  getNextVersionNumberForWebsite,
 };

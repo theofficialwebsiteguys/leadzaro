@@ -39,5 +39,6 @@ router.use('/:projectId/content-inbox', require('../requests/contentInboxRoutes'
 router.use('/:projectId/meetings', require('../meetings/routes'));
 router.use('/:projectId/files', require('../files/routes'));
 router.use('/:projectId/cancellation-requests', require('../cancellations/routes'));
+router.use('/:projectId/website', require('../websites/routes'));
 
 module.exports = router;

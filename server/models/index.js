@@ -50,6 +50,10 @@ const Meeting = require('./Meeting')(sequelize);
 const File = require('./File')(sequelize);
 const CancellationRequest = require('./CancellationRequest')(sequelize);
 
+const DesignSystem = require('./DesignSystem')(sequelize);
+const Website = require('./Website')(sequelize);
+const WebsiteVersion = require('./WebsiteVersion')(sequelize);
+
 const models = {
   User,
   Lead,
@@ -96,6 +100,9 @@ const models = {
   Meeting,
   File,
   CancellationRequest,
+  DesignSystem,
+  Website,
+  WebsiteVersion,
 };
 
 // Run associations

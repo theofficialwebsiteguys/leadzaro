@@ -8,6 +8,7 @@ import { RequestService } from '../../core/services/request.service';
 import { MeetingService } from '../../core/services/meeting.service';
 import { FileUploadService } from '../../core/services/file.service';
 import { CancellationService } from '../../core/services/cancellation.service';
+import { WebsiteService } from '../../core/services/website.service';
 import { MembershipService } from '../../core/services/membership.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
 import {
@@ -19,6 +20,7 @@ import { ClientRequest, REQUEST_CATEGORIES } from '../../core/models/clientReque
 import { Meeting } from '../../core/models/meeting.model';
 import { ProjectFile, FILE_SCOPES } from '../../core/models/file.model';
 import { CancellationRequest } from '../../core/models/cancellationRequest.model';
+import { Website, WebsiteVersion } from '../../core/models/website.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 
@@ -37,6 +39,7 @@ export class ProjectsComponent implements OnInit {
   private readonly meetingService = inject(MeetingService);
   private readonly fileService = inject(FileUploadService);
   private readonly cancellationService = inject(CancellationService);
+  private readonly websiteService = inject(WebsiteService);
   private readonly membershipService = inject(MembershipService);
   readonly org = inject(OrganizationContextService);
 
@@ -80,6 +83,14 @@ export class ProjectsComponent implements OnInit {
   cancellationRequests = signal<CancellationRequest[]>([]);
   pendingCancellationRequest = computed(() => this.cancellationRequests().find((c) => c.status === 'requested') ?? null);
   newCancellationReason = '';
+
+  website = signal<Website | null>(null);
+  websiteLoaded = signal(false);
+  websiteVersions = signal<WebsiteVersion[]>([]);
+  newWebsiteName = '';
+  draftSchemaText = '';
+  draftSchemaError = '';
+  newCheckpointLabel = '';
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -133,6 +144,9 @@ export class ProjectsComponent implements OnInit {
     this.stageError.set('');
     this.financialsLoaded.set(false);
     this.dashboard.set(null);
+    this.website.set(null);
+    this.websiteLoaded.set(false);
+    this.websiteVersions.set([]);
     this.projectService.getById(id).subscribe((res) => {
       this.selected.set(res.data.project);
       this.stageTarget = res.data.project.stage;
@@ -146,6 +160,7 @@ export class ProjectsComponent implements OnInit {
     this.loadMeetings(id);
     this.loadFiles(id);
     this.loadCancellationRequests(id);
+    this.loadWebsite(id);
     if (this.org.hasPermission('projects.manage')) {
       this.projectService.getFinancials(id).subscribe((res) => {
         this.financials.set(res.data.financials);
@@ -402,6 +417,72 @@ export class ProjectsComponent implements OnInit {
     this.projectService.updateFinancials(id, { estimatedCostCents, actualCostCents, marginNotes: this.marginNotes }).subscribe((res) => {
       this.financials.set(res.data.financials);
       this.actionMessage.set('Financials updated');
+    });
+  }
+
+  loadWebsite(projectId: string) {
+    this.websiteService.get(projectId).subscribe({
+      next: (res) => {
+        this.website.set(res.data.website);
+        this.draftSchemaText = JSON.stringify(res.data.website.draftSchema, null, 2);
+        this.websiteLoaded.set(true);
+        this.loadWebsiteVersions(projectId);
+      },
+      error: () => {
+        this.website.set(null);
+        this.websiteLoaded.set(true);
+      },
+    });
+  }
+
+  loadWebsiteVersions(projectId: string) {
+    this.websiteService.listVersions(projectId).subscribe((res) => this.websiteVersions.set(res.data.versions));
+  }
+
+  createWebsite() {
+    const id = this.selectedId();
+    if (!id || !this.newWebsiteName.trim()) return;
+    this.websiteService.create(id, this.newWebsiteName, 'blank').subscribe(() => {
+      this.newWebsiteName = '';
+      this.loadWebsite(id);
+      this.actionMessage.set('Website created');
+    });
+  }
+
+  saveDraftSchema() {
+    const id = this.selectedId();
+    if (!id) return;
+    this.draftSchemaError = '';
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(this.draftSchemaText);
+    } catch {
+      this.draftSchemaError = 'Invalid JSON';
+      return;
+    }
+    this.websiteService.saveDraft(id, parsed).subscribe(() => {
+      this.actionMessage.set('Draft saved');
+    });
+  }
+
+  createCheckpoint() {
+    const id = this.selectedId();
+    if (!id) return;
+    this.websiteService.createCheckpoint(id, this.newCheckpointLabel).subscribe(() => {
+      this.newCheckpointLabel = '';
+      this.loadWebsiteVersions(id);
+      this.actionMessage.set('Checkpoint created');
+    });
+  }
+
+  restoreVersion(version: WebsiteVersion) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.websiteService.restoreVersion(id, version.id).subscribe((res) => {
+      this.website.set(res.data.website);
+      this.draftSchemaText = JSON.stringify(res.data.website.draftSchema, null, 2);
+      this.loadWebsiteVersions(id);
+      this.actionMessage.set('Version restored');
     });
   }
 }

@@ -48,6 +48,8 @@ const PERMISSIONS = [
   { key: 'files.manage', category: 'projects', description: 'Delete project files' },
   { key: 'cancellations.request', category: 'projects', description: 'Request cancellation of a project engagement' },
   { key: 'cancellations.manage', category: 'projects', description: 'Confirm or withdraw a project cancellation request' },
+  { key: 'builder.edit', category: 'builder', description: 'Edit a project\'s website in the builder' },
+  { key: 'builder.publish', category: 'builder', description: 'Approve and publish a pending website version' },
 ];
 
 const PERMISSION_KEYS = new Set(PERMISSIONS.map((p) => p.key));
@@ -107,10 +109,10 @@ const EMPLOYEE_ROLES = [
     name: 'Sales Manager',
     permissions: [...SALES_PERMISSIONS, 'leads.merge', 'audit.view'],
   },
-  { key: 'project_manager', name: 'Project Manager', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'projects.manage', 'projects.change_stage', 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'cancellations.request', 'cancellations.manage'] },
-  { key: 'designer', name: 'Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage'] },
-  { key: 'advanced_designer', name: 'Advanced Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage'] },
-  { key: 'developer', name: 'Developer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage'] },
+  { key: 'project_manager', name: 'Project Manager', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'projects.manage', 'projects.change_stage', 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'cancellations.request', 'cancellations.manage', 'builder.publish'] },
+  { key: 'designer', name: 'Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'builder.edit'] },
+  { key: 'advanced_designer', name: 'Advanced Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'builder.edit', 'builder.publish'] },
+  { key: 'developer', name: 'Developer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'builder.edit', 'builder.publish'] },
   { key: 'support', name: 'Support', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage'] },
   { key: 'billing', name: 'Billing', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'billing.manage_webhooks', 'billing.manage_service_plans'] },
 ].map((role) => ({
@@ -131,6 +133,14 @@ const EMPLOYEE_ROLES = [
 // withheld from `viewer` specifically — the one finer-grained
 // distinction Phase 4 actually has a concrete need for: a role named
 // "Viewer" should not be able to post into a project's channels.
+//
+// builder.edit (Phase 5, current-phase-plan.md § 2g) is withheld from
+// `project_contact`/`billing_contact` too, not just `viewer` — editing
+// a live client website is a materially bigger action than posting a
+// message or submitting a request, so it's deliberately narrower than
+// every other client-side "create/act" permission here.
+const BUILDER_EDIT_CLIENT_ROLE_KEYS = new Set(['client_owner', 'marketing', 'content_editor']);
+
 const CLIENT_ROLES = [
   { key: 'client_owner', name: 'Client Owner' },
   { key: 'project_contact', name: 'Project Contact' },
@@ -143,7 +153,10 @@ const CLIENT_ROLES = [
   scope: 'client',
   permissions: role.key === 'viewer'
     ? [...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view']
-    : [...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view', 'messages.post', 'requests.create', 'meetings.request', 'files.upload', 'cancellations.request'],
+    : [
+      ...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view', 'messages.post', 'requests.create', 'meetings.request', 'files.upload', 'cancellations.request',
+      ...(BUILDER_EDIT_CLIENT_ROLE_KEYS.has(role.key) ? ['builder.edit'] : []),
+    ],
 }));
 
 const ALL_ROLES = [...EMPLOYEE_ROLES, ...CLIENT_ROLES];

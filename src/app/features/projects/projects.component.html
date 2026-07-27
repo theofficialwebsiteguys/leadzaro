@@ -463,6 +463,56 @@
               }
             </div>
           </div>
+
+          <div class="card mb-4">
+            <div class="card-header"><strong>Website</strong></div>
+            <div class="card-body">
+              @if (!websiteLoaded()) {
+                <p class="text-sm text-muted">Loading…</p>
+              } @else if (!website()) {
+                <div *hasPermission="'builder.edit'">
+                  <p class="text-sm text-muted mb-2">This project has no website yet.</p>
+                  <input class="input mb-2" placeholder="Website name" [(ngModel)]="newWebsiteName" />
+                  <button class="btn btn-secondary" (click)="createWebsite()">Create Blank Website</button>
+                </div>
+              } @else {
+                <div class="detail-row"><span class="label">Name</span><span>{{ website()!.name }}</span></div>
+                <div class="detail-row"><span class="label">Starting mode</span><span>{{ website()!.startingMode }}</span></div>
+
+                <label class="field-label mt-2">Draft schema (JSON)</label>
+                <textarea class="input mb-2" rows="8" [(ngModel)]="draftSchemaText"></textarea>
+                @if (draftSchemaError) {
+                  <div class="alert alert-warning mb-2">{{ draftSchemaError }}</div>
+                }
+                <div *hasPermission="'builder.edit'">
+                  <button class="btn btn-secondary" (click)="saveDraftSchema()">Save Draft</button>
+                  <input class="input" placeholder="Checkpoint label (optional)" [(ngModel)]="newCheckpointLabel" />
+                  <button class="btn btn-sm" (click)="createCheckpoint()">Create Checkpoint</button>
+                </div>
+
+                @if (websiteVersions().length > 0) {
+                  <div class="table-wrap mt-2">
+                    <table>
+                      <thead><tr><th>#</th><th>Label</th><th>Status</th><th>Created</th><th></th></tr></thead>
+                      <tbody>
+                        @for (v of websiteVersions(); track v.id) {
+                          <tr>
+                            <td>{{ v.versionNumber }}</td>
+                            <td>{{ v.label || '—' }}</td>
+                            <td>{{ v.status }}</td>
+                            <td>{{ v.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                            <td>
+                              <button class="btn btn-sm" *hasPermission="'builder.edit'" (click)="restoreVersion(v)">Restore</button>
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              }
+            </div>
+          </div>
         </div>
       }
     </div>
