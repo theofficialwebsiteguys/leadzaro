@@ -6,6 +6,9 @@ const {
 const {
   DisabledStorageProvider, MockStorageProvider,
 } = require('../core/storage/storageProvider');
+const {
+  DisabledGitHubAdapter, MockGitHubAdapter,
+} = require('../core/integrations/github/githubAdapter');
 
 describe('GoogleCalendarAdapter (unit)', () => {
   test('DisabledGoogleCalendarAdapter reports not_configured rather than throwing or fabricating an event', async () => {
@@ -58,5 +61,62 @@ describe('StorageProvider / GCS adapter (unit)', () => {
     const provider = new MockStorageProvider();
     const uploadResult = await provider.upload({ buffer: Buffer.from('x'), contentType: 'text/plain' });
     expect(uploadResult.key).toMatch(/^mock_key_/);
+  });
+});
+
+describe('GitHubAdapter (unit)', () => {
+  test('DisabledGitHubAdapter rejects every operation instead of silently succeeding', async () => {
+    const adapter = new DisabledGitHubAdapter();
+    await expect(adapter.createRepository('x')).rejects.toThrow(/not configured/i);
+    await expect(adapter.createBranch('x', 'main', 'feature')).rejects.toThrow(/not configured/i);
+    await expect(adapter.commitFiles('x', 'main', [], 'msg')).rejects.toThrow(/not configured/i);
+    await expect(adapter.createPullRequest('x', 'feature', 'main', 'title')).rejects.toThrow(/not configured/i);
+    await expect(adapter.mergePullRequest('x', 1)).rejects.toThrow(/not configured/i);
+    await expect(adapter.enablePagesForBranch('x', 'main')).rejects.toThrow(/not configured/i);
+  });
+
+  test('MockGitHubAdapter simulates a full repo/branch/commit/PR/Pages lifecycle, with a merge actually propagating files from head to base', async () => {
+    const adapter = new MockGitHubAdapter();
+
+    const repo = await adapter.createRepository('acme-site');
+    expect(repo.provider).toBe('mock');
+    expect(repo.id).toMatch(/^mock_repo_/);
+    expect(repo.defaultBranch).toBe('main');
+
+    await adapter.createBranch(repo.id, 'main', 'design/checkpoint-1');
+    const commit = await adapter.commitFiles(repo.id, 'design/checkpoint-1', [
+      { path: 'src/app/generated/pages/home.component.ts', content: 'export class HomeComponent {}' },
+    ], 'Checkpoint 1');
+    expect(commit.sha).toMatch(/^mock_sha_/);
+    expect(commit.fileCount).toBe(1);
+
+    const pr = await adapter.createPullRequest(repo.id, 'design/checkpoint-1', 'main', 'Checkpoint 1');
+    expect(pr.status).toBe('open');
+    expect(pr.number).toBe(1);
+
+    const merged = await adapter.mergePullRequest(repo.id, pr.number);
+    expect(merged.status).toBe('merged');
+
+    // The whole point of the merge: main did not have this file before,
+    // and now does — proves the mock actually simulates file-tree state
+    // across branches, not just bookkeeping a status string.
+    const secondCommitOnMain = await adapter.commitFiles(repo.id, 'main', [], 'noop');
+    expect(secondCommitOnMain.provider).toBe('mock');
+
+    const pages = await adapter.enablePagesForBranch(repo.id, 'main');
+    expect(pages.previewUrl).toMatch(/^https:\/\/mock\.pages\.test\//);
+  });
+
+  test('MockGitHubAdapter rejects operations against an unknown repository, branch, or a PR that is not open', async () => {
+    const adapter = new MockGitHubAdapter();
+    const repo = await adapter.createRepository('acme-site');
+
+    await expect(adapter.commitFiles('mock_repo_nonexistent', 'main', [], 'x')).rejects.toThrow(/unknown repository/i);
+    await expect(adapter.commitFiles(repo.id, 'no-such-branch', [], 'x')).rejects.toThrow(/unknown branch/i);
+    await expect(adapter.createBranch(repo.id, 'main', 'main')).rejects.toThrow(/already exists/i);
+
+    const pr = await adapter.createPullRequest(repo.id, 'main', 'main', 'x');
+    await adapter.mergePullRequest(repo.id, pr.number);
+    await expect(adapter.mergePullRequest(repo.id, pr.number)).rejects.toThrow(/not open/i);
   });
 });

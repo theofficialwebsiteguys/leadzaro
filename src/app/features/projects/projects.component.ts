@@ -24,7 +24,7 @@ import { Meeting } from '../../core/models/meeting.model';
 import { ProjectFile, FILE_SCOPES } from '../../core/models/file.model';
 import { CancellationRequest } from '../../core/models/cancellationRequest.model';
 import {
-  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteComment, WebsitePresenceEntry,
+  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteComment, WebsitePresenceEntry, WebsiteRepository,
 } from '../../core/models/website.model';
 import { SectionDefinition } from '../../core/models/sectionDefinition.model';
 import { DesignSystemTemplate } from '../../core/models/designSystemTemplate.model';
@@ -124,6 +124,8 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   newCommentIsInternal = false;
   websitePresence = signal<WebsitePresenceEntry[]>([]);
   private presenceIntervalId: ReturnType<typeof setInterval> | null = null;
+  websiteRepository = signal<WebsiteRepository | null>(null);
+  provisioningRepository = signal(false);
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -215,6 +217,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.testFormResult.set(null);
     this.websiteComments.set([]);
     this.websitePresence.set([]);
+    this.websiteRepository.set(null);
     this.projectService.getById(id).subscribe((res) => {
       this.selected.set(res.data.project);
       this.stageTarget = res.data.project.stage;
@@ -522,6 +525,9 @@ export class ProjectsComponent implements OnInit, OnDestroy {
         this.loadWebsiteVersions(projectId);
         this.loadWebsiteComments(projectId);
         this.loadWebsitePresence(projectId);
+        if (this.org.hasPermission('builder.develop')) {
+          this.loadWebsiteRepository(projectId);
+        }
         if (this.org.hasPermission('builder.edit')) {
           this.websiteService.heartbeatPresence(projectId).subscribe(() => this.loadWebsitePresence(projectId));
         }
@@ -690,6 +696,26 @@ export class ProjectsComponent implements OnInit, OnDestroy {
 
   loadWebsitePresence(projectId: string) {
     this.websiteService.listPresence(projectId).subscribe((res) => this.websitePresence.set(res.data.presence));
+  }
+
+  loadWebsiteRepository(projectId: string) {
+    this.websiteService.getRepository(projectId).subscribe((res) => this.websiteRepository.set(res.data.repository));
+  }
+
+  provisionWebsiteRepository() {
+    const id = this.selectedId();
+    if (!id) return;
+    this.provisioningRepository.set(true);
+    this.websiteService.provisionRepository(id).subscribe({
+      next: (res) => {
+        this.websiteRepository.set(res.data.repository);
+        this.provisioningRepository.set(false);
+      },
+      error: (err) => {
+        this.actionMessage.set(err.error?.message || 'Failed to provision repository');
+        this.provisioningRepository.set(false);
+      },
+    });
   }
 
   loadWebsiteEditors(projectId: string) {

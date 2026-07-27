@@ -9,6 +9,7 @@ const controller = require('./websiteController');
 const editorAssignmentController = require('./websiteEditorAssignmentController');
 const commentController = require('./websiteCommentController');
 const collaborationController = require('./websiteCollaborationController');
+const repositoryController = require('./websiteRepositoryController');
 
 router.use(authenticate, resolveContext());
 
@@ -60,5 +61,8 @@ router.delete('/locks/:lockId', requirePermission('builder.edit'), collaboration
 
 router.get('/presence', requirePermission('projects.view'), collaborationController.listPresence);
 router.post('/presence', requirePermission('builder.edit'), collaborationController.heartbeatPresence);
+
+router.get('/repository', requirePermission('builder.edit'), repositoryController.get);
+router.post('/repository', requirePermission('builder.develop'), repositoryController.provision);
 
 module.exports = router;

@@ -94,6 +94,7 @@ function validateEnv() {
   checkLiveProviderCredentials(errors, { providerEnvVar: 'STRIPE_PROVIDER', defaultProvider, requiredVars: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'] });
   checkLiveProviderCredentials(errors, { providerEnvVar: 'GOOGLE_CALENDAR_PROVIDER', defaultProvider, requiredVars: ['GOOGLE_CALENDAR_CREDENTIALS_JSON'] });
   checkLiveProviderCredentials(errors, { providerEnvVar: 'STORAGE_PROVIDER', defaultProvider, requiredVars: ['GCS_CREDENTIALS_JSON', 'GCS_BUCKET_NAME'] });
+  checkLiveProviderCredentials(errors, { providerEnvVar: 'GITHUB_PROVIDER', defaultProvider, requiredVars: ['GITHUB_APP_CREDENTIALS_JSON', 'GITHUB_ORG'] });
 
   if (warnings.length) {
     for (const w of warnings) {
@@ -165,6 +166,16 @@ const env = {
   STORAGE_PROVIDER: process.env.STORAGE_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
   GCS_CREDENTIALS_JSON: process.env.GCS_CREDENTIALS_JSON || '',
   GCS_BUCKET_NAME: process.env.GCS_BUCKET_NAME || '',
+
+  // No real GitHub App credentials exist yet (Phase 6 — website
+  // repository creation, branches, previews). Same reasoning as every
+  // other provider above: mock in dev (a full in-memory repo/branch/PR
+  // lifecycle to build and test the promote-to-development workflow
+  // against), disabled in production unless explicitly opted into —
+  // never silently pretend a repository/deployment was created.
+  GITHUB_PROVIDER: process.env.GITHUB_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
+  GITHUB_APP_CREDENTIALS_JSON: process.env.GITHUB_APP_CREDENTIALS_JSON || '',
+  GITHUB_ORG: process.env.GITHUB_ORG || '',
 };
 
 module.exports = { env, validateEnv };

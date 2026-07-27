@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
-  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteVersionComparison, WebsiteComment, WebsitePresenceEntry,
+  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteVersionComparison, WebsiteComment, WebsitePresenceEntry, WebsiteRepository,
 } from '../models/website.model';
 
 @Injectable({ providedIn: 'root' })
@@ -88,5 +88,13 @@ export class WebsiteService {
 
   listPresence(projectId: string): Observable<{ data: { presence: WebsitePresenceEntry[] } }> {
     return this.http.get<{ data: { presence: WebsitePresenceEntry[] } }>(`/api/v1/projects/${projectId}/website/presence`);
+  }
+
+  getRepository(projectId: string): Observable<{ data: { repository: WebsiteRepository | null } }> {
+    return this.http.get<{ data: { repository: WebsiteRepository | null } }>(`/api/v1/projects/${projectId}/website/repository`);
+  }
+
+  provisionRepository(projectId: string): Observable<{ data: { repository: WebsiteRepository } }> {
+    return this.http.post<{ data: { repository: WebsiteRepository } }>(`/api/v1/projects/${projectId}/website/repository`, {});
   }
 }

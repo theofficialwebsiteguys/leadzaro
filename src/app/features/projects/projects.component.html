@@ -626,6 +626,21 @@
                   }
                 </div>
 
+                <div *hasPermission="'builder.develop'" class="mt-2">
+                  <label class="field-label">Repository</label>
+                  @if (websiteRepository(); as repo) {
+                    <div class="detail-row"><span class="label">Status</span><span>{{ repo.status }}</span></div>
+                    @if (repo.fullName) {
+                      <div class="detail-row"><span class="label">Repository</span><span>{{ repo.fullName }} ({{ repo.defaultBranch }})</span></div>
+                    }
+                  } @else {
+                    <p class="text-sm text-muted mb-2">No repository has been provisioned yet.</p>
+                    <button class="btn btn-sm" [disabled]="provisioningRepository()" (click)="provisionWebsiteRepository()">
+                      {{ provisioningRepository() ? 'Provisioning…' : 'Provision Repository' }}
+                    </button>
+                  }
+                </div>
+
                 <div *hasPermission="'builder.manage'" class="mt-2">
                   <label class="field-label">Editor Access</label>
                   <div class="table-wrap">

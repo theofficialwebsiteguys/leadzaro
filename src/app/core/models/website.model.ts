@@ -95,3 +95,13 @@ export interface WebsitePresenceEntry {
   lastSeenAt: string;
   user?: { id: string; name: string };
 }
+
+export interface WebsiteRepository {
+  id: string;
+  websiteId: string;
+  provider: string;
+  externalRepoId: string | null;
+  fullName: string | null;
+  defaultBranch: string;
+  status: 'provisioning' | 'active' | 'error';
+}

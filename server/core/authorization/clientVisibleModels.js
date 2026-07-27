@@ -16,7 +16,7 @@ const { Op } = require('sequelize');
 const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
   DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
-  WebsiteComment, WebsiteEditLock, WebsitePresence,
+  WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -369,6 +369,35 @@ function getWebsiteByProjectIdForRequester(context, projectId) {
 }
 
 /**
+ * WebsiteRepository (current-phase-plan.md § 2b, Phase 6) — plain tenant
+ * scoping, no client/internal split: a client can already see their own
+ * website exists, and a repository record carries no additional
+ * sensitive information beyond that.
+ *
+ * Created lazily, on first real need, never eagerly at Website creation
+ * — the review correction that replaced the original eager-provisioning
+ * draft. `findOrCreate` internally issues a `find` first, which the
+ * model's own guard hook would otherwise reject, exactly like the
+ * established `findOrCreateProjectFinancials` exception.
+ */
+function getWebsiteRepositoryForRequester(context, websiteId) {
+  return WebsiteRepository.findOne(scoped({ where: tenantWhereForRequester(context, { websiteId }) }));
+}
+
+async function findOrCreateWebsiteRepositoryForRequester(context, website) {
+  const [repository] = await WebsiteRepository.findOrCreate(scoped({
+    where: { websiteId: website.id },
+    defaults: {
+      websiteId: website.id,
+      organizationId: website.organizationId,
+      agencyOrganizationId: website.agencyOrganizationId,
+      createdByUserId: context.user.id,
+    },
+  }));
+  return repository;
+}
+
+/**
  * WebsiteVersion's visibility is NOT just tenant scoping — a client
  * membership must never see another user's in-progress draft/autosave
  * work (e.g. a designer's unfinished changes), only the currently
@@ -605,6 +634,8 @@ module.exports = {
   listWebsitesForRequester,
   getWebsiteByIdForRequester,
   getWebsiteByProjectIdForRequester,
+  getWebsiteRepositoryForRequester,
+  findOrCreateWebsiteRepositoryForRequester,
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,

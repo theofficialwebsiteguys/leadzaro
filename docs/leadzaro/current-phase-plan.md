@@ -1,162 +1,126 @@
-# Phase 5 — Website Builder Foundation: working plan
+# Phase 6 — Angular Generation and Developer Workflow: working plan
 
-Scope per `docs/planning/06_PHASES_2_TO_8_ROADMAP.md` "Phase 5" and `docs/planning/02_MASTER_PRODUCT_SYSTEM_ARCHITECTURE.md` §§ 13 (files/content scopes) and 14 (website builder). § 15 (Angular code generation) is read only for the schema-stability boundary Phase 6 depends on — this phase does not generate or run any Angular code.
+Scope per `docs/planning/06_PHASES_2_TO_8_ROADMAP.md` "Phase 6" and `docs/planning/02_MASTER_PRODUCT_SYSTEM_ARCHITECTURE.md` §§15 (Angular code generation) and 16 (source control and deployment).
 
-Major gate: the schema, preview renderer, and version history must be stable before Phase 6 (Angular code generation) is introduced. Secondary gate carried from this phase's own outcome list: Basic/Professional/Advanced editing-level enforcement must be server-side, never frontend-hidden — exactly CLAUDE.md rule 4, applied to a graduated permission model instead of Phase 4's binary one.
+Major gate: **a designer edit must never overwrite developer-owned custom functionality, and a registered developer component must remain usable in the builder.**
 
-This plan was drafted, then escalated to `fable-phase-reviewer` for a pre-implementation design review (a draft plan is not sufficient justification on its own for a phase this architecturally significant — see CLAUDE.md's escalation rule). The review returned 7 resolved open questions and 10 additional findings, three of which required revising the draft before any migration could be written. Every decision below reflects that review; corrections are marked explicitly, matching Phase 4's own completion-report convention of naming what changed and why.
+This plan was drafted, then escalated to `fable-phase-reviewer` for a pre-implementation design review (mirroring Phase 5's own process — a draft plan is not sufficient justification on its own for a phase this architecturally significant, per CLAUDE.md's escalation rule). The review returned 8 findings, 4 of them load-bearing (2 Critical, 2 High) that required revising the draft before any migration could be written. Every decision below reflects that review; corrections are marked explicitly.
 
 ## 1. Evidence audit — what already exists that this phase builds on
 
-- Every client `Organization` has exactly one `Project` (Phase 4). A `Website` belongs to a `Project` 1:1 in this phase — no multi-site-per-project support yet (a documented scope boundary, not an oversight; see § 5 below).
-- ADR 0007's client-visibility architecture (`visibilityGuard.js` + `clientVisibleModels.js`) is the only sanctioned way any guarded model is read. Every new Phase 5 model reachable by a client request uses it.
-- `File.SCOPES` already includes `'website_asset'`, added in Phase 4 in anticipation of this phase, but deliberately excluded from `File.CLIENT_FACING_SCOPES` at the time ("no inherent tie to a specific client-visible context" — see `clientVisibleModels.js`'s `filterClientVisibleFiles` comment). This phase supplies that context.
-- `advanced_designer` and `developer` employee roles have existed since Phase 1 with only `PLACEHOLDER_EMPLOYEE_PERMISSIONS` — this is explicitly the module they were reserved for.
-- The `ProjectAssignment` pattern (a per-project role-slot table, separate from the global permission catalog) is the established precedent for "broad permission gates the route; a narrower assignment-style table carries the finer distinction within it." Phase 5's editing-level enforcement reuses this shape.
-- Phase 4's own history contains two lessons this phase must not relearn the hard way: (a) `Meeting` originally shipped with no denormalized tenant columns, caught only by a mid-phase review; (b) `Message`/`ProjectChannel` originally let a visibility function trust its caller's order of operations instead of independently re-deriving the parent's visibility, causing a real (pre-commit) leak. Both are treated as up-front design rules below, not risks to rediscover in this phase's own closing review.
-- Phase 4's own *closing* review additionally found that `ProjectAssignment.addAssignment` didn't verify its target user actually belonged to the project's tenant — a cross-tenant PII exposure via the assignment-listing endpoint. `WebsiteEditorAssignment` (this phase's analogous table) builds that check in from the start.
+- `Website.draftSchema` / `WebsiteVersion.schema` (Phase 5) is the stable, versioned, schema-first source of truth this phase generates Angular code from. Shape: `{ pages: [{ id, route, title, sections: [{ id, componentKey, variant, settings, content }] }], navigation, siteSettings, organizationContent }`.
+- **Verified during review**: `WebsiteVersion.schema` is immutable in practice — the only `version.update(...)` call site in `websiteService.js` touches `status`/`publishedAt` only, never `schema`, across every code path (checkpoint, restore, publish). This is convention-only, not DB-enforced, consistent with how `AuditLog`-style records are already treated in this codebase — not a new gap this phase introduces.
+- `SectionDefinition.state` (`managed`/`extended`/`registered_custom`/`detached`) was reserved by Phase 5 as inert data, never read for behavior anywhere in the current codebase (verified during review) — genuinely free for this phase to give real meaning to, but see § 2c's correction below on where that meaning actually lives.
+- ADR 0007's client-visibility architecture (`visibilityGuard.js` + `clientVisibleModels.js`) is the established, four-times-battle-tested pattern (Phases 1, 4, 5×2) for any model a client-membership request can reach.
+- The adapter-interface pattern (`GoogleCalendarAdapter`, `StorageProvider`/GCS, etc. — abstract base, Mock/Disabled/Live subclasses, cached factory keyed by an env var) is used 5 times already. **Verified during review**: GitHub's actual operation set (repo/branch/commit/PR/Pages, inherently sequential and stateful — a branch must exist before a commit, a PR references two branches, a merge mutates file-tree state) is only superficially similar to the existing 2-3-operation stateless adapters at the operation level; it matches them only at the outer factory/cached-instance/env-var-provider level. The mock adapter therefore needs real in-memory state (not a stateless stub) for this phase's own tests to be meaningful — see § 2a.
+- `ProjectFinancials`'s `assertEmployeeContext`/`findOrCreateProjectFinancials` pattern (Phase 4) is the established precedent both for "this guarded model is employee-only, never client-reachable" and for "create this row lazily on first real need, not eagerly and unconditionally" — both reused directly below (§ 2d, § 2e).
+- `recordAudit()` / `Notification`/`notify()` are the established patterns for anything this phase needs to audit or notify about.
 
 ## 2. Core models and corrected design decisions
 
-### 2a. `DesignSystem` (design tokens + starting templates)
+### 2a. GitHub adapter
 
-`id, agencyOrganizationId (nullable), organizationId (nullable), name, tokens (JSONB: colors/fonts/spacing/radii/shadows), isLibraryTemplate (boolean), forkedFromDesignSystemId (nullable, self-FK, lineage only — never consulted at runtime), createdByUserId`.
+`GitHubAdapter` abstract base + `MockGitHubAdapter`/`DisabledGitHubAdapter`/`LiveGitHubAdapter`, cached factory keyed by `GITHUB_PROVIDER` env var — the same outer shape as every other adapter in this codebase, but with real internal state where the others don't need any (see evidence audit above).
 
-- A **library template** row has `agencyOrganizationId` set (or null for a platform-provided base library) and `organizationId: null` — visible only to employees (browsing to start a new client site), never to a client directly.
-- A **client instance** row has both `organizationId` and `agencyOrganizationId` set, created by **forking** (copying) a library template's `tokens` at `Website` creation time — never a live reference to the library row.
-- **Correction (review Q7)**: the original draft left open whether a client's design system should reference the library template directly with an override layer, or fork it. Fork was chosen: a live reference would let a later edit to the shared library template *retroactively and silently* change an already-published client site's tokens outside that client's own version/review/publish workflow — breaking the version-history immutability guarantee (a "published" `WebsiteVersion` snapshot would stop accurately representing what was actually live). `forkedFromDesignSystemId` is kept for lineage/reporting only.
-- Reuses `tenantWhereForRequester` directly, unmodified: a client-membership query matches on `organizationId` (only their own forked instance ever matches — library rows have `organizationId: null` and are automatically invisible to any client, with no extra logic needed); an employee-membership query matches on `agencyOrganizationId` (their own library templates *and* every client instance under them, exactly like `Project`).
+Operations: `createRepository(name)`, `createBranch(repo, fromBranch, newBranch)`, `commitFiles(repo, branch, files[], message)`, `createPullRequest(repo, headBranch, baseBranch, title)`, `mergePullRequest(repo, prNumber)`, `enablePagesForBranch(repo, branch)` → preview URL.
 
-### 2b. `Website`
+`MockGitHubAdapter` simulates, in memory, a real repo/branch/file-tree/PR/Pages-URL lifecycle (branches keyed off a parent, commits producing synthetic SHAs, PRs with open→merged/closed state) — real merge-conflict detection is explicitly out of scope (confirmed during review: detached-section custom code lives entirely under `custom/`, which the generator never writes to; Leadzaro's own tests only need to exercise its own orchestration logic, never git's merge algorithm — `LiveGitHubAdapter` inherits real conflict handling from actual GitHub for free).
 
-`id, projectId (unique), organizationId, agencyOrganizationId, designSystemId, name, startingMode ('template'|'page_kit'|'guided'|'blank'), draftSchema (JSONB), currentPublishedVersionId (nullable FK to WebsiteVersion), createdByUserId`.
+`DisabledGitHubAdapter` rejects every operation (matching `DisabledStorageProvider`'s "no silent success" precedent — confirmed correct during review, since promote-to-development is a load-bearing action, unlike an optional calendar sync that can degrade to `not_configured`).
 
-- 1:1 with `Project` (unique index on `projectId`) — a documented scope boundary (§ 5).
-- `draftSchema` is the mutable, autosaved working state — the schema-first source of truth, shaped per architecture § 14's own example (`pages[].sections[]`, plus the content-scope keys added in § 2f below).
-- **Correction (review Q2)**: `Page`/`Section` are deliberately **not** normalized into their own tables this phase — they live entirely inside `draftSchema`/`WebsiteVersion.schema`, matching § 14's literal "the primary source of truth is a structured versioned website definition." The one required discipline: every page/route lookup goes through a single accessor function (e.g. `findPageInSchema(schema, route)`) from slice 1, even though it's just parsing JSON today — so that if a later phase (domain routing, SEO) needs a real indexed `Page` table for performance, that becomes an internal change behind an existing seam, not a call-site rewrite.
-- Standard guard (`installVisibilityGuard`), `tenantWhereForRequester` — no additional client/internal split needed at the `Website` row level itself (the split that matters is on `WebsiteVersion`, § 2c).
+### 2b. `WebsiteRepository`
 
-### 2c. `WebsiteVersion`
+`id, websiteId (unique), organizationId, agencyOrganizationId, provider ('github'), externalRepoId (nullable), fullName (nullable), defaultBranch, status ('provisioning'|'active'|'error'), createdByUserId`.
 
-`id, websiteId, organizationId, agencyOrganizationId (denormalized — correction below), versionNumber, label (nullable), schema (JSONB, immutable once created), isAutosave (boolean), status ('draft'|'pending_review'|'approved'|'published'), createdByUserId, publishedAt (nullable)`.
+**Correction (review findings #4 and #5, resolved together)**: the original draft proposed eager creation (both the row and the real external adapter call) at `Website`-creation time, reading §16's "repository creation occurs when design work begins" as "creating a Website is design beginning." The review identified two real problems with this: (1) no backfill story for `Website` rows already created throughout Phase 4/5 development, and (2) once `LiveGitHubAdapter` exists, every trial/abandoned/never-launched website would eventually cause a real external GitHub repo to be created, most of which may never be used beyond blank-mode draft editing.
 
-- **Correction (review Q1, approved as drafted)**: a full immutable JSONB snapshot per version, not a diff/event-log. `compare` = diff two known-good full documents at request time; `restore` = create a *new* version copying an old one's schema, never rewriting history — matching this codebase's existing immutable-audit-trail convention (`AuditLog`, `ConversionAttempt`). Autosave pruning (keep the N most recent per website; never prune named/published ones) bounds storage growth. This is explicitly *not* the operational-transform live-editing model § 14 rules out — those are orthogonal concerns (storage representation vs. real-time collaboration transport).
-- **Correction (review finding #2 — tenant denormalization)**: `organizationId`/`agencyOrganizationId` are denormalized directly onto this table, exactly like every other Phase 4 child table (`Task`, `Message`, `Meeting` after its own mid-phase fix) — never resolved via an `include` of the guarded `Website` model (ADR 0007's first empirically-found gap).
-- **Correction (review finding #1 — re-derived on reflection, not just tenant scoping)**: on closer analysis prompted by the review's caution, `WebsiteVersion` *does* have a genuine non-tenant visibility axis, the same shape as `Message`'s channel-visibility split: a client should see the currently published/approved version(s) and their own submitted versions (to track their own request's status), but **not** another user's in-progress draft/autosave work (e.g. a designer's unfinished Professional-tier changes). The guarded accessor therefore applies, for a client membership: `status IN ('published','approved') OR createdByUserId = context.user.id`, on top of tenant scoping — mirroring `taskWhereForRequester`'s `isClientVisible` addition and `channelWhereForRequester`'s `visibility` addition exactly. An employee membership sees every version, matching § 2d's "any active employee at the owning agency" precedent.
-- Every route that takes both a `websiteId` and a `versionId` path parameter re-validates `version.websiteId === websiteId`, matching the existing `Task`/`Channel` convention (`if (!task || task.projectId !== projectId) throw invalid(...)`).
+Resolved by reusing `findOrCreateProjectFinancials`'s exact shape: a **lazy `findOrCreateWebsiteRepositoryForRequester`** accessor, called on first real need (first non-blank `draftSchema` save, or first promote-to-development action — whichever comes first in practice) rather than at `Website` creation. This closes both problems at once: no backfill migration is needed (a pre-existing `Website` simply gets its `WebsiteRepository` row created lazily the first time this phase's own code touches it, exactly like `ProjectFinancials` already does for pre-Phase-4 projects), and no external repo is ever provisioned for a website that stays in blank-draft-only editing.
 
-### 2d. `SectionDefinition` (component/section library catalog)
+Guarded, plain tenant scoping (no client/internal split) — a client can already see their own website exists; a repository record carries no additional sensitive information beyond that.
 
-`id, agencyOrganizationId (nullable — null means platform-provided/system-defined), name, componentKey, category, settingsSchema (JSONB — see § 2e), variants (JSONB), state ('managed'|'extended'|'registered_custom'|'detached'), previewImageUrl, isSystemDefined (boolean), createdByUserId (nullable for system rows)`.
+### 2c. `SectionDefinition.state` and the new per-instance `state` field
 
-- **Correction (review finding #10)**: tenancy was left unspecified in the draft. Decision: agency-scoped, not a single global catalog — the phase's own "library governance" outcome implies agencies curate their own section libraries. `agencyOrganizationId: null` rows are platform-provided defaults visible to everyone; non-null rows are a specific agency's own custom/registered components, visible to that agency's employees and (read-only, for rendering their own site) clients under it.
-- Guarded, but with an OR-scoped accessor rather than plain `tenantWhereForRequester` equality: `listSectionDefinitionsForRequester(context)` matches `agencyOrganizationId IS NULL OR agencyOrganizationId = <the requester's own agency>` — for an employee, `context.organization.id`; for a client, `context.organization.managingAgencyOrganizationId` (already available on the loaded `Organization` row from `resolveContext()`). This is new shape, not a reuse of the existing helper, and must be reviewed for correctness in its own dedicated test the same way `taskWhereForRequester`'s addition was.
-- Component **states** (`managed`/`extended`/`registered_custom`/`detached`) are represented as data only in this phase — no real Angular code is generated or executed. Registered/detached rows are placeholders for Phase 6 to give real meaning to.
+**Correction (review finding #1 — the most load-bearing fix from the review)**: the original draft proposed all four states (`managed`/`extended`/`registered_custom`/`detached`) live on `SectionDefinition.state` — the shared library catalog row, keyed by `componentKey`, referenced by every section *instance* across every page of every website that uses that component. The review identified this as a genuine, dangerous defect for `detached` specifically: if website A's homepage hero is detached and recorded by setting `state: 'detached'` on the shared "hero" `SectionDefinition` row, every *other* website using that same componentKey (potentially a different client entirely, or a system-wide row) would also read as detached, and the generator would incorrectly skip regenerating a section it should still fully manage elsewhere. This is the same class of whole-vs-per-instance granularity error Phase 5's own pre-implementation review caught for editing levels (§2e of that phase's plan).
 
-### 2e. Per-property editing-level and review classification (the secondary major gate)
+Fixed by splitting the concept:
 
-**Correction (review finding #3 — the most load-bearing fix from the review)**: the original draft proposed a single `minEditingLevel` scalar per `SectionDefinition` (per section, not per property). The review identified this as a genuine server-side authorization gap in the unsafe direction: a section that's mostly Basic-editable but exposes one Professional-tier property (e.g. background positioning on an otherwise-simple hero) would force a choice between wrongly blocking a legitimate Basic edit or wrongly *allowing* a Basic-assigned editor to change that one Professional-tier property.
+- **`SectionDefinition.state`** (type-level, unchanged column) — meaningful only for `managed` (the default, standard library component) and `registered_custom` (a whole hand-authored component type registered into the library, given its own `settingsSchema`, rendering implementation under `custom/components/`).
+- **A new per-instance `state` field**, sibling to `id`/`componentKey`/`variant`/`settings`/`content` on every section object inside `draftSchema`/`WebsiteVersion.schema` — used specifically for `detached` (this one instance, on this one page, has been ejected from generated management; every other instance of the same componentKey elsewhere is unaffected). Defaults to `'inherited'` (defer to the type's `SectionDefinition.state`) when absent, so every existing Phase 5 schema stays valid with no migration needed.
+- **`extended`** (review finding #7): resolved as **type-level**, alongside `managed`/`registered_custom`, not instance-level like `detached` — the generator always fully emits and regenerates an `extended` section's standard shape on every run; it additionally emits a named extension hook (e.g. a defined `@Input()` binding point) that an optional file under `custom/` may supply. This was the vaguest of the four states in the original draft and architecture §§14-15 don't define its mechanism explicitly; keeping it type-level avoids extending the instance-vs-type conflict found in `detached` to a second state.
 
-Fixed by moving classification to the property level. `SectionDefinition.settingsSchema` shape:
+`schemaDiff.js`'s classifier must be extended to read this new per-instance field the same defensive way it already treats an unrecognized settingsSchema key (safe-by-default) — an instance with `state: 'detached'` is always structurally significant regardless of which properties changed (see § 2d below).
 
-```json
-{
-  "heading": { "type": "text", "editingLevel": "basic", "requiresReview": false },
-  "backgroundImage": { "type": "image", "editingLevel": "basic", "requiresReview": false },
-  "gridColumns": { "type": "number", "editingLevel": "professional", "requiresReview": false },
-  "customAnimationScript": { "type": "code", "editingLevel": "advanced", "requiresReview": true }
-}
+### 2d. Builder-side enforcement: `authorizeAndClassifySchemaChange` must know about component state
+
+**Correction (review finding #2 — the second load-bearing fix)**: the original draft's defense-in-depth (§ 2f below) only covered the *generator's* file-write path. The review identified that nothing in the draft protected the *builder's* own `updateDraftSchema`/`restoreVersion` path (Phase 5's existing shared `authorizeAndClassifySchemaChange` function) from a designer freely editing, repositioning, or deleting a `detached`/`registered_custom` section instance's `content`/`settings` through completely ordinary draft-save actions — a direct violation of this phase's literal major gate via a path the original draft never analyzed.
+
+Fixed by extending `authorizeAndClassifySchemaChange` (still the single function shared by both `updateDraftSchema` and `restoreVersion`, per Phase 5's own restore-bypass-fix precedent — never let one path get this check and the other not) to independently re-derive each changed instance's effective state (per § 2c) and apply an additional rule on top of the existing per-property editing-level check:
+
+- A `detached` instance rejects any change to its `content`, and rejects any change to `settings` keys the section's own `settingsSchema` doesn't explicitly mark `builderEditable: true` (a new, opt-in flag a developer sets when detaching a section, for the specific properties — e.g. a heading toggle, not raw markup — they want a designer to keep controlling from the builder). Reordering/moving the instance within a page remains allowed (structural changes are already gated at `professional`+ by the existing check).
+- A `registered_custom` instance is treated exactly like any other library component — its own `settingsSchema`'s per-property `editingLevel`/`requiresReview` already governs it correctly with no new rule needed, since its rendering implementation living under `custom/` is a generator-side concern, not a builder-authorization concern.
+- **Restore-of-a-pre-detachment-checkpoint edge case** (explicitly designed now, not discovered as a bug later, per the same lesson Phase 5 had to learn the hard way for its own restore path): restoring an old `WebsiteVersion` whose snapshot predates a section's detachment must not silently re-clobber the now-custom implementation on the next generator run. `restoreVersion` checks whether any restored instance's componentKey+position currently corresponds to a `detached` instance in the *live* draft; if so, the restore is rejected for that instance specifically (409, "this section has since been detached from the builder — restoring this version would discard developer-owned custom work") rather than either silently succeeding or blocking the entire restore.
+
+### 2e. `WebsiteDevelopmentHandoff` and `WebsiteDeployment`: employee-only, explicitly decided
+
+**Correction (review finding #3)**: the original draft explicitly decided `WebsiteRepository`'s visibility (plain tenant scoping) but left `WebsiteDevelopmentHandoff` and `WebsiteDeployment` undecided by omission — exactly the kind of gap Phase 4 (`Message`/`ProjectChannel`) and Phase 5 (`WebsiteVersion`) each had to retrofit a correction for after being caught by review, rather than deciding explicitly up front.
+
+Both are **employee-only**, mirroring `ProjectFinancials`'s `assertEmployeeContext` pattern exactly — never reachable by a client-membership request, full stop. Neither carries anything a client needs to see directly (branch names, commit SHAs, handoff notes, internal repo state). If a client-facing "your site's preview is ready" signal is wanted (§16's "notify assigned roles" — read as including the client where appropriate), it's surfaced via the existing `Notification` model with just a URL/message payload, never by exposing these rows themselves.
+
+- **`WebsiteDevelopmentHandoff`**: `id, websiteId, websiteVersionId (FK — the exact checkpoint being promoted, immutable), branchName, technicalHandoffNotes, status ('initiated'|'preview_ready'|'in_development'), initiatedByUserId`. One record per promote-to-development action, capturing §16's checklist (named checkpoint + branch + handoff doc + tasks + preview + notify) as one coherent, auditable action.
+- **`WebsiteDeployment`**: `id, websiteId, websiteVersionId (FK — the design version ↔ commit ↔ deployment linkage), developmentHandoffId (nullable — null for a pure design-only preview), environment ('preview'|'production', defaulting to 'preview' this phase — see correction below), branchName, commitSha, previewUrl, status ('pending'|'building'|'live'|'failed'), deployedByUserId`.
+
+**Correction (review finding #6)**: the original draft intended `WebsiteDeployment` to be reused across this phase's preview deploys and Phase 7's eventual production deploys, but never made that reuse concrete. Phase 7's own roadmap major gate is specifically about backup/rollback/health-check semantics, which this phase's shape has no room for (no `rolled_back` state, no backup pointer, no environment distinction). Adding `environment` now lets Phase 7 extend this same table (widen `status`, add backup/health-check fields via a follow-on migration) rather than needing to repurpose or duplicate it later.
+
+No new model for "developer merge-back workflow" (confirmed sound during review, no correction needed) — a merge-back is a GitHub PR from a developer branch back to the design branch (the adapter's own `mergePullRequest`), recorded on the Leadzaro side only as an audit entry plus the relevant `SectionDefinition.state`/per-instance-state transition from § 2c, not a dedicated tracking table.
+
+### 2f. The generated/custom boundary (the major gate's primary mechanism)
+
+Directory split exactly per architecture §15's own example tree, inside each website's generated repository:
+```
+src/app/
+  generated/{pages,configuration}/   ← generator writes here, and ONLY here, for 'managed' sections
+  components/standard/               ← generator writes here for reusable standard components
+  custom/{components,features,integrations}/  ← generator NEVER writes here, ever
+styles/{design-tokens.scss,global.scss}
+site.schema.json                     ← a snapshot of the WebsiteVersion.schema being generated from
+leadzaro.config.json
 ```
 
-`requiresReview` is independent of `editingLevel` — per architecture § 13's own wording ("design, navigation, pages, legal copy, and other sensitive changes require employee review" regardless of who's editing), a Basic-tier field can still be flagged `requiresReview: true` (e.g. a legal-copy text field), and a Professional-tier field could in principle publish immediately if explicitly marked so. Sensible defaults: `editingLevel: professional|advanced` implies `requiresReview: true` unless explicitly overridden; navigation-structure and page-structure changes (adding/removing/reordering pages, not just editing a page's content) always require review regardless of level, enforced as a dedicated check in the mutation service, not just a per-property flag (since these are structural changes to `draftSchema.pages` itself, not a single section's settings).
+The generator's file-write primitive (`server/core/codegen/angularGenerator.js`) takes a manifest of `{path, content}` and throws before writing anything if any path doesn't start with an allowed prefix (`generated/`, `components/standard/`, the two style files, or the two root config files) — structural defense-in-depth, not just a naming convention. This mechanism alone is **not sufficient** on its own (that was the original draft's gap — see § 2d's correction, which is the other, equally necessary half of this major gate).
 
-**Enforcement mechanism**: every mutating builder endpoint diffs the incoming patch against the prior state (`draftSchema` or the version being edited), classifies each *changed key* against its `SectionDefinition.settingsSchema` entry, and rejects (403) if any changed key's `editingLevel` exceeds the requester's own effective level (§ 2g) — not a single whole-section check. If any changed key (or a structural page/navigation change) has `requiresReview: true`, the resulting `WebsiteVersion.status` is forced to `pending_review` rather than `published`, regardless of who made the change.
+`extended` sections (§ 2c): generator emits the standard shape plus a named extension hook on every run, regardless of instance. `registered_custom` componentKeys: generator emits only a reference/import, never inline markup. `detached` instances (per-instance state, § 2c): generator skips regenerating that specific instance's markup while still generating everything else on the same page normally.
 
-### 2f. Content scopes (architecture § 13's three named tiers)
+### 2g. Angular generation scope (deliberate boundary, review-confirmed)
 
-**Correction (review finding #5)**: the draft addressed page/section content (nested in `draftSchema.pages[].sections[].content`, already implied) and effectively website-global content, but left "organization content" entirely unaddressed. Decision, made explicit rather than left silently absent:
+The generator runs against a specific immutable `WebsiteVersion.schema` — never the live mutable `draftSchema` — matching the version-immutability principle Phase 5 already established and matching "design version ↔ commit ↔ deployment linkage" directly (the version being generated is exactly the version a `WebsiteDeployment` record points at).
 
-- **Page/section content**: `draftSchema.pages[].sections[].content` (already in architecture § 14's own example).
-- **Website-global content**: a top-level `draftSchema.siteSettings` key (site title, global header/footer content, shared across every page).
-- **Organization content**: a top-level `draftSchema.organizationContent` key — reusable named content items (e.g. business NAP data, a reusable testimonial block) referenced by key from any section's `content`, scoped to the single `Website` this phase supports rather than a separate cross-site table. **Documented deliberate simplification**: if a later phase ever supports multiple websites per client organization, this would need promotion to its own `OrganizationContentBlock` table shared across those sites — out of scope here since this phase is explicitly 1:1 `Project`↔`Website`.
+**Confirmed during review, no correction needed**: this phase delivers a real, compiling, typed Angular generator — not a stub — producing genuinely developer-quality routed page components and standard-section components from the schema. Full pixel/visual fidelity polish is explicitly secondary to structural correctness (correct routing, correct typed inputs, correct generated/custom boundary, correct component-state handling), mirroring the Phase 5 preview renderer's own "structural proof, not pixel-perfect" precedent.
 
-Client publishing behavior per § 13 ("some fields publish immediately; design, navigation, pages, legal copy... require review") is the `requiresReview` mechanism in § 2e, applied uniformly across all three content scopes — there is no separate content-scope-specific review mechanism.
+**Correction (review finding #8, additive)**: because this phase explicitly promises "a real, compiling" generator (not just unit tests asserting the generator wrote the right strings), the phase's own testing priorities (§ 4 below) include an actual `ng build`-style compile check run against a real generated output tree, not just assertions on generator output content.
 
-### 2g. Editing-level enforcement, permissions, and roles
+## 3. Permission summary
 
-Two authorization layers, mirroring Phase 4's own "broad permission + fine-grained scoping" pattern:
+No new client-facing permission — every action in this phase (repository access, promote-to-development, merge-back, component registration/publication review) is employee-only, matching § 2e's visibility decision. Reuses `builder.manage` (administrator + project_manager, already established in Phase 5) for promote-to-development and component publication/review; a new `builder.develop` permission (developer + advanced_designer only) gates the actual code-generation trigger, merge-back actions, and custom-component registration — narrower than `builder.manage` since these are genuinely developer-role actions, not agency-management actions, mirroring the existing `builder.edit`/`builder.publish`/`builder.manage` three-tier precedent from Phase 5.
 
-1. **`builder.edit`** (broad route-level gate): `designer`, `advanced_designer`, `developer` (employee); `client_owner`, `marketing`, `content_editor` (client) — deliberately narrower than the "everyone except viewer" pattern used for messages/requests/meetings, since editing a live client website is a materially bigger action. `project_contact`/`billing_contact` do not get it.
-2. **`builder.publish`** (narrower — approving a `pending_review` version to `published`): `administrator`, `project_manager`, `advanced_designer`, `developer`. No client role ever gets this, matching `cancellations.manage`'s "business decision, not day-to-day work" precedent.
-3. **`WebsiteEditorAssignment`** (new table, mirroring `ProjectAssignment`): `id, websiteId, organizationId, agencyOrganizationId, userId, editingLevel ('basic'|'professional'|'advanced'), assignedByUserId`, unique on `(websiteId, userId)`.
-   - **Correction (review Q3)**: a new table, not an `editingLevel` field bolted onto `ProjectAssignment`. `ProjectAssignment`'s unique key is `(projectId, userId, roleSlot)` — a single user can hold multiple role-slot rows on one project, so there is no principled single answer for "this user's editing level" if it lived there. Editing level is a genuinely distinct axis (what you may touch on the *website*) from role slot (what function you serve on the *project*); conflating them was exactly the risk the draft itself flagged and the review confirmed.
-   - **Correction (review finding #9)**: before creating an assignment, the target user must have an active `OrganizationMembership` at the website's own `organizationId` (client assignee) or `agencyOrganizationId` (employee assignee) — the exact check Phase 4's closing review had to retrofit onto `ProjectAssignment.addAssignment` after finding it missing. Built in from the start here.
-   - **Correction (review finding #8)**: the assignment-creation path explicitly rejects `editingLevel: 'advanced'` whenever the target user's membership is `client` — Advanced tier is explicitly developer/employee territory per § 14 ("registered components," "controlled developer functionality"), and nothing in the original draft stopped a client from being assigned it by mistake or malice.
-   - Employee roles get an editing level *implicitly* from their role (`developer`/`advanced_designer` → advanced; `designer` → professional) without needing an explicit assignment row for the common case — an explicit `WebsiteEditorAssignment` is required only for client-side collaborators (and the rare case of restricting a specific employee below their role default). This mirrors Phase 4's "employee project access is implicit by agency membership" precedent.
+## 4. Testing priorities
 
-### 2h. `WebsiteComment` (visual feedback anchored to versions/components)
-
-**Correction (review finding #4)**: entirely absent from the original draft despite being a named, required outcome in both § 14 ("comments") and the roadmap ("visual feedback anchored to versions/components") — not deferred, simply missing. Minimal shape added now, since the major gate requires the schema stable before Phase 6, not stabilized-then-broken-again:
-
-`id, websiteId, organizationId, agencyOrganizationId, versionId (nullable — a comment can be anchored to a specific version or to the current draft), anchorKey (a path into the schema — e.g. a page route + section id, mirroring `WebsiteEditLock.sectionKey`), authorUserId, body, isInternal (boolean, default false — mirrors `ProjectChannel`'s client/internal split so employees can leave client-invisible internal notes), resolvedAt (nullable)`.
-
-Client-visibility accessor hides `isInternal: true` rows, matching the internal-channel-message precedent exactly. The comment *workflow* (threading, notifications) is intentionally thin this phase — only the anchored-feedback shape itself is required to satisfy the stability gate.
-
-### 2i. `WebsiteEditLock` and presence
-
-`WebsiteEditLock`: `id, websiteId, organizationId, agencyOrganizationId, sectionKey, lockedByUserId, lockedAt, expiresAt` — a heartbeat-renewed TTL lock (renew = update `expiresAt`; a lock past `expiresAt` is simply treated as available at read/acquire time, no cleanup job needed).
-
-`WebsitePresence`: `id, websiteId, organizationId, agencyOrganizationId, userId, sectionKey (nullable), lastSeenAt` — updated via a lightweight heartbeat call from the frontend every few seconds; a row is "present" if `lastSeenAt` is within a short window, filtered at read time, no cleanup job needed.
-
-**Correction (review Q6, approved as drafted)**: short-TTL poll-based presence, not real-time push. No WebSocket/SSE infrastructure exists anywhere in this codebase; § 14 explicitly rules out full operational-transform live editing "initially"; and this is orthogonal to the major gate (schema/renderer/version-history stability), so introducing real-time infrastructure now would be a disproportionate addition for "Foundation" scope. Both tables use plain tenant scoping (no client/internal split needed — knowing who's editing what, within a project everyone involved already has access to, isn't sensitive).
-
-### 2j. Form builder (client-editable forms)
-
-**Correction (review finding #7)**: the draft's slice order mentioned this but defined no shape at all, despite Phase 7 ("form submissions and routing") needing to route real submissions against whatever shape this phase defines. Decision, reserved now: a `SectionDefinition` with `componentKey: 'form'`, whose `content` shape is `{ fields: [{ key, label, type, required, options? }], submitTarget: { type: 'client_request'|'email'|'webhook', config: {} } }`. `client_request` reuses Phase 4's existing `ClientRequest` machinery (a form submission becomes a `ClientRequest` with a category derived from the form) — the only submission target this phase needs to actually wire up end-to-end; `email`/`webhook` are reserved shape for Phase 7, not implemented here.
-
-### 2k. Files: `website_asset` becomes client-facing
-
-**Correction (review Q4)**: `website_asset` is added to `File.CLIENT_FACING_SCOPES`, with a `relatedId` re-check mirroring `task_attachment`/`message_attachment` exactly — `filterClientVisibleFiles` gets a new branch: `else if (file.scope === 'website_asset') { if (await getWebsiteByIdForRequester(context, file.relatedId)) results.push(file); }`. No new scope value is introduced; the existing one is completed, exactly as Phase 4 anticipated.
-
-### 2l. Image optimization
-
-**Correction (review Q5, approved as drafted)**: architecture § 13's own wording ("optimized responsive variants without requiring a paid image-transformation service") is read literally — an in-process library (`sharp`) invoked at upload time inside `StorageProvider.upload()`'s existing call path, producing a small set of responsive variants alongside the original (never discarding it). No new adapter/interface; this is a transformation step, not a storage concern, so it does not belong in the `StorageProvider` interface itself.
-
-### 2m. Breakpoint overrides
-
-**Correction (review finding #6, resolved alongside § 2e)**: no dedicated column — reserved as a documented shape within any section's `settings`: `{ base: { ...values }, breakpoints: { mobile: { ...overrides }, tablet: { ...overrides } } }`. Both the version-compare diff (§ 2c) and the per-property editing-level classification (§ 2e) must be aware of this nested shape when walking a settings object, rather than treating `settings` as a flat key-value map.
-
-### 2n. Starting modes and library governance
-
-Four starting modes (`template`, `page_kit`, `guided`, `blank`) are represented as `Website.startingMode`, recorded for provenance; only `blank` and `template` need to produce a real starting `draftSchema` in this phase's first slice (a template's schema is copied in at creation time, same fork-not-reference principle as § 2a). `page_kit` (a partial, page-level starting point) and `guided` (a wizard-driven assembly) are deferred to a later slice once the section library (§ 2d) and starting-schema-generation path exist to build on. Library governance (curating/publishing/deprecating platform- or agency-level `DesignSystem`/`SectionDefinition` templates) is its own late slice, gated by `builder.manage` — a new permission granted to `administrator` + `project_manager` only, matching `projects.change_stage`'s "significant, not day-to-day" precedent.
-
-## 3. Permission/role summary
-
-| Permission | Grantees |
-|---|---|
-| `builder.edit` | designer, advanced_designer, developer (employee); client_owner, marketing, content_editor (client) |
-| `builder.publish` | administrator, project_manager, advanced_designer, developer |
-| `builder.manage` (library governance, editor assignments) | administrator, project_manager |
-
-## 4. Testing priorities (informed directly by ADR 0007's own history)
-
-1. Raw unscoped query throws, for every one of the 7 new guarded models.
-2. `WebsiteVersion`'s client-visibility split (published/approved/own-submissions only) — a direct regression test analogous to the one that caught Message's original bug, written *before* any caller could rely on the wrong order.
-3. Per-property editing-level rejection: a Basic-assigned editor attempting to change a single Professional-tier property within an otherwise-Basic-editable section is rejected, even though the section as a whole is editable at their level.
-4. `requiresReview` forcing `pending_review` status regardless of editing level, for both a per-property-flagged field and a structural page/navigation change.
-5. `WebsiteEditorAssignment` rejects `editingLevel: 'advanced'` for a client-membership target, and rejects an assignment for a user with no membership at the website's own tenant.
-6. `website_asset` file visibility: a client sees a `website_asset` file only when it's tied to their own visible `Website`, mirroring the existing `task_attachment` test shape exactly.
-7. Cross-agency isolation for every new table (the standard suite-wide pattern).
-8. `SectionDefinition`'s OR-scoped listing (system-defined + own-agency) — a dedicated test proving an agency never sees another agency's custom library, and a client sees their own managing agency's library, not a different agency's.
+1. Raw unscoped query throws, for every new guarded model (`WebsiteRepository`, `WebsiteDevelopmentHandoff`, `WebsiteDeployment`).
+2. `WebsiteDevelopmentHandoff`/`WebsiteDeployment` employee-only visibility — a client-membership request must never reach either, direct regression tests analogous to `ProjectFinancials`'s own employee-only test.
+3. **The major gate, both halves**: (a) the generator's path-prefix write-primitive rejects any attempt to write outside `generated/`/`components/standard/`/the style and config files; (b) `authorizeAndClassifySchemaChange` rejects a builder-side edit to a `detached` instance's `content`, and to any `settings` key not marked `builderEditable`, while still allowing reordering.
+4. The restore-of-a-pre-detachment-checkpoint edge case (§ 2d) — a dedicated regression test, written *before* any caller could rely on the wrong behavior, mirroring how Phase 5's own restore-bypass fix was verified.
+5. `MockGitHubAdapter`'s stateful lifecycle: branch-before-commit ordering, PR open→merged transitions, a Pages URL only available after `enablePagesForBranch`.
+6. `findOrCreateWebsiteRepositoryForRequester`'s laziness — no `WebsiteRepository` row (and no adapter `createRepository` call) exists for a website that has only ever been saved in blank-mode draft form.
+7. An actual `ng build` (or equivalent Angular CLI compile) run against a real generated output tree for at least one non-trivial multi-page, multi-section-state (managed + extended + registered_custom + detached) website — proving the "developer-quality, compiling" claim structurally, not just asserting generator output strings.
+8. Cross-agency isolation for every new table (the standard suite-wide pattern).
 
 ## 5. Suggested slice order
 
-1. `DesignSystem` + `Website` + `WebsiteVersion` (schema/versioning foundation, including the client-visibility split) + `blank`/`template` starting modes + the guard/accessor infrastructure extension. Highest-risk slice — escalate again before merging if anything in implementation diverges from this plan's resolved design.
-2. `SectionDefinition` library (including the OR-scoped tenancy accessor) + a minimal preview renderer that renders a `draftSchema` (the major gate's "renderer" half).
-3. `builder.edit`/`builder.publish` permissions + `WebsiteEditorAssignment` + per-property editing-level enforcement + `requiresReview` classification (the secondary major gate, in full — this is the slice the review most emphasized getting right).
-4. Autosave + named checkpoints + compare + restore (the major gate's "version history" half).
-5. Asset manager: `website_asset` → `CLIENT_FACING_SCOPES`, `sharp`-based responsive image variants.
-6. Content scopes (§ 2f) + the form builder (§ 2j, wired to `ClientRequest` as its one real submit target).
-7. `WebsiteComment` + `WebsiteEditLock` + `WebsitePresence`.
-8. `page_kit`/`guided` starting modes + template/section/design-system library governance (`builder.manage`).
-9. Final full-phase review (schema-stability + authorization focus, mirroring Phase 4's closing pass) + completion report.
+1. `GitHubAdapter` (mock/disabled first) + `WebsiteRepository` with its lazy `findOrCreateWebsiteRepositoryForRequester` accessor.
+2. The per-instance `state` field on section instances (§ 2c) + the generated/custom boundary write-primitive (§ 2f) — everything else depends on both being right, and together they are the major gate's mechanism half.
+3. `authorizeAndClassifySchemaChange`'s new component-state-aware rules (§ 2d), including the restore-of-a-pre-detachment-checkpoint edge case — the major gate's authorization half, and the review's most emphasized correction.
+4. The actual Angular generator (schema → typed output) for `managed`-state sections only, against the boundary from slice 2.
+5. `extended`/`registered_custom`/`detached` component-state generation, extending the generator from slice 4.
+6. Branches + preview workflow + GitHub Pages automatic previews (`WebsiteDeployment`, `environment: 'preview'`).
+7. Promote-to-development checkpoint/handoff (`WebsiteDevelopmentHandoff`).
+8. Developer merge-back workflow + custom component editor schemas + component publication permission/review (`builder.develop`).
+9. Final full-phase review (major-gate-both-halves focus, mirroring Phase 5's own closing pass) + completion report.
