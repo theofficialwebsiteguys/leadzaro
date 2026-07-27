@@ -13,7 +13,7 @@
  */
 
 const {
-  Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File,
+  Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -257,6 +257,19 @@ async function getFileByIdForRequester(context, fileId) {
 }
 
 /**
+ * CancellationRequest has no client/internal visibility split, same
+ * reasoning as ClientRequest/Meeting: whoever can see the project at
+ * all (client or agency) can see its cancellation history.
+ */
+function listCancellationRequestsForRequester(context, extraWhere = {}) {
+  return CancellationRequest.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), order: [['createdAt', 'DESC']] }));
+}
+
+function getCancellationRequestByIdForRequester(context, requestId) {
+  return CancellationRequest.findOne(scoped({ where: tenantWhereForRequester(context, { id: requestId }) }));
+}
+
+/**
  * The one exception to "every read goes through a requester context":
  * system-level operations with no HTTP requester at all (currently:
  * `projectService.ensureProjectForConversion`, triggered by a Stripe
@@ -293,4 +306,6 @@ module.exports = {
   getMeetingByIdForRequester,
   listFilesForRequester,
   getFileByIdForRequester,
+  listCancellationRequestsForRequester,
+  getCancellationRequestByIdForRequester,
 };

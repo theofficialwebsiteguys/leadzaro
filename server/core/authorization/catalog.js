@@ -46,6 +46,8 @@ const PERMISSIONS = [
   { key: 'meetings.manage', category: 'projects', description: 'Confirm, decline, and cancel project meetings' },
   { key: 'files.upload', category: 'projects', description: 'Upload a file to a project' },
   { key: 'files.manage', category: 'projects', description: 'Delete project files' },
+  { key: 'cancellations.request', category: 'projects', description: 'Request cancellation of a project engagement' },
+  { key: 'cancellations.manage', category: 'projects', description: 'Confirm or withdraw a project cancellation request' },
 ];
 
 const PERMISSION_KEYS = new Set(PERMISSIONS.map((p) => p.key));
@@ -105,7 +107,7 @@ const EMPLOYEE_ROLES = [
     name: 'Sales Manager',
     permissions: [...SALES_PERMISSIONS, 'leads.merge', 'audit.view'],
   },
-  { key: 'project_manager', name: 'Project Manager', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'projects.manage', 'projects.change_stage', 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage'] },
+  { key: 'project_manager', name: 'Project Manager', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'projects.manage', 'projects.change_stage', 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'cancellations.request', 'cancellations.manage'] },
   { key: 'designer', name: 'Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage'] },
   { key: 'advanced_designer', name: 'Advanced Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage'] },
   { key: 'developer', name: 'Developer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage'] },
@@ -141,7 +143,7 @@ const CLIENT_ROLES = [
   scope: 'client',
   permissions: role.key === 'viewer'
     ? [...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view']
-    : [...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view', 'messages.post', 'requests.create', 'meetings.request', 'files.upload'],
+    : [...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view', 'messages.post', 'requests.create', 'meetings.request', 'files.upload', 'cancellations.request'],
 }));
 
 const ALL_ROLES = [...EMPLOYEE_ROLES, ...CLIENT_ROLES];

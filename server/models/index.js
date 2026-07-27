@@ -48,6 +48,7 @@ const ClientRequest = require('./ClientRequest')(sequelize);
 const ContentInboxItem = require('./ContentInboxItem')(sequelize);
 const Meeting = require('./Meeting')(sequelize);
 const File = require('./File')(sequelize);
+const CancellationRequest = require('./CancellationRequest')(sequelize);
 
 const models = {
   User,
@@ -94,6 +95,7 @@ const models = {
   ContentInboxItem,
   Meeting,
   File,
+  CancellationRequest,
 };
 
 // Run associations

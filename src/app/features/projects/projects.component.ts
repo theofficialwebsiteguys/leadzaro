@@ -7,6 +7,7 @@ import { MessagingService } from '../../core/services/messaging.service';
 import { RequestService } from '../../core/services/request.service';
 import { MeetingService } from '../../core/services/meeting.service';
 import { FileUploadService } from '../../core/services/file.service';
+import { CancellationService } from '../../core/services/cancellation.service';
 import { MembershipService } from '../../core/services/membership.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
 import {
@@ -17,6 +18,7 @@ import { ProjectChannel, Message } from '../../core/models/message.model';
 import { ClientRequest, REQUEST_CATEGORIES } from '../../core/models/clientRequest.model';
 import { Meeting } from '../../core/models/meeting.model';
 import { ProjectFile, FILE_SCOPES } from '../../core/models/file.model';
+import { CancellationRequest } from '../../core/models/cancellationRequest.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 
@@ -34,6 +36,7 @@ export class ProjectsComponent implements OnInit {
   private readonly requestService = inject(RequestService);
   private readonly meetingService = inject(MeetingService);
   private readonly fileService = inject(FileUploadService);
+  private readonly cancellationService = inject(CancellationService);
   private readonly membershipService = inject(MembershipService);
   readonly org = inject(OrganizationContextService);
 
@@ -73,6 +76,10 @@ export class ProjectsComponent implements OnInit {
   newFileScope: string = 'project';
   newFileIsPrivate = true;
   selectedFile: File | null = null;
+
+  cancellationRequests = signal<CancellationRequest[]>([]);
+  pendingCancellationRequest = computed(() => this.cancellationRequests().find((c) => c.status === 'requested') ?? null);
+  newCancellationReason = '';
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -138,6 +145,7 @@ export class ProjectsComponent implements OnInit {
     this.loadRequests(id);
     this.loadMeetings(id);
     this.loadFiles(id);
+    this.loadCancellationRequests(id);
     if (this.org.hasPermission('projects.manage')) {
       this.projectService.getFinancials(id).subscribe((res) => {
         this.financials.set(res.data.financials);
@@ -352,6 +360,38 @@ export class ProjectsComponent implements OnInit {
     const id = this.selectedId();
     if (!id) return;
     this.fileService.delete(id, file.id).subscribe(() => this.loadFiles(id));
+  }
+
+  loadCancellationRequests(projectId: string) {
+    this.cancellationService.list(projectId).subscribe((res) => this.cancellationRequests.set(res.data.cancellationRequests));
+  }
+
+  requestCancellation() {
+    const id = this.selectedId();
+    if (!id) return;
+    this.cancellationService.create(id, this.newCancellationReason).subscribe(() => {
+      this.newCancellationReason = '';
+      this.loadCancellationRequests(id);
+      this.actionMessage.set('Cancellation requested');
+    });
+  }
+
+  confirmCancellation(cancellationRequest: CancellationRequest) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.cancellationService.confirm(id, cancellationRequest.id).subscribe(() => {
+      this.loadCancellationRequests(id);
+      this.actionMessage.set('Cancellation confirmed');
+    });
+  }
+
+  withdrawCancellation(cancellationRequest: CancellationRequest) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.cancellationService.withdraw(id, cancellationRequest.id).subscribe(() => {
+      this.loadCancellationRequests(id);
+      this.actionMessage.set('Cancellation withdrawn');
+    });
   }
 
   saveFinancials() {

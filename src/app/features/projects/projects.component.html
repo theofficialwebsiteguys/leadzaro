@@ -424,6 +424,45 @@
               </div>
             </div>
           }
+
+          <div class="card mb-4">
+            <div class="card-header"><strong>Cancellation</strong></div>
+            <div class="card-body">
+              @if (pendingCancellationRequest(); as pending) {
+                <div class="alert alert-warning mb-2">
+                  <strong>Cancellation pending</strong> ({{ pending.initiatedBy }}-initiated)
+                  @if (pending.reason) { <p class="mt-2">{{ pending.reason }}</p> }
+                  <div class="mt-2">
+                    <button class="btn btn-sm" *hasPermission="'cancellations.manage'" (click)="confirmCancellation(pending)">Confirm</button>
+                    <button class="btn btn-sm" *hasPermission="'cancellations.manage'" (click)="withdrawCancellation(pending)">Withdraw</button>
+                  </div>
+                </div>
+              } @else {
+                <div class="card-body" *hasPermission="'cancellations.request'">
+                  <textarea class="input mb-2" placeholder="Reason for cancellation (optional)" [(ngModel)]="newCancellationReason" rows="2"></textarea>
+                  <button class="btn btn-secondary" (click)="requestCancellation()">Request Cancellation</button>
+                </div>
+              }
+
+              @if (cancellationRequests().length > 0) {
+                <div class="table-wrap mt-2">
+                  <table>
+                    <thead><tr><th>Initiated By</th><th>Reason</th><th>Status</th><th>Requested</th></tr></thead>
+                    <tbody>
+                      @for (c of cancellationRequests(); track c.id) {
+                        <tr>
+                          <td>{{ c.initiatedBy }}</td>
+                          <td>{{ c.reason || '—' }}</td>
+                          <td>{{ c.status }}</td>
+                          <td>{{ c.createdAt | date:'MMM d, y' }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </div>
+          </div>
         </div>
       }
     </div>
