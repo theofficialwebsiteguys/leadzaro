@@ -10,5 +10,6 @@ export interface ProjectFile {
   mimeType: string;
   sizeBytes: number;
   isPrivate: boolean;
+  variants: Record<string, string>;
   createdAt: string;
 }

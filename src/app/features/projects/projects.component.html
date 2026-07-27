@@ -486,6 +486,31 @@
                   </div>
                 }
 
+                <div class="mt-2" *hasPermission="'builder.edit'">
+                  <label class="field-label">Website Assets</label>
+                  @if (websiteAssets().length > 0) {
+                    <div class="table-wrap">
+                      <table>
+                        <thead><tr><th>Name</th><th>Size</th><th></th></tr></thead>
+                        <tbody>
+                          @for (a of websiteAssets(); track a.id) {
+                            <tr>
+                              <td>{{ a.originalName }}</td>
+                              <td>{{ a.sizeBytes }} bytes</td>
+                              <td>
+                                <button class="btn btn-sm" (click)="openWebsiteAsset(a, a.variants['thumbnail'] ? 'thumbnail' : undefined)">Open</button>
+                                <button class="btn btn-sm" (click)="deleteFile(a)">Delete</button>
+                              </td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  }
+                  <input type="file" (change)="onWebsiteAssetSelected($event)" />
+                  <button class="btn btn-sm" (click)="uploadWebsiteAsset()">Upload Asset</button>
+                </div>
+
                 <label class="field-label mt-2">Draft schema (JSON)</label>
                 <textarea class="input mb-2" rows="8" [(ngModel)]="draftSchemaText"></textarea>
                 @if (draftSchemaError) {

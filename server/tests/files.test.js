@@ -3,7 +3,7 @@
 const request = require('supertest');
 const app = require('../app');
 const {
-  sequelize, Project, File, Task, ProjectChannel, Message,
+  sequelize, Project, File, Task, ProjectChannel, Message, Website, DesignSystem,
 } = require('../models');
 const { createOrganization, createRoleAssignedMember, loginAs } = require('./helpers/factory');
 
@@ -27,7 +27,15 @@ describe('File visibility guard', () => {
 });
 
 describe('The major gate: isPrivate:false alone is NOT sufficient for client visibility', () => {
-  test('a non-private website_asset file is still invisible to a client (no client-facing scope)', async () => {
+  test('a non-private website_asset file with no relatedId (or one that matches no real Website) is invisible to a client, even though website_asset joined CLIENT_FACING_SCOPES in Phase 5', async () => {
+    // website_asset was deliberately excluded from CLIENT_FACING_SCOPES
+    // in Phase 4 specifically because a non-private website_asset file
+    // had no inherent tie to a specific client-visible context — Phase 5
+    // supplies that context (a real, visibility-checkable Website) and
+    // added the scope, but the per-file relatedId re-check (mirroring
+    // task_attachment/message_attachment) still gates it: a file with no
+    // relatedId, or one that doesn't resolve to a Website the requester
+    // can see, is still invisible.
     const { agency, clientOrg, project } = await setupProject();
     const { user: uploader } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['developer'] });
     await File.create({
@@ -39,6 +47,26 @@ describe('The major gate: isPrivate:false alone is NOT sufficient for client vis
     const list = await request(app).get(`/api/v1/projects/${project.id}/files`).set('Authorization', `Bearer ${login.token}`);
     expect(list.status).toBe(200);
     expect(list.body.data.files.length).toBe(0);
+  });
+
+  test('a non-private website_asset file whose relatedId points to the project\'s own visible Website IS visible to a client', async () => {
+    const { agency, clientOrg, project } = await setupProject();
+    const { user: uploader } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['developer'] });
+    const designSystem = await DesignSystem.create({
+      agencyOrganizationId: agency.id, organizationId: clientOrg.id, name: 'x', tokens: {}, isLibraryTemplate: false,
+    });
+    const website = await Website.create({
+      projectId: project.id, organizationId: clientOrg.id, agencyOrganizationId: agency.id, designSystemId: designSystem.id, name: 'x', startingMode: 'blank', draftSchema: {},
+    });
+    const asset = await File.create({
+      organizationId: clientOrg.id, agencyOrganizationId: agency.id, projectId: project.id, uploadedByUserId: uploader.id, scope: 'website_asset', relatedId: website.id, storageKey: 'k2', originalName: 'logo.png', mimeType: 'image/png', sizeBytes: 100, isPrivate: false,
+    });
+
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: clientOrg.id, roleKeys: ['client_owner'], membershipType: 'client' });
+    const login = await loginAs(app, user.email, password);
+    const list = await request(app).get(`/api/v1/projects/${project.id}/files`).set('Authorization', `Bearer ${login.token}`);
+    expect(list.status).toBe(200);
+    expect(list.body.data.files.map((f) => f.id)).toContain(asset.id);
   });
 
   test('a private project-scope file is invisible to a client even though the scope is client-facing', async () => {
@@ -157,6 +185,42 @@ describe('Real upload/signed-url/delete via the mock storage provider', () => {
 
     const stillThere = await File.findOne({ where: { id: uploadRes.body.data.file.id }, __visibilityScoped: true });
     expect(stillThere).toBeNull();
+  });
+
+  test('uploading a real image generates thumbnail/medium variants alongside the unchanged original, and a variant\'s own signed url can be fetched', async () => {
+    const { agency, project } = await setupProject();
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['developer'] });
+    const login = await loginAs(app, user.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    // A real, tiny, valid 1x1 PNG — not fake bytes — so sharp can
+    // actually decode and resize it.
+    const realPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+
+    const uploadRes = await auth(request(app).post(`/api/v1/projects/${project.id}/files`))
+      .field('scope', 'project')
+      .field('isPrivate', 'false')
+      .attach('file', realPng, { filename: 'real.png', contentType: 'image/png' });
+    expect(uploadRes.status).toBe(201);
+    expect(Object.keys(uploadRes.body.data.file.variants)).toEqual(expect.arrayContaining(['thumbnail', 'medium']));
+
+    const variantSignedRes = await auth(request(app).get(`/api/v1/projects/${project.id}/files/${uploadRes.body.data.file.id}/signed-url`).query({ variant: 'thumbnail' }));
+    expect(variantSignedRes.status).toBe(200);
+    expect(variantSignedRes.body.data.url).toMatch(/^https:\/\/mock\.storage\.test\/signed\//);
+  });
+
+  test('uploading bytes that merely claim to be an image (not real, decodable image data) still succeeds — variant generation failing never blocks the upload', async () => {
+    const { agency, project } = await setupProject();
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['developer'] });
+    const login = await loginAs(app, user.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const uploadRes = await auth(request(app).post(`/api/v1/projects/${project.id}/files`))
+      .field('scope', 'project')
+      .field('isPrivate', 'false')
+      .attach('file', Buffer.from('not actually a png'), { filename: 'corrupt.png', contentType: 'image/png' });
+    expect(uploadRes.status).toBe(201);
+    expect(uploadRes.body.data.file.variants).toEqual({});
   });
 
   test('files.upload is required; a role without it cannot upload', async () => {

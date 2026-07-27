@@ -224,6 +224,9 @@ async function filterClientVisibleFiles(context, files) {
     } else if (file.scope === 'message_attachment') {
       // eslint-disable-next-line no-await-in-loop
       if (await getMessageByIdForRequester(context, file.relatedId)) results.push(file);
+    } else if (file.scope === 'website_asset') {
+      // eslint-disable-next-line no-await-in-loop
+      if (await getWebsiteByIdForRequester(context, file.relatedId)) results.push(file);
     } else {
       results.push(file);
     }

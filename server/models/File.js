@@ -4,10 +4,15 @@ const { installVisibilityGuard } = require('../core/authorization/visibilityGuar
 const SCOPES = ['organization', 'project', 'website_asset', 'task_attachment', 'message_attachment', 'request_attachment', 'meeting_attachment'];
 
 // The scopes a client can ever see, subject to isPrivate: false AND (for
-// task_attachment/message_attachment) an additional per-file check that
-// the referenced Task/Message is itself client-visible — see
-// clientVisibleModels.js's fileWhereForRequester / filterFilesForClient.
-const CLIENT_FACING_SCOPES = ['project', 'task_attachment', 'message_attachment', 'request_attachment'];
+// task_attachment/message_attachment/website_asset) an additional
+// per-file check that the referenced Task/Message/Website is itself
+// visible to the requester — see clientVisibleModels.js's
+// fileWhereForRequester / filterFilesForClient. website_asset joined
+// this allowlist in Phase 5 (current-phase-plan.md § 2k) — Phase 4 had
+// deliberately excluded it, since a non-private website_asset file had
+// no inherent tie to a specific client-visible context until a real,
+// visibility-checkable Website existed.
+const CLIENT_FACING_SCOPES = ['project', 'task_attachment', 'message_attachment', 'request_attachment', 'website_asset'];
 
 module.exports = (sequelize) => {
   const File = sequelize.define('File', {
@@ -29,6 +34,9 @@ module.exports = (sequelize) => {
     mimeType: { type: DataTypes.STRING(100), allowNull: false },
     sizeBytes: { type: DataTypes.INTEGER, allowNull: false },
     isPrivate: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    variants: {
+      type: DataTypes.JSONB, allowNull: false, defaultValue: {},
+    },
   });
 
   File.SCOPES = SCOPES;

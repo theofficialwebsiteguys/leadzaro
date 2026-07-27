@@ -386,6 +386,31 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.selectedFile = input.files?.[0] ?? null;
   }
 
+  websiteAssets = computed(() => this.files().filter((f) => f.scope === 'website_asset' && f.relatedId === this.website()?.id));
+  newWebsiteAssetFile: File | null = null;
+
+  onWebsiteAssetSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.newWebsiteAssetFile = input.files?.[0] ?? null;
+  }
+
+  uploadWebsiteAsset() {
+    const id = this.selectedId();
+    const site = this.website();
+    if (!id || !site || !this.newWebsiteAssetFile) return;
+    this.fileService.upload(id, this.newWebsiteAssetFile, 'website_asset', false, site.id).subscribe(() => {
+      this.newWebsiteAssetFile = null;
+      this.loadFiles(id);
+      this.actionMessage.set('Asset uploaded');
+    });
+  }
+
+  openWebsiteAsset(file: ProjectFile, variant?: string) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.fileService.getSignedUrl(id, file.id, variant).subscribe((res) => window.open(res.data.url, '_blank'));
+  }
+
   uploadFile() {
     const id = this.selectedId();
     if (!id || !this.selectedFile) return;
