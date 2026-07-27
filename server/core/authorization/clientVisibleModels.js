@@ -13,7 +13,7 @@
  */
 
 const {
-  Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem,
+  Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -177,6 +177,14 @@ function getContentInboxItemByIdForRequester(context, itemId) {
   return ContentInboxItem.findOne(scoped({ where: tenantWhereForRequester(context, { id: itemId }) }));
 }
 
+function listMeetingsForRequester(context, extraWhere = {}) {
+  return Meeting.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), order: [['createdAt', 'DESC']] }));
+}
+
+function getMeetingByIdForRequester(context, meetingId) {
+  return Meeting.findOne(scoped({ where: tenantWhereForRequester(context, { id: meetingId }) }));
+}
+
 /**
  * The one exception to "every read goes through a requester context":
  * system-level operations with no HTTP requester at all (currently:
@@ -210,4 +218,6 @@ module.exports = {
   getClientRequestByIdForRequester,
   listContentInboxItemsForRequester,
   getContentInboxItemByIdForRequester,
+  listMeetingsForRequester,
+  getMeetingByIdForRequester,
 };

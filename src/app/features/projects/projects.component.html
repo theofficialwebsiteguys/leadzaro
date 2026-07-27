@@ -164,6 +164,41 @@
           </div>
 
           <div class="card mb-4">
+            <div class="card-header"><strong>Meetings</strong></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Subject</th><th>Status</th><th>Confirmed</th><th></th></tr></thead>
+                <tbody>
+                  @for (m of meetings(); track m.id) {
+                    <tr>
+                      <td>{{ m.subject }}</td>
+                      <td>{{ m.status }}</td>
+                      <td>{{ m.confirmedSlot ? (m.confirmedSlot.start | date:'MMM d, h:mm a') : '—' }}</td>
+                      <td>
+                        @if (m.status === 'requested') {
+                          <button class="btn btn-sm" *hasPermission="'meetings.manage'" (click)="confirmMeeting(m)">Confirm 1st slot</button>
+                          <button class="btn btn-sm" *hasPermission="'meetings.manage'" (click)="declineMeeting(m)">Decline</button>
+                        }
+                        @if (m.status === 'confirmed') {
+                          <button class="btn btn-sm" *hasPermission="'meetings.manage'" (click)="cancelMeeting(m)">Cancel</button>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <div class="card-body" *hasPermission="'meetings.request'">
+              <div class="assign-form">
+                <input class="input" placeholder="Meeting subject" [(ngModel)]="newMeetingSubject" />
+                <input class="input" type="datetime-local" [(ngModel)]="newMeetingSlotStart" />
+                <input class="input" type="datetime-local" [(ngModel)]="newMeetingSlotEnd" />
+                <button class="btn btn-secondary" (click)="requestMeeting()">Request Meeting</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card mb-4">
             <div class="card-header"><strong>Client Requests</strong></div>
             <div class="table-wrap">
               <table>

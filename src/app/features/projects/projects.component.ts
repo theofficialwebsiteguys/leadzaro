@@ -5,6 +5,7 @@ import { ProjectService } from '../../core/services/project.service';
 import { TaskService } from '../../core/services/task.service';
 import { MessagingService } from '../../core/services/messaging.service';
 import { RequestService } from '../../core/services/request.service';
+import { MeetingService } from '../../core/services/meeting.service';
 import { MembershipService } from '../../core/services/membership.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
 import {
@@ -13,6 +14,7 @@ import {
 import { Task, TASK_STATUSES, TASK_PRIORITIES } from '../../core/models/task.model';
 import { ProjectChannel, Message } from '../../core/models/message.model';
 import { ClientRequest, REQUEST_CATEGORIES } from '../../core/models/clientRequest.model';
+import { Meeting } from '../../core/models/meeting.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 
@@ -28,6 +30,7 @@ export class ProjectsComponent implements OnInit {
   private readonly taskService = inject(TaskService);
   private readonly messagingService = inject(MessagingService);
   private readonly requestService = inject(RequestService);
+  private readonly meetingService = inject(MeetingService);
   private readonly membershipService = inject(MembershipService);
   readonly org = inject(OrganizationContextService);
 
@@ -56,6 +59,11 @@ export class ProjectsComponent implements OnInit {
   clientRequests = signal<ClientRequest[]>([]);
   newRequestCategory = '';
   newRequestDescription = '';
+
+  meetings = signal<Meeting[]>([]);
+  newMeetingSubject = '';
+  newMeetingSlotStart = '';
+  newMeetingSlotEnd = '';
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -116,6 +124,7 @@ export class ProjectsComponent implements OnInit {
     this.loadTasks(id);
     this.loadChannels(id);
     this.loadRequests(id);
+    this.loadMeetings(id);
     if (this.org.hasPermission('projects.manage')) {
       this.projectService.getFinancials(id).subscribe((res) => {
         this.financials.set(res.data.financials);
@@ -266,6 +275,39 @@ export class ProjectsComponent implements OnInit {
     const id = this.selectedId();
     if (!id) return;
     this.requestService.updateStatus(id, req.id, status).subscribe(() => this.loadRequests(id));
+  }
+
+  loadMeetings(projectId: string) {
+    this.meetingService.list(projectId).subscribe((res) => this.meetings.set(res.data.meetings));
+  }
+
+  requestMeeting() {
+    const id = this.selectedId();
+    if (!id || !this.newMeetingSubject.trim() || !this.newMeetingSlotStart || !this.newMeetingSlotEnd) return;
+    this.meetingService.request(id, this.newMeetingSubject, [{ start: this.newMeetingSlotStart, end: this.newMeetingSlotEnd }]).subscribe(() => {
+      this.newMeetingSubject = '';
+      this.newMeetingSlotStart = '';
+      this.newMeetingSlotEnd = '';
+      this.loadMeetings(id);
+    });
+  }
+
+  confirmMeeting(meeting: Meeting) {
+    const id = this.selectedId();
+    if (!id || meeting.proposedSlots.length === 0) return;
+    this.meetingService.confirm(id, meeting.id, meeting.proposedSlots[0]).subscribe(() => this.loadMeetings(id));
+  }
+
+  declineMeeting(meeting: Meeting) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.meetingService.decline(id, meeting.id).subscribe(() => this.loadMeetings(id));
+  }
+
+  cancelMeeting(meeting: Meeting) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.meetingService.cancel(id, meeting.id).subscribe(() => this.loadMeetings(id));
   }
 
   saveFinancials() {

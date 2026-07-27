@@ -42,6 +42,8 @@ const PERMISSIONS = [
   { key: 'messages.post', category: 'projects', description: 'Post messages in a project channel visible to the requester' },
   { key: 'requests.create', category: 'projects', description: 'Submit a client request or content inbox item' },
   { key: 'requests.manage', category: 'projects', description: 'Triage, update, and convert client requests (the unified support queue)' },
+  { key: 'meetings.request', category: 'projects', description: 'Request a project meeting' },
+  { key: 'meetings.manage', category: 'projects', description: 'Confirm, decline, and cancel project meetings' },
 ];
 
 const PERMISSION_KEYS = new Set(PERMISSIONS.map((p) => p.key));
@@ -101,11 +103,11 @@ const EMPLOYEE_ROLES = [
     name: 'Sales Manager',
     permissions: [...SALES_PERMISSIONS, 'leads.merge', 'audit.view'],
   },
-  { key: 'project_manager', name: 'Project Manager', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'projects.manage', 'projects.change_stage', 'tasks.manage', 'requests.manage'] },
-  { key: 'designer', name: 'Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage'] },
-  { key: 'advanced_designer', name: 'Advanced Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage'] },
-  { key: 'developer', name: 'Developer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage'] },
-  { key: 'support', name: 'Support', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage'] },
+  { key: 'project_manager', name: 'Project Manager', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'projects.manage', 'projects.change_stage', 'tasks.manage', 'requests.manage', 'meetings.manage'] },
+  { key: 'designer', name: 'Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage'] },
+  { key: 'advanced_designer', name: 'Advanced Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage'] },
+  { key: 'developer', name: 'Developer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage'] },
+  { key: 'support', name: 'Support', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage'] },
   { key: 'billing', name: 'Billing', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'billing.manage_webhooks', 'billing.manage_service_plans'] },
 ].map((role) => ({
   ...role,
@@ -115,7 +117,7 @@ const EMPLOYEE_ROLES = [
   // agency can read a project's internal content") — narrower controls
   // (projects.manage, projects.change_stage, tasks.manage) are the
   // roles that actually differ.
-  permissions: Array.from(new Set([...role.permissions, ...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view', 'messages.post'])),
+  permissions: Array.from(new Set([...role.permissions, ...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view', 'messages.post', 'meetings.request'])),
 }));
 
 // Client roles existed since Phase 1 with no module to grant permissions
@@ -137,7 +139,7 @@ const CLIENT_ROLES = [
   scope: 'client',
   permissions: role.key === 'viewer'
     ? [...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view']
-    : [...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view', 'messages.post', 'requests.create'],
+    : [...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view', 'messages.post', 'requests.create', 'meetings.request'],
 }));
 
 const ALL_ROLES = [...EMPLOYEE_ROLES, ...CLIENT_ROLES];

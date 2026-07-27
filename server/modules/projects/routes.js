@@ -34,5 +34,6 @@ router.use('/:projectId/tasks', require('../tasks/routes'));
 router.use('/:projectId/channels', require('../messaging/routes'));
 router.use('/:projectId/requests', require('../requests/routes'));
 router.use('/:projectId/content-inbox', require('../requests/contentInboxRoutes'));
+router.use('/:projectId/meetings', require('../meetings/routes'));
 
 module.exports = router;
