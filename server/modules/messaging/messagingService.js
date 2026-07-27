@@ -1,6 +1,6 @@
 'use strict';
 
-const { Message, Task } = require('../../models');
+const { Message, Task, OrganizationMembership } = require('../../models');
 const {
   getProjectByIdForRequester, listChannelsForRequester, getChannelByIdForRequester, listMessagesForRequester, getMessageByIdForRequester,
 } = require('../../core/authorization/clientVisibleModels');
@@ -35,6 +35,31 @@ async function listMessages(context, projectId, channelId) {
   return listMessagesForRequester(context, { channelId: channel.id });
 }
 
+/**
+ * A mention is only ever legitimate for someone who actually has a stake
+ * in this project: an active employee membership at the agency running
+ * it, or an active client membership at the client organization it
+ * belongs to. mentionedUserIds arrives as raw client input (any user id
+ * in the system, real or guessed) — without this check, notify() would
+ * happily create a Notification (and, for most users, send a real
+ * email containing the message body) for a user with no membership in
+ * either organization at all, leaking this project's content across a
+ * tenant boundary through a side channel the visibility guard never
+ * touches (notify() only writes an unguarded Notification row).
+ */
+async function filterMentionableUserIds(channel, mentionedUserIds) {
+  if (!mentionedUserIds || mentionedUserIds.length === 0) return [];
+  const memberships = await OrganizationMembership.findAll({
+    where: {
+      userId: mentionedUserIds,
+      organizationId: [channel.organizationId, channel.agencyOrganizationId],
+      status: 'active',
+    },
+  });
+  const mentionableUserIds = new Set(memberships.map((m) => m.userId));
+  return mentionedUserIds.filter((id) => mentionableUserIds.has(id));
+}
+
 async function postMessage({
   context, projectId, channelId, body, mentionedUserIds, threadParentMessageId, authorUserId,
 }) {
@@ -46,17 +71,19 @@ async function postMessage({
     if (!parent || parent.channelId !== channel.id) throw invalid('Thread parent message not found in this channel', 404);
   }
 
+  const validMentionedUserIds = await filterMentionableUserIds(channel, mentionedUserIds);
+
   const message = await Message.create({
     channelId: channel.id,
     organizationId: channel.organizationId,
     agencyOrganizationId: channel.agencyOrganizationId,
     authorUserId,
     body,
-    mentionedUserIds: mentionedUserIds || [],
+    mentionedUserIds: validMentionedUserIds,
     threadParentMessageId: threadParentMessageId || null,
   });
 
-  for (const mentionedUserId of mentionedUserIds || []) {
+  for (const mentionedUserId of validMentionedUserIds) {
     if (mentionedUserId === authorUserId) continue;
     // eslint-disable-next-line no-await-in-loop
     await notify({

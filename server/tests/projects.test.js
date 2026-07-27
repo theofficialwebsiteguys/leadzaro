@@ -210,6 +210,27 @@ describe('Project assignments', () => {
     expect(slotsForUser.sort()).toEqual(['designer', 'developer']);
   });
 
+  test('a user with no active membership at this project\'s agency cannot be assigned', async () => {
+    // Regression test: without this check, a projects.manage holder
+    // could plant an assignment referencing any user in the system -
+    // including one from a wholly unrelated agency or client
+    // organization - and that user's name/email would then be exposed
+    // via listAssignments to anyone with projects.view on this project,
+    // including the client themselves.
+    const { agency, project } = await setupAgencyWithClientProject();
+    const { user: admin, password: adminPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['administrator'] });
+    const { agency: unrelatedAgency } = await setupAgencyWithClientProject();
+    const { user: outsider } = await createRoleAssignedMember(sequelize.models, { organizationId: unrelatedAgency.id, roleKeys: ['developer'] });
+    const login = await loginAs(app, admin.email, adminPassword);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const res = await auth(request(app).post(`/api/v1/projects/${project.id}/assignments`).send({ userId: outsider.id, roleSlot: 'developer' }));
+    expect(res.status).toBe(422);
+
+    const count = await ProjectAssignment.count({ where: { projectId: project.id, userId: outsider.id } });
+    expect(count).toBe(0);
+  });
+
   test('adding the identical (user, roleSlot) assignment twice is idempotent, not a duplicate row', async () => {
     const { agency, project } = await setupAgencyWithClientProject();
     const { user: admin, password } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['administrator'] });

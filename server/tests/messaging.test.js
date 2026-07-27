@@ -210,6 +210,46 @@ describe('Message mention notifications', () => {
     const selfNotifications = await Notification.findAll({ where: { userId: author.id, type: 'message_mention' } });
     expect(selfNotifications.length).toBe(0);
   });
+
+  test('mentioning a user with no membership in this project\'s organization or agency does not notify them and is dropped from the persisted mention list', async () => {
+    // Regression test: mentionedUserIds is raw client input. Without a
+    // tenant-membership check, notify() would create a Notification (and
+    // for most users, send a real email containing the message body) for
+    // an arbitrary user id with no stake in this project at all - a leak
+    // through a side channel the visibility guard never touches.
+    const { agency, generalChannel } = await setupProjectWithChannels();
+    const { user: author, password: authorPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['developer'] });
+    const { agency: unrelatedAgency } = await setupProjectWithChannels();
+    const { user: outsider } = await createRoleAssignedMember(sequelize.models, { organizationId: unrelatedAgency.id, roleKeys: ['developer'] });
+    const login = await loginAs(app, author.email, authorPassword);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const posted = await auth(request(app).post(`/api/v1/projects/${generalChannel.projectId}/channels/${generalChannel.id}/messages`).send({
+      body: 'Mentioning someone unrelated to this project', mentionedUserIds: [outsider.id],
+    }));
+    expect(posted.status).toBe(201);
+    expect(posted.body.data.message.mentionedUserIds).not.toContain(outsider.id);
+
+    const outsiderNotifications = await Notification.findAll({ where: { userId: outsider.id, type: 'message_mention' } });
+    expect(outsiderNotifications.length).toBe(0);
+  });
+
+  test('mentioning a client member of this project\'s own organization is allowed (both sides of a project are legitimate mention targets)', async () => {
+    const { agency, clientOrg, generalChannel } = await setupProjectWithChannels();
+    const { user: author, password: authorPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['developer'] });
+    const { user: clientUser } = await createRoleAssignedMember(sequelize.models, { organizationId: clientOrg.id, roleKeys: ['client_owner'], membershipType: 'client' });
+    const login = await loginAs(app, author.email, authorPassword);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const posted = await auth(request(app).post(`/api/v1/projects/${generalChannel.projectId}/channels/${generalChannel.id}/messages`).send({
+      body: 'Looping in the client', mentionedUserIds: [clientUser.id],
+    }));
+    expect(posted.status).toBe(201);
+    expect(posted.body.data.message.mentionedUserIds).toContain(clientUser.id);
+
+    const clientNotifications = await Notification.findAll({ where: { userId: clientUser.id, type: 'message_mention' } });
+    expect(clientNotifications.length).toBe(1);
+  });
 });
 
 describe('Cross-agency isolation for channels/messages', () => {

@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  ProjectAssignment, User, Project, ProjectChannel, Organization,
+  ProjectAssignment, User, Project, ProjectChannel, Organization, OrganizationMembership,
 } = require('../../models');
 const {
   listProjectsForRequester, getProjectByIdForRequester, getProjectFinancials, findOrCreateProjectFinancials, findProjectByOrganizationIdSystemLevel,
@@ -88,6 +88,16 @@ async function addAssignment({
 
   const targetUser = await User.findByPk(userId);
   if (!targetUser) throw invalid('User not found', 404);
+
+  // A ProjectAssignment's user is surfaced by name/email to anyone with
+  // projects.view (including the client themselves, via listAssignments'
+  // User include) - without this check, a projects.manage holder could
+  // plant an assignment referencing any user in the system, including
+  // one with no membership at this project's own agency at all.
+  const targetMembership = await OrganizationMembership.findOne({
+    where: { userId, organizationId: project.agencyOrganizationId, status: 'active' },
+  });
+  if (!targetMembership) throw invalid('User is not an active member of this project\'s agency', 422);
 
   const existing = await ProjectAssignment.findOne({ where: { projectId: project.id, userId, roleSlot } });
   if (existing) return { assignment: existing, alreadyExisted: true };

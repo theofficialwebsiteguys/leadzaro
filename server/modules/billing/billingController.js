@@ -118,12 +118,27 @@ async function manualConvert(req, res, next) {
     // Best-effort: the conversion itself already succeeded and is real.
     // A rep who just closed a deal should never see "conversion failed"
     // because of a Phase 4 bookkeeping problem creating its Project —
-    // that's recorded here for investigation, not surfaced to them.
+    // recorded here as a durable, queryable audit entry (not just a log
+    // line) so it's actually discoverable by an administrator, mirroring
+    // how the webhook path's equivalent failure surfaces via
+    // needs_attention. ConversionAttempt.projectSetupPending also stays
+    // true on this path (ensureProjectForConversion only clears it after
+    // success), so listConversionAttempts's projectSetupPending filter
+    // below finds it too.
     try {
       await ensureProjectForConversion(result);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`[billing] failed to create Project for converted opportunity ${req.params.id}:`, err.message);
+      await recordAudit({
+        organizationId: orgId,
+        actorUserId: req.user.id,
+        action: 'project.setup_failed',
+        targetType: 'Opportunity',
+        targetId: req.params.id,
+        metadata: { conversionAttemptId: result.conversionAttempt.id, error: err.message },
+        req,
+      });
     }
 
     await recordAudit({
@@ -141,6 +156,10 @@ async function listConversionAttempts(req, res, next) {
     const orgId = req.context.organization.id;
     const where = { agencyOrganizationId: orgId };
     if (req.query.status) where.status = req.query.status;
+    // Surfaces the manual-conversion path's Project-setup failures (see
+    // manualConvert above) as a queryable worklist, not just an audit
+    // log line an administrator would have to already know to look for.
+    if (req.query.projectSetupPending !== undefined) where.projectSetupPending = req.query.projectSetupPending === 'true';
     const conversionAttempts = await ConversionAttempt.findAll({ where, order: [['createdAt', 'DESC']] });
     return success(res, { conversionAttempts });
   } catch (err) {
