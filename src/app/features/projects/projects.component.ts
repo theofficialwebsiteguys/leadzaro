@@ -624,7 +624,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
         this.website.set(res.data.website);
         this.draftSchemaText = JSON.stringify(res.data.website.draftSchema, null, 2);
         this.loadWebsiteVersions(id);
-        this.actionMessage.set('Version restored');
+        this.actionMessage.set(res.message || 'Version restored');
       },
       error: (err) => {
         this.actionMessage.set(err.error?.message || 'Failed to restore version');

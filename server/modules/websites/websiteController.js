@@ -121,7 +121,7 @@ async function compareVersions(req, res, next) {
 
 async function restoreVersion(req, res, next) {
   try {
-    const website = await websiteService.restoreVersion({
+    const { website, preservedSectionIds } = await websiteService.restoreVersion({
       context: req.context, projectId: req.params.projectId, versionId: req.params.versionId, actorUserId: req.user.id,
     });
 
@@ -131,11 +131,14 @@ async function restoreVersion(req, res, next) {
       action: 'website.version_restored',
       targetType: 'Website',
       targetId: website.id,
-      metadata: { versionId: req.params.versionId },
+      metadata: { versionId: req.params.versionId, preservedSectionIds },
       req,
     });
 
-    return success(res, { website }, 'Version restored');
+    const message = preservedSectionIds.length > 0
+      ? `Version restored — ${preservedSectionIds.length} detached section(s) kept their current custom content instead of being reverted`
+      : 'Version restored';
+    return success(res, { website, preservedSectionIds }, message);
   } catch (err) {
     handleServiceError(err, res, next);
   }

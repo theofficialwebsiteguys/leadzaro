@@ -36,8 +36,8 @@ export class WebsiteService {
     return this.http.post<{ data: { version: WebsiteVersion } }>(`/api/v1/projects/${projectId}/website/versions`, { label });
   }
 
-  restoreVersion(projectId: string, versionId: string): Observable<{ data: { website: Website } }> {
-    return this.http.post<{ data: { website: Website } }>(`/api/v1/projects/${projectId}/website/versions/${versionId}/restore`, {});
+  restoreVersion(projectId: string, versionId: string): Observable<{ message: string; data: { website: Website; preservedSectionIds: string[] } }> {
+    return this.http.post<{ message: string; data: { website: Website; preservedSectionIds: string[] } }>(`/api/v1/projects/${projectId}/website/versions/${versionId}/restore`, {});
   }
 
   publishVersion(projectId: string, versionId: string): Observable<{ data: { version: WebsiteVersion } }> {

@@ -1,5 +1,7 @@
 'use strict';
 
+const { resolveEffectiveComponentState } = require('./componentState');
+
 function pagesSignature(pages) {
   return (pages || []).map((page) => `${page.id}:${page.route}`).join('|');
 }
@@ -30,6 +32,59 @@ function diffGlobalContentScope(oldSchema, newSchema, scope) {
       scope, key, editingLevel: 'professional', requiresReview: true,
     });
   }
+  return changes;
+}
+
+/**
+ * All changes for one section instance — split out of diffSchemaChanges
+ * purely to keep that function's cognitive complexity down; the state/
+ * bucket-walking rules themselves are documented on diffSchemaChanges.
+ */
+function diffSectionChanges(oldSection, newSection, pageId, definition) {
+  const changes = [];
+
+  // The instance's state BEFORE this change — Phase 6 § 2c/§ 2d: callers
+  // use this to apply the extra "a detached instance rejects content
+  // edits and non-builderEditable settings edits" rule on top of the
+  // ordinary per-property editingLevel check. Deliberately the OLD
+  // state, never the new one — what an instance was about to become is
+  // irrelevant to what it currently protects.
+  const sectionState = resolveEffectiveComponentState(oldSection, definition);
+
+  const oldInstanceState = oldSection.state || 'inherited';
+  const newInstanceState = newSection.state || 'inherited';
+  if (oldInstanceState !== newInstanceState) {
+    // Toggling detachment itself is always advanced+requiresReview — the
+    // safe-by-default direction, same reasoning as an unrecognized
+    // settingsSchema key, until a dedicated detach/re-attach action (a
+    // later slice) supersedes editing this field through the ordinary
+    // draft-save path at all.
+    changes.push({
+      scope: 'section', pageId, sectionId: newSection.id, key: 'state', sectionState, editingLevel: 'advanced', requiresReview: true,
+    });
+  }
+
+  for (const bucket of ['settings', 'content']) {
+    const oldBucket = oldSection[bucket] || {};
+    const newBucket = newSection[bucket] || {};
+    const keys = new Set([...Object.keys(oldBucket), ...Object.keys(newBucket)]);
+    for (const key of keys) {
+      if (JSON.stringify(oldBucket[key]) === JSON.stringify(newBucket[key])) continue;
+      const entry = definition?.settingsSchema?.[key];
+      changes.push({
+        scope: 'section',
+        pageId,
+        sectionId: newSection.id,
+        bucket,
+        key,
+        sectionState,
+        builderEditable: !!entry?.builderEditable,
+        editingLevel: entry?.editingLevel || 'advanced',
+        requiresReview: entry ? !!entry.requiresReview : true,
+      });
+    }
+  }
+
   return changes;
 }
 
@@ -76,23 +131,7 @@ function diffSchemaChanges(oldSchema, newSchema, sectionDefinitionsByKey) {
       if (!oldSection) continue; // a brand-new section — already counted as structural above
 
       const definition = sectionDefinitionsByKey.get(newSection.componentKey);
-      for (const bucket of ['settings', 'content']) {
-        const oldBucket = oldSection[bucket] || {};
-        const newBucket = newSection[bucket] || {};
-        const keys = new Set([...Object.keys(oldBucket), ...Object.keys(newBucket)]);
-        for (const key of keys) {
-          if (JSON.stringify(oldBucket[key]) === JSON.stringify(newBucket[key])) continue;
-          const entry = definition?.settingsSchema?.[key];
-          changes.push({
-            scope: 'section',
-            pageId: newPage.id,
-            sectionId: newSection.id,
-            key,
-            editingLevel: entry?.editingLevel || 'advanced',
-            requiresReview: entry ? !!entry.requiresReview : true,
-          });
-        }
-      }
+      changes.push(...diffSectionChanges(oldSection, newSection, newPage.id, definition));
     }
   }
 

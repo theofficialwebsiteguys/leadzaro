@@ -11,6 +11,7 @@ const {
 } = require('../../core/websites/websiteCatalog');
 const { resolveEffectiveEditingLevel, levelSatisfies } = require('../../core/websites/editingLevel');
 const { diffSchemaChanges } = require('../../core/websites/schemaDiff');
+const { resolveEffectiveComponentState } = require('../../core/websites/componentState');
 const requestService = require('../requests/requestService');
 
 // Named checkpoints and published versions are never pruned — only the
@@ -194,6 +195,27 @@ async function authorizeAndClassifySchemaChange(context, website, newSchema) {
     throw invalid(`Changing "${disallowed.key}" requires ${disallowed.editingLevel}-level editing access`, 403);
   }
 
+  // The builder-side half of Phase 6's major gate (current-phase-plan.md
+  // § 2d — the closing review's second Critical finding): a designer
+  // edit must never overwrite developer-owned custom functionality. A
+  // detached section instance's `content` is never editable through the
+  // ordinary draft-save path at all, and its `settings` only for keys
+  // the component's own settingsSchema explicitly opts in with
+  // builderEditable: true — regardless of the requester's own editing
+  // level, since this isn't a trust-tier question, it's "this territory
+  // now belongs to hand-authored custom code, not the builder."
+  // Reordering/moving a detached instance is unaffected (no bucket/key
+  // change is involved in a pure reorder, which is already covered by
+  // the structural-change check above).
+  const blockedByDetachment = changes.find((change) => change.sectionState === 'detached' && change.bucket
+    && (change.bucket === 'content' || !change.builderEditable));
+  if (blockedByDetachment) {
+    throw invalid(
+      `"${blockedByDetachment.key}" on this section is detached from the builder — it is now custom, developer-owned code and can no longer be edited here`,
+      403
+    );
+  }
+
   return structuralChange || changes.some((change) => change.requiresReview);
 }
 
@@ -366,12 +388,57 @@ async function publishVersion({ context, projectId, versionId }) {
  * restored state, so the act of restoring is itself part of the
  * append-only log rather than a silent, unrecorded mutation.
  */
+/**
+ * Phase 6 § 2d's restore-of-a-pre-detachment-checkpoint edge case: an
+ * old version's snapshot can predate a section instance's detachment.
+ * Restoring it must never silently re-clobber the now-custom
+ * implementation on the next generator run, but it also shouldn't block
+ * the entire restore over one instance. For every section in the
+ * CURRENT live draft that is currently detached, the target schema's
+ * same section id (if the restored version still has it at all) is
+ * overwritten with the current draft's own detached instance —
+ * preserving the developer-owned custom content/settings exactly as
+ * they are right now, while every other page/section restores normally.
+ * Returns which section ids were preserved this way so the caller can
+ * surface it (never silent, even though it isn't a hard error).
+ */
+function preserveDetachedInstances(currentDraftSchema, targetSchema, sectionDefinitionsByKey) {
+  const preservedSectionIds = [];
+  const currentPagesById = new Map((currentDraftSchema?.pages || []).map((page) => [page.id, page]));
+
+  const mergedPages = (targetSchema?.pages || []).map((page) => {
+    const currentPage = currentPagesById.get(page.id);
+    if (!currentPage) return page;
+
+    const currentSectionsById = new Map((currentPage.sections || []).map((section) => [section.id, section]));
+    const mergedSections = (page.sections || []).map((section) => {
+      const currentSection = currentSectionsById.get(section.id);
+      if (!currentSection) return section;
+
+      const definition = sectionDefinitionsByKey.get(currentSection.componentKey);
+      if (resolveEffectiveComponentState(currentSection, definition) !== 'detached') return section;
+
+      preservedSectionIds.push(section.id);
+      return currentSection;
+    });
+
+    return { ...page, sections: mergedSections };
+  });
+
+  return { schema: { ...targetSchema, pages: mergedPages }, preservedSectionIds };
+}
+
 async function restoreVersion({
   context, projectId, versionId, actorUserId,
 }) {
   const website = await getWebsite(context, projectId);
   const version = await getVersion(context, projectId, versionId);
-  const requiresReview = await authorizeAndClassifySchemaChange(context, website, version.schema);
+
+  const sectionDefinitions = await listSectionDefinitionsForRequester(context, {}, { includeUnpublished: true });
+  const sectionDefinitionsByKey = new Map(sectionDefinitions.map((definition) => [definition.componentKey, definition]));
+  const { schema: targetSchema, preservedSectionIds } = preserveDetachedInstances(website.draftSchema, version.schema, sectionDefinitionsByKey);
+
+  const requiresReview = await authorizeAndClassifySchemaChange(context, website, targetSchema);
   const versionNumber = await getNextVersionNumberForWebsite(website.id);
 
   await WebsiteVersion.create({
@@ -380,17 +447,17 @@ async function restoreVersion({
     agencyOrganizationId: website.agencyOrganizationId,
     versionNumber,
     label: `Restored to v${version.versionNumber}`,
-    schema: version.schema,
+    schema: targetSchema,
     isAutosave: false,
     status: 'draft',
     createdByUserId: actorUserId,
   });
 
   await website.update({
-    draftSchema: version.schema,
+    draftSchema: targetSchema,
     draftHasPendingReviewChanges: website.draftHasPendingReviewChanges || requiresReview,
   });
-  return website;
+  return { website, preservedSectionIds };
 }
 
 module.exports = {

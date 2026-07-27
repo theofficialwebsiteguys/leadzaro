@@ -2,6 +2,11 @@ export interface SectionSettingSchemaEntry {
   type: string;
   editingLevel: 'basic' | 'professional' | 'advanced';
   requiresReview: boolean;
+  // Only meaningful once the owning section INSTANCE is detached (see
+  // WebsiteSection.state in website.model.ts) — a detached instance's
+  // content is never builder-editable at all, and its settings only for
+  // keys the component opts into with this flag (current-phase-plan.md § 2d).
+  builderEditable?: boolean;
 }
 
 export type LibraryStatus = 'draft' | 'published' | 'deprecated';
