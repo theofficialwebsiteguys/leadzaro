@@ -13,7 +13,7 @@
  */
 
 const {
-  Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting,
+  Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -137,22 +137,39 @@ function getChannelByIdForRequester(context, channelId) {
 
 /**
  * A Message's own visibility is entirely inherited from its channel —
- * there is no separate per-message visibility flag. A client request is
- * scoped to messages whose channelId belongs to one of their own
- * organization's client-visible channels; since that channel lookup
- * already went through channelWhereForRequester, and Message
- * denormalizes the same organizationId/agencyOrganizationId, scoping
- * Message directly by those columns is equivalent to (and avoids ever
- * needing to `include` ProjectChannel from) a channel-membership check.
+ * there is no separate per-message visibility flag. Correction (found
+ * by a Slice 6 test that calls this function directly rather than
+ * through messagingService's own "check the channel first" call order):
+ * tenant scoping alone is NOT equivalent to a channel-visibility check —
+ * organizationId is the same for every channel on a project regardless
+ * of visibility, so a plain tenant-scoped query would still return
+ * messages from an internal channel to a client. This function must be
+ * safe on its own, independent of any particular caller's order of
+ * operations (exactly ADR 0007's point) — it now cross-checks each
+ * message's channel via getChannelByIdForRequester itself, never via an
+ * `include` of the guarded ProjectChannel model.
  */
 const messageWhereForRequester = tenantWhereForRequester;
 
-function listMessagesForRequester(context, extraWhere = {}) {
-  return Message.findAll(scoped({ where: messageWhereForRequester(context, extraWhere), include: [AUTHOR_INCLUDE], order: [['createdAt', 'ASC']] }));
+async function listMessagesForRequester(context, extraWhere = {}) {
+  const messages = await Message.findAll(scoped({ where: messageWhereForRequester(context, extraWhere), include: [AUTHOR_INCLUDE], order: [['createdAt', 'ASC']] }));
+  if (context.membership.membershipType !== 'client') return messages;
+
+  const results = [];
+  for (const message of messages) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await getChannelByIdForRequester(context, message.channelId)) results.push(message);
+  }
+  return results;
 }
 
-function getMessageByIdForRequester(context, messageId) {
-  return Message.findOne(scoped({ where: messageWhereForRequester(context, { id: messageId }) }));
+async function getMessageByIdForRequester(context, messageId) {
+  const message = await Message.findOne(scoped({ where: messageWhereForRequester(context, { id: messageId }) }));
+  if (!message) return null;
+  if (context.membership.membershipType === 'client' && !(await getChannelByIdForRequester(context, message.channelId))) {
+    return null;
+  }
+  return message;
 }
 
 /**
@@ -183,6 +200,60 @@ function listMeetingsForRequester(context, extraWhere = {}) {
 
 function getMeetingByIdForRequester(context, meetingId) {
   return Meeting.findOne(scoped({ where: tenantWhereForRequester(context, { id: meetingId }) }));
+}
+
+/**
+ * File's client-visibility rule is deliberately NOT just `isPrivate:
+ * false` (§ 2b correction 2 — the review found that rule alone would
+ * make e.g. a non-private website_asset file client-visible with
+ * nothing tying it to a specific client-visible context). The real
+ * rule: isPrivate: false AND scope in File.CLIENT_FACING_SCOPES, and
+ * for task_attachment/message_attachment specifically, the referenced
+ * Task/Message must independently be client-visible — checked via a
+ * real lookup through this same module's own guarded accessors, never
+ * via an `include` of Task/Message (ADR 0007).
+ */
+async function filterClientVisibleFiles(context, files) {
+  const results = [];
+  for (const file of files) {
+    if (file.scope === 'task_attachment') {
+      // eslint-disable-next-line no-await-in-loop
+      if (await getTaskByIdForRequester(context, file.relatedId)) results.push(file);
+    } else if (file.scope === 'message_attachment') {
+      // eslint-disable-next-line no-await-in-loop
+      if (await getMessageByIdForRequester(context, file.relatedId)) results.push(file);
+    } else {
+      results.push(file);
+    }
+  }
+  return results;
+}
+
+async function listFilesForRequester(context, extraWhere = {}) {
+  if (context.membership.membershipType === 'client') {
+    const candidates = await File.findAll(scoped({
+      where: {
+        ...extraWhere, organizationId: context.organization.id, isPrivate: false, scope: File.CLIENT_FACING_SCOPES,
+      },
+      order: [['createdAt', 'DESC']],
+    }));
+    return filterClientVisibleFiles(context, candidates);
+  }
+  return File.findAll(scoped({ where: { ...extraWhere, agencyOrganizationId: context.organization.id }, order: [['createdAt', 'DESC']] }));
+}
+
+async function getFileByIdForRequester(context, fileId) {
+  if (context.membership.membershipType === 'client') {
+    const file = await File.findOne(scoped({
+      where: {
+        id: fileId, organizationId: context.organization.id, isPrivate: false, scope: File.CLIENT_FACING_SCOPES,
+      },
+    }));
+    if (!file) return null;
+    const [visible] = await filterClientVisibleFiles(context, [file]);
+    return visible || null;
+  }
+  return File.findOne(scoped({ where: { id: fileId, agencyOrganizationId: context.organization.id } }));
 }
 
 /**
@@ -220,4 +291,6 @@ module.exports = {
   getContentInboxItemByIdForRequester,
   listMeetingsForRequester,
   getMeetingByIdForRequester,
+  listFilesForRequester,
+  getFileByIdForRequester,
 };

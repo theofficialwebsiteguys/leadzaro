@@ -6,6 +6,7 @@ import { TaskService } from '../../core/services/task.service';
 import { MessagingService } from '../../core/services/messaging.service';
 import { RequestService } from '../../core/services/request.service';
 import { MeetingService } from '../../core/services/meeting.service';
+import { FileUploadService } from '../../core/services/file.service';
 import { MembershipService } from '../../core/services/membership.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
 import {
@@ -15,6 +16,7 @@ import { Task, TASK_STATUSES, TASK_PRIORITIES } from '../../core/models/task.mod
 import { ProjectChannel, Message } from '../../core/models/message.model';
 import { ClientRequest, REQUEST_CATEGORIES } from '../../core/models/clientRequest.model';
 import { Meeting } from '../../core/models/meeting.model';
+import { ProjectFile, FILE_SCOPES } from '../../core/models/file.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 
@@ -31,6 +33,7 @@ export class ProjectsComponent implements OnInit {
   private readonly messagingService = inject(MessagingService);
   private readonly requestService = inject(RequestService);
   private readonly meetingService = inject(MeetingService);
+  private readonly fileService = inject(FileUploadService);
   private readonly membershipService = inject(MembershipService);
   readonly org = inject(OrganizationContextService);
 
@@ -39,6 +42,7 @@ export class ProjectsComponent implements OnInit {
   readonly taskStatuses = TASK_STATUSES;
   readonly taskPriorities = TASK_PRIORITIES;
   readonly requestCategories = REQUEST_CATEGORIES;
+  readonly fileScopes = FILE_SCOPES;
 
   tasks = signal<Task[]>([]);
   taskView = signal<'list' | 'board'>('list');
@@ -64,6 +68,11 @@ export class ProjectsComponent implements OnInit {
   newMeetingSubject = '';
   newMeetingSlotStart = '';
   newMeetingSlotEnd = '';
+
+  files = signal<ProjectFile[]>([]);
+  newFileScope: string = 'project';
+  newFileIsPrivate = true;
+  selectedFile: File | null = null;
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -125,6 +134,7 @@ export class ProjectsComponent implements OnInit {
     this.loadChannels(id);
     this.loadRequests(id);
     this.loadMeetings(id);
+    this.loadFiles(id);
     if (this.org.hasPermission('projects.manage')) {
       this.projectService.getFinancials(id).subscribe((res) => {
         this.financials.set(res.data.financials);
@@ -308,6 +318,37 @@ export class ProjectsComponent implements OnInit {
     const id = this.selectedId();
     if (!id) return;
     this.meetingService.cancel(id, meeting.id).subscribe(() => this.loadMeetings(id));
+  }
+
+  loadFiles(projectId: string) {
+    this.fileService.list(projectId).subscribe((res) => this.files.set(res.data.files));
+  }
+
+  onFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.selectedFile = input.files?.[0] ?? null;
+  }
+
+  uploadFile() {
+    const id = this.selectedId();
+    if (!id || !this.selectedFile) return;
+    this.fileService.upload(id, this.selectedFile, this.newFileScope, this.newFileIsPrivate).subscribe(() => {
+      this.selectedFile = null;
+      this.loadFiles(id);
+      this.actionMessage.set('File uploaded');
+    });
+  }
+
+  openFile(file: ProjectFile) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.fileService.getSignedUrl(id, file.id).subscribe((res) => window.open(res.data.url, '_blank'));
+  }
+
+  deleteFile(file: ProjectFile) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.fileService.delete(id, file.id).subscribe(() => this.loadFiles(id));
   }
 
   saveFinancials() {

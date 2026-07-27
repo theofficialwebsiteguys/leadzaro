@@ -7,6 +7,7 @@ const {
 } = require('../models');
 const { createOrganization, createRoleAssignedMember, loginAs } = require('./helpers/factory');
 const { CHANNEL_DEFAULTS } = require('../core/projects/projectCatalog');
+const { getMessageByIdForRequester, listMessagesForRequester } = require('../core/authorization/clientVisibleModels');
 
 afterAll(async () => {
   await sequelize.close();
@@ -32,6 +33,30 @@ describe('Channel/Message visibility guard', () => {
   test('raw unscoped queries throw', async () => {
     await expect(ProjectChannel.findAll()).rejects.toThrow(/must be queried through/i);
     await expect(Message.findAll()).rejects.toThrow(/must be queried through/i);
+  });
+
+  test('getMessageByIdForRequester/listMessagesForRequester are themselves safe against an internal-channel message, independent of any caller checking the channel first', async () => {
+    // Regression test for a real bug: these two functions originally
+    // scoped Message by tenant columns alone (organizationId is the
+    // same for every channel on a project regardless of visibility),
+    // relying on messagingService's own "check the channel, then list
+    // its messages" call order to keep internal-channel messages away
+    // from clients. That's exactly the caller-discipline problem ADR
+    // 0007 exists to eliminate — found when Slice 6's File visibility
+    // filter called getMessageByIdForRequester directly, skipping that
+    // order, and it leaked an internal-channel message's attachment.
+    const { clientOrg, internalChannel } = await setupProjectWithChannels();
+    const { user: employee } = await createRoleAssignedMember(sequelize.models, { organizationId: internalChannel.agencyOrganizationId, roleKeys: ['developer'] });
+    const message = await Message.create({
+      channelId: internalChannel.id, organizationId: internalChannel.organizationId, agencyOrganizationId: internalChannel.agencyOrganizationId, authorUserId: employee.id, body: 'internal-only',
+    });
+
+    const clientContext = { organization: { id: clientOrg.id }, membership: { membershipType: 'client' } };
+    expect(await getMessageByIdForRequester(clientContext, message.id)).toBeNull();
+    expect(await listMessagesForRequester(clientContext, { channelId: internalChannel.id })).toEqual([]);
+
+    const employeeContext = { organization: { id: internalChannel.agencyOrganizationId }, membership: { membershipType: 'employee' } };
+    expect(await getMessageByIdForRequester(employeeContext, message.id)).not.toBeNull();
   });
 });
 

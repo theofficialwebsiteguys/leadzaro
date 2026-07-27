@@ -164,6 +164,43 @@
           </div>
 
           <div class="card mb-4">
+            <div class="card-header"><strong>Files</strong></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Name</th><th>Scope</th><th>Size</th><th></th></tr></thead>
+                <tbody>
+                  @for (f of files(); track f.id) {
+                    <tr>
+                      <td>{{ f.originalName }}</td>
+                      <td>{{ f.scope }}</td>
+                      <td>{{ (f.sizeBytes / 1024).toFixed(1) }} KB</td>
+                      <td>
+                        <button class="btn btn-sm" (click)="openFile(f)">Open</button>
+                        <button class="btn btn-sm" *hasPermission="'files.manage'" (click)="deleteFile(f)">Delete</button>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <div class="card-body" *hasPermission="'files.upload'">
+              <div class="assign-form">
+                <input type="file" (change)="onFileSelected($event)" />
+                <select [(ngModel)]="newFileScope" class="input">
+                  @for (s of fileScopes; track s) {
+                    <option [value]="s">{{ s }}</option>
+                  }
+                </select>
+                <label class="checkbox-row">
+                  <input type="checkbox" [(ngModel)]="newFileIsPrivate" />
+                  Private (agency-only)
+                </label>
+                <button class="btn btn-secondary" (click)="uploadFile()">Upload</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card mb-4">
             <div class="card-header"><strong>Meetings</strong></div>
             <div class="table-wrap">
               <table>
