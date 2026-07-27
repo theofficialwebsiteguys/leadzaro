@@ -1,10 +1,8 @@
 'use strict';
 
 /**
- * The actual Angular generator (current-phase-plan.md § 2g, Phase 6
- * slice 4) — schema → typed output, for 'managed'-state sections only
- * this slice (slice 5 extends this for extended/registered_custom/
- * detached). Runs against a specific immutable WebsiteVersion.schema,
+ * The actual Angular generator (current-phase-plan.md § 2g) — schema →
+ * typed output. Runs against a specific immutable WebsiteVersion.schema,
  * never the live mutable draftSchema, matching the version-immutability
  * principle Phase 5 already established.
  *
@@ -17,6 +15,26 @@
  * @for over each property), the same approach the preview renderer
  * already uses — real, compiling, typed Angular, not a stub, but not a
  * hand-crafted pixel-perfect hero/cta/etc. template either.
+ *
+ * All four component states (current-phase-plan.md § 2c/§ 2f), each
+ * handled differently by design, not by omission:
+ *  - managed:           generator-owned standard component, generated fresh every run.
+ *  - extended:          same generator-owned standard component, PLUS a
+ *                        real Angular extension point (<ng-content>) a
+ *                        hand-authored custom/ wrapper can project into —
+ *                        type-level (SectionDefinition.state), applies to
+ *                        every instance of the componentKey uniformly.
+ *  - registered_custom: the generator never writes this component's file
+ *                        at all — the page imports it from custom/
+ *                        components/ instead of components/standard/,
+ *                        trusting the naming convention a developer's
+ *                        hand-authored component must satisfy.
+ *  - detached:           per-instance (never type-level — see
+ *                        componentState.js) — that ONE section instance
+ *                        is omitted from the generated page entirely,
+ *                        assumed to be hand-rendered elsewhere; every
+ *                        other instance of the same componentKey,
+ *                        anywhere else, is unaffected.
  */
 
 const { resolveEffectiveComponentState } = require('../websites/componentState');
@@ -59,20 +77,32 @@ function componentFilePath(componentKey) {
   return `components/standard/${toKebabCase(componentKey)}.component.ts`;
 }
 
+function customComponentImportDir(componentKey) {
+  return `../../custom/components/${toKebabCase(componentKey)}.component`;
+}
+
 function pageFilePath(page) {
   return `generated/pages/${toKebabCase(page.id)}.component.ts`;
 }
 
 /**
- * One reusable, generically-rendering standard component per
- * componentKey — 'managed' sections only this slice. Real, compiling,
- * typed Angular 19 standalone component syntax (matching this
- * project's own frontend convention), deliberately structural rather
- * than pixel-crafted, per the scope boundary above.
+ * One reusable, generically-rendering standard component per generator-
+ * owned componentKey (managed or extended — never registered_custom,
+ * which has no generated file at all). Real, compiling, typed Angular
+ * 19 standalone component syntax (matching this project's own frontend
+ * convention), deliberately structural rather than pixel-crafted, per
+ * the scope boundary above. An 'extended' type gets a real <ng-content>
+ * extension point a hand-authored custom/ wrapper can project into —
+ * the generator itself never reads or writes anything under custom/.
  */
-function generateStandardComponentFile(componentKey) {
+function generateStandardComponentFile(sectionDefinition) {
+  const { componentKey } = sectionDefinition;
+  const isExtended = sectionDefinition.state === 'extended';
   const className = componentClassName(componentKey);
   const selector = componentSelector(componentKey);
+  const extensionSlot = isExtended
+    ? '\n      <!-- extension point: a custom/ wrapper component may project additional content here -->\n      <ng-content></ng-content>'
+    : '';
   const content = `import { Component, Input } from '@angular/core';
 
 @Component({
@@ -82,7 +112,7 @@ function generateStandardComponentFile(componentKey) {
     <section class="section section-${toKebabCase(componentKey)}" [attr.data-variant]="variant">
       @for (item of contentEntries; track item.key) {
         <div class="section-field" [attr.data-key]="item.key">{{ item.value }}</div>
-      }
+      }${extensionSlot}
     </section>
   \`,
 })
@@ -100,33 +130,46 @@ export class ${className} {
 }
 
 /**
- * One routed page component per page, importing and instantiating the
- * standard component for each 'managed' section instance it contains,
- * in order. Each section's actual content/settings/variant become a
+ * One routed page component per page. Each section instance is
+ * classified by its own effective state (componentState.js) and
+ * handled per current-phase-plan.md § 2c/§ 2f:
+ *  - detached instances are omitted from the generated output entirely.
+ *  - managed/extended instances import the generator-owned standard
+ *    component from components/standard/.
+ *  - registered_custom instances import from custom/components/ instead
+ *    — the generator never writes that file, only references it, trusting
+ *    the naming convention a hand-authored component must satisfy.
+ * Each rendered section's actual content/settings/variant become a
  * typed class field (never inlined as a template literal expression —
  * keeps the template itself simple property bindings, matching how a
  * hand-authored Angular component would normally be written).
  */
 function generatePageComponentFile(page, sectionDefinitionsByKey) {
-  const managedSections = (page.sections || []).filter((section) => {
-    const definition = sectionDefinitionsByKey.get(section.componentKey);
-    return resolveEffectiveComponentState(section, definition) === 'managed';
-  });
+  const renderableSections = (page.sections || [])
+    .map((section) => {
+      const definition = sectionDefinitionsByKey.get(section.componentKey);
+      return { section, state: resolveEffectiveComponentState(section, definition) };
+    })
+    .filter(({ state }) => state !== 'detached');
 
-  const usedComponentKeys = [...new Set(managedSections.map((section) => section.componentKey))];
+  const usedComponentKeys = [...new Set(renderableSections.map(({ section }) => section.componentKey))];
   const imports = usedComponentKeys
-    .map((key) => `import { ${componentClassName(key)} } from '../../components/standard/${toKebabCase(key)}.component';`)
+    .map((key) => {
+      const definition = sectionDefinitionsByKey.get(key);
+      const importDir = definition?.state === 'registered_custom' ? customComponentImportDir(key) : `../../components/standard/${toKebabCase(key)}.component`;
+      return `import { ${componentClassName(key)} } from '${importDir}';`;
+    })
     .join('\n');
 
   const fieldName = (section) => `section_${toSafeIdentifier(section.id)}`;
-  const fields = managedSections
-    .map((section) => `  ${fieldName(section)} = ${JSON.stringify({
+  const fields = renderableSections
+    .map(({ section }) => `  ${fieldName(section)} = ${JSON.stringify({
       variant: section.variant ?? null, content: section.content || {}, settings: section.settings || {},
     })};`)
     .join('\n');
 
-  const template = managedSections
-    .map((section) => `    <${componentSelector(section.componentKey)} [variant]="${fieldName(section)}.variant" [content]="${fieldName(section)}.content" [settings]="${fieldName(section)}.settings"></${componentSelector(section.componentKey)}>`)
+  const template = renderableSections
+    .map(({ section }) => `    <${componentSelector(section.componentKey)} [variant]="${fieldName(section)}.variant" [content]="${fieldName(section)}.content" [settings]="${fieldName(section)}.settings"></${componentSelector(section.componentKey)}>`)
     .join('\n');
 
   const className = `${toPascalCase(page.id)}Component`;
@@ -214,12 +257,8 @@ function generateConfigFile({ websiteId, websiteVersionId, generatedAt }) {
 
 /**
  * Assembles the full generator-owned file manifest for one
- * WebsiteVersion.schema. Only 'managed'-state sections produce real
- * per-section output this slice; a page containing an extended/
- * registered_custom/detached instance still generates (with that one
- * instance simply omitted from the page's rendered output) rather than
- * failing the whole website — slice 5 fills in the other three states'
- * own generation rules.
+ * WebsiteVersion.schema — every component state handled per this
+ * module's own top-of-file documentation.
  */
 function generateWebsiteFiles({
   schema, sectionDefinitionsByKey, designTokens, websiteId, websiteVersionId, generatedAt,
@@ -227,8 +266,18 @@ function generateWebsiteFiles({
   const pages = schema?.pages || [];
   const pageFiles = pages.map((page) => generatePageComponentFile(page, sectionDefinitionsByKey));
 
+  // An unrecognized componentKey (no matching SectionDefinition at all)
+  // falls back to a generated standard component rather than being
+  // silently dropped — the page's own import logic defaults an unknown
+  // definition's state to "not registered_custom" (see
+  // generatePageComponentFile), so it must always have a matching
+  // generated file to import, the same safe-by-default direction
+  // schemaDiff.js already uses for an unrecognized settingsSchema key.
   const allUsedComponentKeys = [...new Set(pageFiles.flatMap((pageFile) => pageFile.usedComponentKeys))];
-  const standardComponentFiles = allUsedComponentKeys.map((key) => generateStandardComponentFile(key));
+  const standardComponentFiles = allUsedComponentKeys
+    .filter((key) => sectionDefinitionsByKey.get(key)?.state !== 'registered_custom')
+    .map((key) => sectionDefinitionsByKey.get(key) || { componentKey: key, state: 'managed' })
+    .map((definition) => generateStandardComponentFile(definition));
 
   return [
     ...pageFiles.map(({ path, content }) => ({ path, content })),
