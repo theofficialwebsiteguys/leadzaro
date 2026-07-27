@@ -48,26 +48,43 @@ const DEFAULT_VALUE_BY_PROPERTY_TYPE = {
   form_submit_target: null,
 };
 
+// Every SectionDefinition property is described by one settingsSchema
+// map (current-phase-plan.md § 2e's own JSON example mixes "heading"
+// alongside "gridColumns" there), but a section INSTANCE splits its
+// values across two buckets — content vs. settings — and two other
+// consumers already hard-code which bucket a given kind of value lives
+// in: the preview renderer (website-preview.component.ts contentValues())
+// reads only `content`, and submitTestForm reads `content.submitTarget`
+// specifically (matching § 2j's own documented form shape). A type here
+// is "content" if it's the human-facing value a Basic editor fills in —
+// including a form's own fields/submitTarget, which § 2j treats as the
+// form section's content, not a structural setting — everything else
+// (layout pickers, numeric spacing/opacity) is a structural setting.
+const CONTENT_PROPERTY_TYPES = new Set(['text', 'richtext', 'image', 'form_fields', 'form_submit_target']);
+
 /**
  * Instantiates one section from a SectionDefinition, populating every
  * settingsSchema property with a type-appropriate empty default so the
  * result is immediately valid content for the schema-diff/editing-level
  * classifier (§ 2e) to walk, not a placeholder shape it has to special-
- * case. Every property lands in `settings` here; content vs. settings
- * placement is otherwise a builder-UI concern this phase doesn't
- * prescribe further for auto-assembled starter sections.
+ * case — and routed into the same content/settings bucket the preview
+ * renderer and form submission already expect (see CONTENT_PROPERTY_TYPES
+ * above), not dumped entirely into `settings`.
  */
 function buildDefaultSectionInstance(sectionDefinition) {
+  const content = {};
   const settings = {};
   for (const [key, propertySchema] of Object.entries(sectionDefinition.settingsSchema || {})) {
-    settings[key] = DEFAULT_VALUE_BY_PROPERTY_TYPE[propertySchema.type] ?? null;
+    const value = DEFAULT_VALUE_BY_PROPERTY_TYPE[propertySchema.type] ?? null;
+    if (CONTENT_PROPERTY_TYPES.has(propertySchema.type)) content[key] = value;
+    else settings[key] = value;
   }
   return {
     id: crypto.randomUUID(),
     componentKey: sectionDefinition.componentKey,
     variant: Array.isArray(sectionDefinition.variants) ? sectionDefinition.variants[0] : undefined,
     settings,
-    content: {},
+    content,
   };
 }
 

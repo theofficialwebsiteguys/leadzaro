@@ -242,4 +242,55 @@ describe('createWebsite: template/page_kit/guided starting modes', () => {
     const homepage = res.body.data.website.draftSchema.pages[0];
     expect(homepage.sections.map((s) => s.componentKey)).toEqual(['cta', 'text']);
   });
+
+  // Regression coverage for a schema-shape/stability defect caught by the
+  // slice 9 closing review: the starter-schema generator originally put
+  // every auto-assembled property into `settings`, while the preview
+  // renderer only ever reads `content` and submitTestForm specifically
+  // reads `content.submitTarget` (matching § 2j's documented form shape)
+  // — meaning every section on a guided/page_kit/template-created site
+  // rendered as empty, and a form's submitTarget could never be found.
+  test('an auto-assembled section routes human-facing properties (text/richtext/image, and a form\'s fields/submitTarget) into `content`, and structural properties (number/select) into `settings` — matching what the preview renderer and submitTestForm each read', async () => {
+    const { agency, project } = await setupAgencyWithProject();
+    const login = await loginAsRole(agency.id, ['developer']);
+
+    const res = await auth(login)(request(app).post(`/api/v1/projects/${project.id}/website`).send({
+      name: 'Bucket Check Site', startingMode: 'guided', sectionComponentKeys: ['hero', 'form'],
+    }));
+    expect(res.status).toBe(201);
+    const [hero, form] = res.body.data.website.draftSchema.pages[0].sections;
+
+    expect(Object.keys(hero.content).sort()).toEqual(['backgroundImage', 'heading', 'subheading']);
+    expect(Object.keys(hero.settings).sort()).toEqual(['backgroundOverlayOpacity', 'layout']);
+
+    expect(Object.keys(form.content).sort()).toEqual(['fields', 'submitTarget']);
+    expect(Object.keys(form.settings)).toEqual([]);
+  });
+
+  test('end-to-end: a form section auto-assembled by guided mode, then configured through the real draft-edit path, is actually found and accepted by submitTestForm', async () => {
+    const { agency, project } = await setupAgencyWithProject();
+    const login = await loginAsRole(agency.id, ['developer']);
+
+    const created = await auth(login)(request(app).post(`/api/v1/projects/${project.id}/website`).send({
+      name: 'Guided Form Site', startingMode: 'guided', sectionComponentKeys: ['form'],
+    }));
+    const website = created.body.data.website;
+    const page = website.draftSchema.pages[0];
+    const formSection = page.sections[0];
+
+    // Configure the form the same way a real editor would: PATCH the
+    // draft with the section's content.submitTarget populated — the
+    // exact bucket both the generator (after the fix) and
+    // submitTestForm agree on.
+    formSection.content.submitTarget = { type: 'client_request' };
+    const patched = await auth(login)(request(app).patch(`/api/v1/projects/${project.id}/website/draft`).send({
+      draftSchema: website.draftSchema,
+    }));
+    expect(patched.status).toBe(200);
+
+    const submitted = await auth(login)(request(app).post(`/api/v1/projects/${project.id}/website/forms/test-submit`).send({
+      pageId: page.id, sectionId: formSection.id, values: { email: 'test@example.com' },
+    }));
+    expect(submitted.status).toBe(201);
+  });
 });
