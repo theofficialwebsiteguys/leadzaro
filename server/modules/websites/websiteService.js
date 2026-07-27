@@ -4,11 +4,16 @@ const { DesignSystem, Website, WebsiteVersion } = require('../../models');
 const {
   getProjectByIdForRequester, getWebsiteByProjectIdForRequester, getWebsiteByIdForRequester,
   listWebsiteVersionsForRequester, getWebsiteVersionByIdForRequester, getNextVersionNumberForWebsite,
-  listSectionDefinitionsForRequester,
+  pruneOldAutosaveVersions, listSectionDefinitionsForRequester,
 } = require('../../core/authorization/clientVisibleModels');
 const { DEFAULT_DESIGN_TOKENS, buildBlankSchema } = require('../../core/websites/websiteCatalog');
 const { resolveEffectiveEditingLevel, levelSatisfies } = require('../../core/websites/editingLevel');
 const { diffSchemaChanges } = require('../../core/websites/schemaDiff');
+
+// Named checkpoints and published versions are never pruned — only the
+// autosave trail is bounded, so a website with heavy churn doesn't grow
+// its version history unboundedly (current-phase-plan.md § 2c).
+const AUTOSAVE_RETENTION_COUNT = 5;
 
 function invalid(message, statusCode = 422) {
   const err = new Error(message);
@@ -176,6 +181,59 @@ async function createCheckpoint({
 }
 
 /**
+ * A lightweight, unlabeled snapshot of the current draft — not a real
+ * checkpoint (never forces a review-status decision, never clears
+ * draftHasPendingReviewChanges, since it's a recovery safety net, not a
+ * point a human meant to commit to). The frontend calls this on a timer
+ * while a builder.edit holder is actively editing. Pruned to the most
+ * recent AUTOSAVE_RETENTION_COUNT rows immediately after creation.
+ */
+async function createAutosave({ context, projectId, actorUserId }) {
+  const website = await getWebsite(context, projectId);
+  const versionNumber = await getNextVersionNumberForWebsite(website.id);
+
+  const version = await WebsiteVersion.create({
+    websiteId: website.id,
+    organizationId: website.organizationId,
+    agencyOrganizationId: website.agencyOrganizationId,
+    versionNumber,
+    label: null,
+    schema: website.draftSchema,
+    isAutosave: true,
+    status: 'draft',
+    createdByUserId: actorUserId,
+  });
+
+  await pruneOldAutosaveVersions(website.id, AUTOSAVE_RETENTION_COUNT);
+  return version;
+}
+
+/**
+ * The major gate's "compare" requirement — reuses diffSchemaChanges
+ * (the same classifier updateDraftSchema/restoreVersion authorize
+ * against) purely for its diff output here, with no editing-level
+ * enforcement of its own: comparing two versions you can already see is
+ * a read, not a mutation.
+ */
+async function compareVersions({
+  context, projectId, fromVersionId, toVersionId,
+}) {
+  const fromVersion = await getVersion(context, projectId, fromVersionId);
+  const toVersion = await getVersion(context, projectId, toVersionId);
+
+  const sectionDefinitions = await listSectionDefinitionsForRequester(context);
+  const sectionDefinitionsByKey = new Map(sectionDefinitions.map((definition) => [definition.componentKey, definition]));
+  const { changes, structuralChange } = diffSchemaChanges(fromVersion.schema, toVersion.schema, sectionDefinitionsByKey);
+
+  return {
+    fromVersion: { id: fromVersion.id, versionNumber: fromVersion.versionNumber },
+    toVersion: { id: toVersion.id, versionNumber: toVersion.versionNumber },
+    structuralChange,
+    changes,
+  };
+}
+
+/**
  * builder.publish only (route-gated) — collapses "approve" and
  * "publish" into one action for this foundation phase rather than
  * requiring a separate approval step; the trusted senior roles that
@@ -233,6 +291,8 @@ module.exports = {
   listVersions,
   getVersion,
   createCheckpoint,
+  createAutosave,
+  compareVersions,
   restoreVersion,
   publishVersion,
 };

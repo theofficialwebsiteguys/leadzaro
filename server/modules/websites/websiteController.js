@@ -95,6 +95,28 @@ async function createCheckpoint(req, res, next) {
   }
 }
 
+async function createAutosave(req, res, next) {
+  try {
+    const version = await websiteService.createAutosave({
+      context: req.context, projectId: req.params.projectId, actorUserId: req.user.id,
+    });
+    return success(res, { version }, 'Autosaved', 201);
+  } catch (err) {
+    handleServiceError(err, res, next);
+  }
+}
+
+async function compareVersions(req, res, next) {
+  try {
+    const comparison = await websiteService.compareVersions({
+      context: req.context, projectId: req.params.projectId, fromVersionId: req.query.from, toVersionId: req.query.to,
+    });
+    return success(res, { comparison });
+  } catch (err) {
+    handleServiceError(err, res, next);
+  }
+}
+
 async function restoreVersion(req, res, next) {
   try {
     const website = await websiteService.restoreVersion({
@@ -145,6 +167,8 @@ module.exports = {
   listVersions,
   getVersion,
   createCheckpoint,
+  createAutosave,
+  compareVersions,
   restoreVersion,
   publishVersion,
 };

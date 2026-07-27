@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Website, WebsiteVersion, WebsiteEditorAssignment } from '../models/website.model';
+import { Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteVersionComparison } from '../models/website.model';
 
 @Injectable({ providedIn: 'root' })
 export class WebsiteService {
@@ -45,5 +45,15 @@ export class WebsiteService {
 
   removeEditor(projectId: string, assignmentId: string): Observable<{ data: { removed: boolean } }> {
     return this.http.delete<{ data: { removed: boolean } }>(`/api/v1/projects/${projectId}/website/editors/${assignmentId}`);
+  }
+
+  createAutosave(projectId: string): Observable<{ data: { version: WebsiteVersion } }> {
+    return this.http.post<{ data: { version: WebsiteVersion } }>(`/api/v1/projects/${projectId}/website/versions/autosave`, {});
+  }
+
+  compareVersions(projectId: string, fromVersionId: string, toVersionId: string): Observable<{ data: { comparison: WebsiteVersionComparison } }> {
+    return this.http.get<{ data: { comparison: WebsiteVersionComparison } }>(`/api/v1/projects/${projectId}/website/versions/compare`, {
+      params: { from: fromVersionId, to: toVersionId },
+    });
   }
 }

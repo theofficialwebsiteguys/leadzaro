@@ -521,6 +521,41 @@
                   </div>
                 }
 
+                @if (websiteVersions().length > 1) {
+                  <div class="mt-2">
+                    <label class="field-label">Compare Versions</label>
+                    <div class="assign-form">
+                      <select [(ngModel)]="compareFromVersionId" class="input">
+                        <option value="">From…</option>
+                        @for (v of websiteVersions(); track v.id) {
+                          <option [value]="v.id">v{{ v.versionNumber }} ({{ v.label || v.status }})</option>
+                        }
+                      </select>
+                      <select [(ngModel)]="compareToVersionId" class="input">
+                        <option value="">To…</option>
+                        @for (v of websiteVersions(); track v.id) {
+                          <option [value]="v.id">v{{ v.versionNumber }} ({{ v.label || v.status }})</option>
+                        }
+                      </select>
+                      <button class="btn btn-sm" (click)="compareVersions()">Compare</button>
+                    </div>
+                    @if (compareResult(); as cmp) {
+                      <div class="alert alert-info mt-2">
+                        <div>Structural change: {{ cmp.structuralChange ? 'Yes' : 'No' }}</div>
+                        @if (cmp.changes.length === 0) {
+                          <p class="text-sm text-muted mb-0">No property changes.</p>
+                        } @else {
+                          <ul class="mb-0">
+                            @for (c of cmp.changes; track c.key) {
+                              <li>{{ c.key }} <span class="text-muted">({{ c.editingLevel }}{{ c.requiresReview ? ', requires review' : '' }})</span></li>
+                            }
+                          </ul>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+
                 <div *hasPermission="'builder.manage'" class="mt-2">
                   <label class="field-label">Editor Access</label>
                   <div class="table-wrap">

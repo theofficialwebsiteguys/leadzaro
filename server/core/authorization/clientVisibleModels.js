@@ -423,6 +423,24 @@ function findProjectByOrganizationIdSystemLevel(organizationId) {
   return Project.findOne(scoped({ where: { organizationId } }));
 }
 
+/**
+ * Deliberately bypasses the client-visibility filter above for the same
+ * reason getNextVersionNumberForWebsite does — the caller has already
+ * verified access to the parent Website; this only prunes the autosave
+ * trail (current-phase-plan.md § 5 slice 4), keeping the most recent
+ * `keepCount` autosave versions and deleting the rest. Named checkpoints
+ * and published versions (isAutosave: false) are never touched here.
+ */
+async function pruneOldAutosaveVersions(websiteId, keepCount) {
+  const autosaves = await WebsiteVersion.findAll(scoped({
+    where: { websiteId, isAutosave: true }, order: [['versionNumber', 'DESC']],
+  }));
+  const toDelete = autosaves.slice(keepCount);
+  if (toDelete.length > 0) {
+    await WebsiteVersion.destroy({ where: { id: toDelete.map((version) => version.id) } });
+  }
+}
+
 module.exports = {
   listProjectsForRequester,
   findProjectByOrganizationIdSystemLevel,
@@ -457,6 +475,7 @@ module.exports = {
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,
+  pruneOldAutosaveVersions,
   listSectionDefinitionsForRequester,
   getSectionDefinitionByIdForRequester,
   listWebsiteEditorAssignmentsForRequester,

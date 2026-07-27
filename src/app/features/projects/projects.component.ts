@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { ProjectService } from '../../core/services/project.service';
@@ -34,7 +34,7 @@ import { HasPermissionDirective } from '../../core/directives/has-permission.dir
   templateUrl: './projects.component.html',
   styleUrl: './projects.component.scss',
 })
-export class ProjectsComponent implements OnInit {
+export class ProjectsComponent implements OnInit, OnDestroy {
   private readonly projectService = inject(ProjectService);
   private readonly taskService = inject(TaskService);
   private readonly messagingService = inject(MessagingService);
@@ -100,6 +100,11 @@ export class ProjectsComponent implements OnInit {
   websiteEditors = signal<WebsiteEditorAssignment[]>([]);
   newEditorUserId = '';
   newEditorLevel = 'basic';
+  private autosaveIntervalId: ReturnType<typeof setInterval> | null = null;
+  lastAutosavedAt = signal<Date | null>(null);
+  compareFromVersionId = '';
+  compareToVersionId = '';
+  compareResult = signal<{ structuralChange: boolean; changes: Array<{ key: string; editingLevel: string; requiresReview: boolean }> } | null>(null);
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -136,7 +141,19 @@ export class ProjectsComponent implements OnInit {
     });
     if (this.org.hasPermission('builder.edit')) {
       this.sectionDefinitionService.list().subscribe((res) => this.sectionDefinitions.set(res.data.sectionDefinitions));
+      // A lightweight recovery safety net (current-phase-plan.md § 2c) —
+      // silently snapshots the current draft every 30s while a website
+      // is loaded; the server prunes old autosave rows automatically.
+      this.autosaveIntervalId = setInterval(() => {
+        const id = this.selectedId();
+        if (!id || !this.website()) return;
+        this.websiteService.createAutosave(id).subscribe(() => this.lastAutosavedAt.set(new Date()));
+      }, 30000);
     }
+  }
+
+  ngOnDestroy() {
+    if (this.autosaveIntervalId) clearInterval(this.autosaveIntervalId);
   }
 
   load() {
@@ -160,6 +177,7 @@ export class ProjectsComponent implements OnInit {
     this.websiteLoaded.set(false);
     this.websiteVersions.set([]);
     this.websiteEditors.set([]);
+    this.compareResult.set(null);
     this.projectService.getById(id).subscribe((res) => {
       this.selected.set(res.data.project);
       this.stageTarget = res.data.project.stage;
@@ -524,6 +542,16 @@ export class ProjectsComponent implements OnInit {
       error: (err) => {
         this.actionMessage.set(err.error?.message || 'Failed to publish version');
       },
+    });
+  }
+
+  compareVersions() {
+    const id = this.selectedId();
+    if (!id || !this.compareFromVersionId || !this.compareToVersionId) return;
+    this.compareResult.set(null);
+    this.websiteService.compareVersions(id, this.compareFromVersionId, this.compareToVersionId).subscribe({
+      next: (res) => this.compareResult.set(res.data.comparison),
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to compare versions'),
     });
   }
 

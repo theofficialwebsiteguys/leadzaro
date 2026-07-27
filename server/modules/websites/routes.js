@@ -1,7 +1,7 @@
 'use strict';
 
 const router = require('express').Router({ mergeParams: true });
-const { body } = require('express-validator');
+const { body, query } = require('express-validator');
 const { authenticate } = require('../../middleware/auth');
 const { resolveContext, requirePermission } = require('../../core/authorization/context');
 const { validate } = require('../../middleware/validate');
@@ -18,8 +18,16 @@ router.post('/', requirePermission('builder.edit'), [
 router.patch('/draft', requirePermission('builder.edit'), controller.updateDraftSchema);
 
 router.get('/versions', requirePermission('projects.view'), controller.listVersions);
+// /versions/compare must be registered before the /versions/:versionId
+// wildcard GET route below — Express matches in registration order, and
+// :versionId would otherwise swallow the literal "compare" segment.
+router.get('/versions/compare', requirePermission('projects.view'), [
+  query('from').notEmpty(),
+  query('to').notEmpty(),
+], validate, controller.compareVersions);
 router.get('/versions/:versionId', requirePermission('projects.view'), controller.getVersion);
 router.post('/versions', requirePermission('builder.edit'), controller.createCheckpoint);
+router.post('/versions/autosave', requirePermission('builder.edit'), controller.createAutosave);
 router.post('/versions/:versionId/restore', requirePermission('builder.edit'), controller.restoreVersion);
 router.post('/versions/:versionId/publish', requirePermission('builder.publish'), controller.publishVersion);
 

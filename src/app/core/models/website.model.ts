@@ -58,3 +58,18 @@ export interface WebsiteEditorAssignment {
   editingLevel: WebsiteEditingLevel;
   user?: { id: string; name: string; email: string };
 }
+
+export interface WebsiteVersionChange {
+  pageId: string;
+  sectionId: string;
+  key: string;
+  editingLevel: WebsiteEditingLevel;
+  requiresReview: boolean;
+}
+
+export interface WebsiteVersionComparison {
+  fromVersion: { id: string; versionNumber: number };
+  toVersion: { id: string; versionNumber: number };
+  structuralChange: boolean;
+  changes: WebsiteVersionChange[];
+}
