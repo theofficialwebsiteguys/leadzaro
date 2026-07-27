@@ -1,12 +1,21 @@
 export const WEBSITE_STARTING_MODES = ['template', 'page_kit', 'guided', 'blank'] as const;
 export type WebsiteStartingMode = typeof WEBSITE_STARTING_MODES[number];
 
+// Per-instance component state (current-phase-plan.md § 2c, Phase 6
+// slice 2) — 'inherited' (the default when absent) defers to the
+// SectionDefinition's own type-level state (managed/extended/
+// registered_custom); 'detached' ejects this ONE instance from
+// generated management without affecting any other instance of the
+// same componentKey elsewhere.
+export type WebsiteSectionInstanceState = 'inherited' | 'detached';
+
 export interface WebsiteSection {
   id: string;
   componentKey: string;
   variant?: string;
   settings?: Record<string, unknown>;
   content?: Record<string, unknown>;
+  state?: WebsiteSectionInstanceState;
 }
 
 export interface WebsitePage {
