@@ -10,6 +10,7 @@ const editorAssignmentController = require('./websiteEditorAssignmentController'
 const commentController = require('./websiteCommentController');
 const collaborationController = require('./websiteCollaborationController');
 const repositoryController = require('./websiteRepositoryController');
+const codegenController = require('./websiteCodegenController');
 
 router.use(authenticate, resolveContext());
 
@@ -64,5 +65,7 @@ router.post('/presence', requirePermission('builder.edit'), collaborationControl
 
 router.get('/repository', requirePermission('builder.edit'), repositoryController.get);
 router.post('/repository', requirePermission('builder.develop'), repositoryController.provision);
+
+router.post('/versions/:versionId/generate', requirePermission('builder.develop'), codegenController.generate);
 
 module.exports = router;

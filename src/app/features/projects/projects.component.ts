@@ -702,6 +702,15 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.websiteService.getRepository(projectId).subscribe((res) => this.websiteRepository.set(res.data.repository));
   }
 
+  generateWebsite(version: WebsiteVersion) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.websiteService.generateWebsite(id, version.id).subscribe({
+      next: (res) => this.actionMessage.set(`Generated ${res.data.fileCount} file(s) to branch "${res.data.branch}"`),
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to generate'),
+    });
+  }
+
   provisionWebsiteRepository() {
     const id = this.selectedId();
     if (!id) return;

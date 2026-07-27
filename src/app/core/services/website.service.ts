@@ -97,4 +97,8 @@ export class WebsiteService {
   provisionRepository(projectId: string): Observable<{ data: { repository: WebsiteRepository } }> {
     return this.http.post<{ data: { repository: WebsiteRepository } }>(`/api/v1/projects/${projectId}/website/repository`, {});
   }
+
+  generateWebsite(projectId: string, versionId: string): Observable<{ data: { fileCount: number; branch: string } }> {
+    return this.http.post<{ data: { fileCount: number; branch: string } }>(`/api/v1/projects/${projectId}/website/versions/${versionId}/generate`, {});
+  }
 }

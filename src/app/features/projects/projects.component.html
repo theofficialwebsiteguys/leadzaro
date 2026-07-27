@@ -569,6 +569,7 @@
                               @if (v.status !== 'published') {
                                 <button class="btn btn-sm" *hasPermission="'builder.publish'" (click)="publishVersion(v)">Publish</button>
                               }
+                              <button class="btn btn-sm" *hasPermission="'builder.develop'" (click)="generateWebsite(v)">Generate</button>
                             </td>
                           </tr>
                         }
