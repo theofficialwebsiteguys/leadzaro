@@ -15,7 +15,7 @@
 const { Op } = require('sequelize');
 const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
-  DesignSystem, Website, WebsiteVersion, SectionDefinition,
+  DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -391,6 +391,26 @@ function getSectionDefinitionByIdForRequester(context, sectionDefinitionId) {
 }
 
 /**
+ * WebsiteEditorAssignment denormalizes organizationId/agencyOrganizationId
+ * directly and uses plain tenant scoping — no additional split needed
+ * (unlike WebsiteVersion, there's no "another user's in-progress work"
+ * concern here: knowing who is assigned what editing level on a
+ * project everyone involved already has access to isn't sensitive).
+ */
+// User is unguarded, so including it here is safe — same reasoning as
+// AUTHOR_INCLUDE above; WebsiteEditorAssignment's own association uses
+// a 'user' alias rather than 'author'.
+const ASSIGNMENT_USER_INCLUDE = { model: User, as: 'user', attributes: ['id', 'name', 'email'] };
+
+function listWebsiteEditorAssignmentsForRequester(context, extraWhere = {}) {
+  return WebsiteEditorAssignment.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), include: [ASSIGNMENT_USER_INCLUDE] }));
+}
+
+function getWebsiteEditorAssignmentByIdForRequester(context, assignmentId) {
+  return WebsiteEditorAssignment.findOne(scoped({ where: tenantWhereForRequester(context, { id: assignmentId }) }));
+}
+
+/**
  * The one exception to "every read goes through a requester context":
  * system-level operations with no HTTP requester at all (currently:
  * `projectService.ensureProjectForConversion`, triggered by a Stripe
@@ -439,4 +459,6 @@ module.exports = {
   getNextVersionNumberForWebsite,
   listSectionDefinitionsForRequester,
   getSectionDefinitionByIdForRequester,
+  listWebsiteEditorAssignmentsForRequester,
+  getWebsiteEditorAssignmentByIdForRequester,
 };

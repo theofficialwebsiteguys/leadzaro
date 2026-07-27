@@ -6,6 +6,7 @@ const { authenticate } = require('../../middleware/auth');
 const { resolveContext, requirePermission } = require('../../core/authorization/context');
 const { validate } = require('../../middleware/validate');
 const controller = require('./websiteController');
+const editorAssignmentController = require('./websiteEditorAssignmentController');
 
 router.use(authenticate, resolveContext());
 
@@ -20,5 +21,13 @@ router.get('/versions', requirePermission('projects.view'), controller.listVersi
 router.get('/versions/:versionId', requirePermission('projects.view'), controller.getVersion);
 router.post('/versions', requirePermission('builder.edit'), controller.createCheckpoint);
 router.post('/versions/:versionId/restore', requirePermission('builder.edit'), controller.restoreVersion);
+router.post('/versions/:versionId/publish', requirePermission('builder.publish'), controller.publishVersion);
+
+router.get('/editors', requirePermission('builder.manage'), editorAssignmentController.list);
+router.post('/editors', requirePermission('builder.manage'), [
+  body('userId').notEmpty(),
+  body('editingLevel').notEmpty(),
+], validate, editorAssignmentController.create);
+router.delete('/editors/:assignmentId', requirePermission('builder.manage'), editorAssignmentController.remove);
 
 module.exports = router;

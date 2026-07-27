@@ -510,6 +510,9 @@
                             <td>{{ v.createdAt | date:'MMM d, y, h:mm a' }}</td>
                             <td>
                               <button class="btn btn-sm" *hasPermission="'builder.edit'" (click)="restoreVersion(v)">Restore</button>
+                              @if (v.status !== 'published') {
+                                <button class="btn btn-sm" *hasPermission="'builder.publish'" (click)="publishVersion(v)">Publish</button>
+                              }
                             </td>
                           </tr>
                         }
@@ -517,6 +520,33 @@
                     </table>
                   </div>
                 }
+
+                <div *hasPermission="'builder.manage'" class="mt-2">
+                  <label class="field-label">Editor Access</label>
+                  <div class="table-wrap">
+                    <table>
+                      <thead><tr><th>User</th><th>Level</th><th></th></tr></thead>
+                      <tbody>
+                        @for (e of websiteEditors(); track e.id) {
+                          <tr>
+                            <td>{{ e.user?.name || e.userId }}</td>
+                            <td>{{ e.editingLevel }}</td>
+                            <td><button class="btn btn-sm" (click)="removeWebsiteEditor(e)">Remove</button></td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="assign-form">
+                    <input class="input" placeholder="User ID" [(ngModel)]="newEditorUserId" />
+                    <select [(ngModel)]="newEditorLevel" class="input">
+                      <option value="basic">basic</option>
+                      <option value="professional">professional</option>
+                      <option value="advanced">advanced</option>
+                    </select>
+                    <button class="btn btn-sm" (click)="addWebsiteEditor()">Assign</button>
+                  </div>
+                </div>
               }
             </div>
           </div>

@@ -48,3 +48,13 @@ export interface WebsiteVersion {
   publishedAt: string | null;
   createdAt: string;
 }
+
+export type WebsiteEditingLevel = 'basic' | 'professional' | 'advanced';
+
+export interface WebsiteEditorAssignment {
+  id: string;
+  websiteId: string;
+  userId: string;
+  editingLevel: WebsiteEditingLevel;
+  user?: { id: string; name: string; email: string };
+}

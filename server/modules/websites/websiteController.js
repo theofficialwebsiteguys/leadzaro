@@ -117,6 +117,27 @@ async function restoreVersion(req, res, next) {
   }
 }
 
+async function publishVersion(req, res, next) {
+  try {
+    const version = await websiteService.publishVersion({
+      context: req.context, projectId: req.params.projectId, versionId: req.params.versionId,
+    });
+
+    await recordAudit({
+      organizationId: req.context.organization.id,
+      actorUserId: req.user.id,
+      action: 'website.version_published',
+      targetType: 'WebsiteVersion',
+      targetId: version.id,
+      req,
+    });
+
+    return success(res, { version }, 'Version published');
+  } catch (err) {
+    handleServiceError(err, res, next);
+  }
+}
+
 module.exports = {
   getWebsite,
   createWebsite,
@@ -125,4 +146,5 @@ module.exports = {
   getVersion,
   createCheckpoint,
   restoreVersion,
+  publishVersion,
 };

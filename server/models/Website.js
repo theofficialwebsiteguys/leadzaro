@@ -24,6 +24,7 @@ module.exports = (sequelize) => {
       type: DataTypes.JSONB, allowNull: false, defaultValue: {},
     },
     currentPublishedVersionId: { type: DataTypes.UUID, allowNull: true },
+    draftHasPendingReviewChanges: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     createdByUserId: { type: DataTypes.UUID, allowNull: true },
   });
 

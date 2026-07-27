@@ -54,6 +54,7 @@ const DesignSystem = require('./DesignSystem')(sequelize);
 const Website = require('./Website')(sequelize);
 const WebsiteVersion = require('./WebsiteVersion')(sequelize);
 const SectionDefinition = require('./SectionDefinition')(sequelize);
+const WebsiteEditorAssignment = require('./WebsiteEditorAssignment')(sequelize);
 
 const models = {
   User,
@@ -105,6 +106,7 @@ const models = {
   Website,
   WebsiteVersion,
   SectionDefinition,
+  WebsiteEditorAssignment,
 };
 
 // Run associations

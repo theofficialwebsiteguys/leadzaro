@@ -50,6 +50,7 @@ const PERMISSIONS = [
   { key: 'cancellations.manage', category: 'projects', description: 'Confirm or withdraw a project cancellation request' },
   { key: 'builder.edit', category: 'builder', description: 'Edit a project\'s website in the builder' },
   { key: 'builder.publish', category: 'builder', description: 'Approve and publish a pending website version' },
+  { key: 'builder.manage', category: 'builder', description: 'Manage website editor assignments and the section/design-system library' },
 ];
 
 const PERMISSION_KEYS = new Set(PERMISSIONS.map((p) => p.key));
@@ -109,7 +110,7 @@ const EMPLOYEE_ROLES = [
     name: 'Sales Manager',
     permissions: [...SALES_PERMISSIONS, 'leads.merge', 'audit.view'],
   },
-  { key: 'project_manager', name: 'Project Manager', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'projects.manage', 'projects.change_stage', 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'cancellations.request', 'cancellations.manage', 'builder.publish'] },
+  { key: 'project_manager', name: 'Project Manager', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'projects.manage', 'projects.change_stage', 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'cancellations.request', 'cancellations.manage', 'builder.publish', 'builder.manage'] },
   { key: 'designer', name: 'Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'builder.edit'] },
   { key: 'advanced_designer', name: 'Advanced Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'builder.edit', 'builder.publish'] },
   { key: 'developer', name: 'Developer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'builder.edit', 'builder.publish'] },

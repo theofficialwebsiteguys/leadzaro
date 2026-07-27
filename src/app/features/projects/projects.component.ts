@@ -22,7 +22,7 @@ import { ClientRequest, REQUEST_CATEGORIES } from '../../core/models/clientReque
 import { Meeting } from '../../core/models/meeting.model';
 import { ProjectFile, FILE_SCOPES } from '../../core/models/file.model';
 import { CancellationRequest } from '../../core/models/cancellationRequest.model';
-import { Website, WebsiteVersion } from '../../core/models/website.model';
+import { Website, WebsiteVersion, WebsiteEditorAssignment } from '../../core/models/website.model';
 import { SectionDefinition } from '../../core/models/sectionDefinition.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
@@ -97,6 +97,9 @@ export class ProjectsComponent implements OnInit {
   newCheckpointLabel = '';
   showPreview = signal(false);
   sectionDefinitions = signal<SectionDefinition[]>([]);
+  websiteEditors = signal<WebsiteEditorAssignment[]>([]);
+  newEditorUserId = '';
+  newEditorLevel = 'basic';
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -156,6 +159,7 @@ export class ProjectsComponent implements OnInit {
     this.website.set(null);
     this.websiteLoaded.set(false);
     this.websiteVersions.set([]);
+    this.websiteEditors.set([]);
     this.projectService.getById(id).subscribe((res) => {
       this.selected.set(res.data.project);
       this.stageTarget = res.data.project.stage;
@@ -436,6 +440,9 @@ export class ProjectsComponent implements OnInit {
         this.draftSchemaText = JSON.stringify(res.data.website.draftSchema, null, 2);
         this.websiteLoaded.set(true);
         this.loadWebsiteVersions(projectId);
+        if (this.org.hasPermission('builder.manage')) {
+          this.loadWebsiteEditors(projectId);
+        }
       },
       error: () => {
         this.website.set(null);
@@ -469,8 +476,14 @@ export class ProjectsComponent implements OnInit {
       this.draftSchemaError = 'Invalid JSON';
       return;
     }
-    this.websiteService.saveDraft(id, parsed).subscribe(() => {
-      this.actionMessage.set('Draft saved');
+    this.websiteService.saveDraft(id, parsed).subscribe({
+      next: (res) => {
+        this.website.set(res.data.website);
+        this.actionMessage.set('Draft saved');
+      },
+      error: (err) => {
+        this.draftSchemaError = err.error?.message || 'Failed to save draft';
+      },
     });
   }
 
@@ -487,11 +500,58 @@ export class ProjectsComponent implements OnInit {
   restoreVersion(version: WebsiteVersion) {
     const id = this.selectedId();
     if (!id) return;
-    this.websiteService.restoreVersion(id, version.id).subscribe((res) => {
-      this.website.set(res.data.website);
-      this.draftSchemaText = JSON.stringify(res.data.website.draftSchema, null, 2);
-      this.loadWebsiteVersions(id);
-      this.actionMessage.set('Version restored');
+    this.websiteService.restoreVersion(id, version.id).subscribe({
+      next: (res) => {
+        this.website.set(res.data.website);
+        this.draftSchemaText = JSON.stringify(res.data.website.draftSchema, null, 2);
+        this.loadWebsiteVersions(id);
+        this.actionMessage.set('Version restored');
+      },
+      error: (err) => {
+        this.actionMessage.set(err.error?.message || 'Failed to restore version');
+      },
+    });
+  }
+
+  publishVersion(version: WebsiteVersion) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.websiteService.publishVersion(id, version.id).subscribe({
+      next: () => {
+        this.loadWebsiteVersions(id);
+        this.actionMessage.set('Version published');
+      },
+      error: (err) => {
+        this.actionMessage.set(err.error?.message || 'Failed to publish version');
+      },
+    });
+  }
+
+  loadWebsiteEditors(projectId: string) {
+    this.websiteService.listEditors(projectId).subscribe((res) => this.websiteEditors.set(res.data.assignments));
+  }
+
+  addWebsiteEditor() {
+    const id = this.selectedId();
+    if (!id || !this.newEditorUserId.trim()) return;
+    this.websiteService.addEditor(id, this.newEditorUserId, this.newEditorLevel).subscribe({
+      next: () => {
+        this.newEditorUserId = '';
+        this.loadWebsiteEditors(id);
+        this.actionMessage.set('Editor assignment saved');
+      },
+      error: (err) => {
+        this.actionMessage.set(err.error?.message || 'Failed to save editor assignment');
+      },
+    });
+  }
+
+  removeWebsiteEditor(assignment: WebsiteEditorAssignment) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.websiteService.removeEditor(id, assignment.id).subscribe(() => {
+      this.loadWebsiteEditors(id);
+      this.actionMessage.set('Editor assignment removed');
     });
   }
 }
