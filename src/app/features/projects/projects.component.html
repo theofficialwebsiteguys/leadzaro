@@ -44,6 +44,66 @@
             </div>
           </div>
 
+          <div class="card mb-4">
+            <div class="card-header"><strong>Recent Activity</strong></div>
+            <div class="card-body">
+              @if (dashboard(); as dash) {
+                <div class="dashboard-grid">
+                  <div class="dashboard-column">
+                    <span class="label">Tasks</span>
+                    @if (dash.recentTasks.length === 0) {
+                      <p class="text-sm text-muted">Nothing recent.</p>
+                    } @else {
+                      <ul class="dashboard-list">
+                        @for (t of dash.recentTasks; track t.id) {
+                          <li>{{ t.title }} <span class="text-sm text-muted">({{ t.status }})</span></li>
+                        }
+                      </ul>
+                    }
+                  </div>
+                  <div class="dashboard-column">
+                    <span class="label">Messages</span>
+                    @if (dash.recentMessages.length === 0) {
+                      <p class="text-sm text-muted">Nothing recent.</p>
+                    } @else {
+                      <ul class="dashboard-list">
+                        @for (m of dash.recentMessages; track m.id) {
+                          <li><span class="text-sm text-muted">#{{ m.channelName }}</span> {{ m.body }}</li>
+                        }
+                      </ul>
+                    }
+                  </div>
+                  <div class="dashboard-column">
+                    <span class="label">Requests</span>
+                    @if (dash.recentRequests.length === 0) {
+                      <p class="text-sm text-muted">Nothing recent.</p>
+                    } @else {
+                      <ul class="dashboard-list">
+                        @for (r of dash.recentRequests; track r.id) {
+                          <li>{{ r.description }} <span class="text-sm text-muted">({{ r.status }})</span></li>
+                        }
+                      </ul>
+                    }
+                  </div>
+                  <div class="dashboard-column">
+                    <span class="label">Upcoming Meetings</span>
+                    @if (dash.upcomingMeetings.length === 0) {
+                      <p class="text-sm text-muted">Nothing upcoming.</p>
+                    } @else {
+                      <ul class="dashboard-list">
+                        @for (m of dash.upcomingMeetings; track m.id) {
+                          <li>{{ m.subject }} <span class="text-sm text-muted">({{ m.status }})</span></li>
+                        }
+                      </ul>
+                    }
+                  </div>
+                </div>
+              } @else {
+                <p class="text-sm text-muted">Loading…</p>
+              }
+            </div>
+          </div>
+
           <div class="card mb-4" *hasPermission="'projects.change_stage'">
             <div class="card-header"><strong>Change Stage</strong></div>
             <div class="card-body">

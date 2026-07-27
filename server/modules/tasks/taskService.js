@@ -4,6 +4,7 @@ const { Task, TimeEntry, User } = require('../../models');
 const {
   getProjectByIdForRequester, listTasksForRequester, getTaskByIdForRequester,
 } = require('../../core/authorization/clientVisibleModels');
+const { notify } = require('../../core/notifications/notificationService');
 
 function invalid(message, statusCode = 422) {
   const err = new Error(message);
@@ -69,7 +70,19 @@ async function updateTask({ context, projectId, taskId, patch }) {
   for (const field of allowedFields) {
     if (patch[field] !== undefined) updates[field] = patch[field];
   }
+  const previousAssigneeUserId = task.assigneeUserId;
   await task.update(updates);
+
+  if (updates.assigneeUserId && updates.assigneeUserId !== previousAssigneeUserId) {
+    await notify({
+      userId: updates.assigneeUserId,
+      organizationId: task.agencyOrganizationId,
+      type: 'task_assigned',
+      title: `You were assigned: ${task.title}`,
+      data: { taskId: task.id, projectId: task.projectId },
+    });
+  }
+
   return task;
 }
 

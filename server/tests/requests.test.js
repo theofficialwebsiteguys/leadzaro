@@ -3,7 +3,7 @@
 const request = require('supertest');
 const app = require('../app');
 const {
-  sequelize, Project, ClientRequest, ContentInboxItem, Task,
+  sequelize, Project, ClientRequest, ContentInboxItem, Task, Notification,
 } = require('../models');
 const { createOrganization, createRoleAssignedMember, loginAs } = require('./helpers/factory');
 
@@ -18,6 +18,18 @@ async function setupProject() {
     organizationId: clientOrg.id, agencyOrganizationId: agency.id, stage: 'Ongoing Support', healthStatus: 'on_track',
   });
   return { agency, clientOrg, project };
+}
+
+async function setupProjectWithOwner() {
+  const agency = await createOrganization(sequelize.models, { type: 'agency' });
+  const clientOrg = await createOrganization(sequelize.models, { type: 'client', managingAgencyOrganizationId: agency.id });
+  const { user: owner, password: ownerPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['project_manager'] });
+  const project = await Project.create({
+    organizationId: clientOrg.id, agencyOrganizationId: agency.id, stage: 'Ongoing Support', healthStatus: 'on_track', ownerUserId: owner.id,
+  });
+  return {
+    agency, clientOrg, project, owner, ownerPassword,
+  };
 }
 
 describe('ClientRequest/ContentInboxItem visibility guard', () => {
@@ -115,6 +127,36 @@ describe('Client requests: submission and the unified support queue', () => {
 
     const again = await auth(request(app).post(`/api/v1/projects/${project.id}/requests/${create.body.data.request.id}/convert-to-task`).send({}));
     expect(again.status).toBe(409);
+  });
+});
+
+describe('Client request submission notifications', () => {
+  test('submitting a request notifies the project owner', async () => {
+    const { clientOrg, project, owner } = await setupProjectWithOwner();
+    const { user, password } = await createRoleAssignedMember(sequelize.models, {
+      organizationId: clientOrg.id, roleKeys: ['client_owner'], membershipType: 'client',
+    });
+    const login = await loginAs(app, user.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const create = await auth(request(app).post(`/api/v1/projects/${project.id}/requests`).send({ category: 'bug', description: 'The contact form is broken on mobile' }));
+    expect(create.status).toBe(201);
+
+    const notifications = await Notification.findAll({ where: { userId: owner.id, type: 'client_request_submitted' } });
+    expect(notifications.length).toBe(1);
+    expect(notifications[0].data.requestId).toBe(create.body.data.request.id);
+  });
+
+  test('submitting a request against a project with no owner set does not throw', async () => {
+    const { clientOrg, project } = await setupProject();
+    const { user, password } = await createRoleAssignedMember(sequelize.models, {
+      organizationId: clientOrg.id, roleKeys: ['client_owner'], membershipType: 'client',
+    });
+    const login = await loginAs(app, user.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const create = await auth(request(app).post(`/api/v1/projects/${project.id}/requests`).send({ category: 'bug', description: 'No owner set on this project' }));
+    expect(create.status).toBe(201);
   });
 });
 

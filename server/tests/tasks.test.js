@@ -3,7 +3,7 @@
 const request = require('supertest');
 const app = require('../app');
 const {
-  sequelize, Project, Task, TimeEntry,
+  sequelize, Project, Task, TimeEntry, Notification,
 } = require('../models');
 const { createOrganization, createRoleAssignedMember, loginAs } = require('./helpers/factory');
 
@@ -140,6 +140,30 @@ describe('Tasks: CRUD and subtasks', () => {
 
     const list = await auth(request(app).get(`/api/v1/projects/${project.id}/tasks`));
     expect(list.body.data.tasks.map((t) => t.id)).not.toContain(created.body.data.task.id);
+  });
+});
+
+describe('Task assignment notifications', () => {
+  test('assigning a task to a new user notifies them; re-saving without changing assignee does not notify again', async () => {
+    const { agency, project } = await setupAgencyWithClientProject();
+    const { user: pm, password: pmPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['project_manager'] });
+    const { user: dev } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['developer'] });
+    const login = await loginAs(app, pm.email, pmPassword);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const created = await auth(request(app).post(`/api/v1/projects/${project.id}/tasks`).send({ title: 'Assign me' }));
+    const taskId = created.body.data.task.id;
+
+    const assigned = await auth(request(app).patch(`/api/v1/projects/${project.id}/tasks/${taskId}`).send({ assigneeUserId: dev.id }));
+    expect(assigned.status).toBe(200);
+
+    const notifications = await Notification.findAll({ where: { userId: dev.id, type: 'task_assigned' } });
+    expect(notifications.length).toBe(1);
+    expect(notifications[0].data.taskId).toBe(taskId);
+
+    await auth(request(app).patch(`/api/v1/projects/${project.id}/tasks/${taskId}`).send({ priority: 'high' }));
+    const stillOne = await Notification.findAll({ where: { userId: dev.id, type: 'task_assigned' } });
+    expect(stillOne.length).toBe(1);
   });
 });
 

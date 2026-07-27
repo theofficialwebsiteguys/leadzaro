@@ -146,6 +146,15 @@ async function updateFinancials(req, res, next) {
   }
 }
 
+async function getDashboard(req, res, next) {
+  try {
+    const dashboard = await projectService.getLastWorkedContext(req.context, req.params.id);
+    return success(res, { dashboard });
+  } catch (err) {
+    handleServiceError(err, res, next);
+  }
+}
+
 module.exports = {
   list,
   getById,
@@ -156,4 +165,5 @@ module.exports = {
   removeAssignment,
   getFinancials,
   updateFinancials,
+  getDashboard,
 };

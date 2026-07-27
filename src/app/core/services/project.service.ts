@@ -1,7 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Project, ProjectAssignment, ProjectFinancials } from '../models/project.model';
+import {
+  Project, ProjectAssignment, ProjectFinancials, ProjectDashboard,
+} from '../models/project.model';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectService {
@@ -41,5 +43,9 @@ export class ProjectService {
 
   updateFinancials(id: string, payload: { estimatedCostCents?: number; actualCostCents?: number; marginNotes?: string }): Observable<{ data: { financials: ProjectFinancials } }> {
     return this.http.patch<{ data: { financials: ProjectFinancials } }>(`/api/v1/projects/${id}/financials`, payload);
+  }
+
+  getDashboard(id: string): Observable<{ data: { dashboard: ProjectDashboard } }> {
+    return this.http.get<{ data: { dashboard: ProjectDashboard } }>(`/api/v1/projects/${id}/dashboard`);
   }
 }

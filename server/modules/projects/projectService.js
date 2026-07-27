@@ -5,6 +5,7 @@ const {
 } = require('../../models');
 const {
   listProjectsForRequester, getProjectByIdForRequester, getProjectFinancials, findOrCreateProjectFinancials, findProjectByOrganizationIdSystemLevel,
+  listTasksForRequester, listChannelsForRequester, listMessagesForRequester, listClientRequestsForRequester, listMeetingsForRequester,
 } = require('../../core/authorization/clientVisibleModels');
 const { STAGES, STAGE_CHECKLISTS, CHANNEL_DEFAULTS } = require('../../core/projects/projectCatalog');
 
@@ -178,6 +179,54 @@ async function ensureProjectForConversion(conversionResult) {
   return project;
 }
 
+/**
+ * "Last-worked context" (current-phase-plan.md § 2f): a single computed
+ * (not persisted) snapshot of what's recently happened on a project —
+ * the newest few tasks, messages, requests and meetings a caller would
+ * want on landing on the project rather than digging through five
+ * separate panels. Every piece is fetched through this same module's
+ * own already-guarded accessors (listTasksForRequester,
+ * listChannelsForRequester + listMessagesForRequester,
+ * listClientRequestsForRequester, listMeetingsForRequester) — this
+ * function adds no new visibility logic of its own, it only aggregates
+ * and truncates results that are already correctly scoped.
+ */
+async function getLastWorkedContext(context, projectId) {
+  const project = await getProject(context, projectId);
+
+  const [tasks, channels, requests, meetings] = await Promise.all([
+    listTasksForRequester(context, { projectId: project.id, archivedAt: null }),
+    listChannelsForRequester(context, { projectId: project.id }),
+    listClientRequestsForRequester(context, { projectId: project.id }),
+    listMeetingsForRequester(context, { projectId: project.id }),
+  ]);
+
+  const messagesByChannel = await Promise.all(
+    channels.map((channel) => listMessagesForRequester(context, { channelId: channel.id })),
+  );
+  const messages = messagesByChannel.flat();
+  const channelNameById = new Map(channels.map((channel) => [channel.id, channel.name]));
+
+  const recentTasks = [...tasks]
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    .slice(0, 5);
+
+  const recentMessages = [...messages]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 5)
+    .map((message) => ({ ...message.toJSON(), channelName: channelNameById.get(message.channelId) || null }));
+
+  const recentRequests = requests.slice(0, 5);
+
+  const upcomingMeetings = meetings
+    .filter((meeting) => ['requested', 'confirmed'].includes(meeting.status))
+    .slice(0, 5);
+
+  return {
+    project, recentTasks, recentMessages, recentRequests, upcomingMeetings,
+  };
+}
+
 module.exports = {
   listProjects,
   ensureProjectForConversion,
@@ -189,4 +238,5 @@ module.exports = {
   removeAssignment,
   getFinancials,
   updateFinancials,
+  getLastWorkedContext,
 };

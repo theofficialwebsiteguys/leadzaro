@@ -4,6 +4,7 @@ const { Message, Task } = require('../../models');
 const {
   getProjectByIdForRequester, listChannelsForRequester, getChannelByIdForRequester, listMessagesForRequester, getMessageByIdForRequester,
 } = require('../../core/authorization/clientVisibleModels');
+const { notify } = require('../../core/notifications/notificationService');
 
 function invalid(message, statusCode = 422) {
   const err = new Error(message);
@@ -45,7 +46,7 @@ async function postMessage({
     if (!parent || parent.channelId !== channel.id) throw invalid('Thread parent message not found in this channel', 404);
   }
 
-  return Message.create({
+  const message = await Message.create({
     channelId: channel.id,
     organizationId: channel.organizationId,
     agencyOrganizationId: channel.agencyOrganizationId,
@@ -54,6 +55,21 @@ async function postMessage({
     mentionedUserIds: mentionedUserIds || [],
     threadParentMessageId: threadParentMessageId || null,
   });
+
+  for (const mentionedUserId of mentionedUserIds || []) {
+    if (mentionedUserId === authorUserId) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await notify({
+      userId: mentionedUserId,
+      organizationId: channel.organizationId,
+      type: 'message_mention',
+      title: `You were mentioned in ${channel.name}`,
+      body,
+      data: { messageId: message.id, channelId: channel.id, projectId: channel.projectId },
+    });
+  }
+
+  return message;
 }
 
 /**

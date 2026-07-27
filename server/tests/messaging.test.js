@@ -3,7 +3,7 @@
 const request = require('supertest');
 const app = require('../app');
 const {
-  sequelize, Project, ProjectChannel, Message, Task,
+  sequelize, Project, ProjectChannel, Message, Task, Notification,
 } = require('../models');
 const { createOrganization, createRoleAssignedMember, loginAs } = require('./helpers/factory');
 const { CHANNEL_DEFAULTS } = require('../core/projects/projectCatalog');
@@ -187,6 +187,28 @@ describe('Message threading and conversion to task', () => {
 
     const again = await auth(request(app).post(`/api/v1/projects/${generalChannel.projectId}/channels/${generalChannel.id}/messages/${posted.body.data.message.id}/convert-to-task`).send({}));
     expect(again.status).toBe(409);
+  });
+});
+
+describe('Message mention notifications', () => {
+  test('mentioning a user notifies them, but the author is never notified for mentioning themselves', async () => {
+    const { agency, generalChannel } = await setupProjectWithChannels();
+    const { user: author, password: authorPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['developer'] });
+    const { user: mentioned } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['designer'] });
+    const login = await loginAs(app, author.email, authorPassword);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const posted = await auth(request(app).post(`/api/v1/projects/${generalChannel.projectId}/channels/${generalChannel.id}/messages`).send({
+      body: 'Can you take a look?', mentionedUserIds: [mentioned.id, author.id],
+    }));
+    expect(posted.status).toBe(201);
+
+    const mentionedNotifications = await Notification.findAll({ where: { userId: mentioned.id, type: 'message_mention' } });
+    expect(mentionedNotifications.length).toBe(1);
+    expect(mentionedNotifications[0].data.messageId).toBe(posted.body.data.message.id);
+
+    const selfNotifications = await Notification.findAll({ where: { userId: author.id, type: 'message_mention' } });
+    expect(selfNotifications.length).toBe(0);
   });
 });
 

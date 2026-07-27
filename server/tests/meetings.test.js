@@ -2,7 +2,9 @@
 
 const request = require('supertest');
 const app = require('../app');
-const { sequelize, Project, Meeting } = require('../models');
+const {
+  sequelize, Project, Meeting, Notification,
+} = require('../models');
 const { createOrganization, createRoleAssignedMember, loginAs } = require('./helpers/factory');
 
 afterAll(async () => {
@@ -92,6 +94,70 @@ describe('Meeting request/confirm/decline/cancel', () => {
 
     const res = await auth(request(app).post(`/api/v1/projects/${project.id}/meetings/${created.body.data.meeting.id}/decline`));
     expect(res.status).toBe(403);
+  });
+});
+
+describe('Meeting notifications', () => {
+  async function setupProjectWithOwner() {
+    const agency = await createOrganization(sequelize.models, { type: 'agency' });
+    const clientOrg = await createOrganization(sequelize.models, { type: 'client', managingAgencyOrganizationId: agency.id });
+    const { user: owner, password: ownerPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['project_manager'] });
+    const project = await Project.create({
+      organizationId: clientOrg.id, agencyOrganizationId: agency.id, stage: 'Development', healthStatus: 'on_track', ownerUserId: owner.id,
+    });
+    return {
+      agency, clientOrg, project, owner, ownerPassword,
+    };
+  }
+
+  test('requesting a meeting notifies the project owner; confirming/declining notifies whoever requested it', async () => {
+    const {
+      clientOrg, project, owner, ownerPassword,
+    } = await setupProjectWithOwner();
+    const { user: clientUser, password: clientPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: clientOrg.id, roleKeys: ['client_owner'], membershipType: 'client' });
+    const clientLogin = await loginAs(app, clientUser.email, clientPassword);
+    const slot = { start: '2026-08-05T15:00:00Z', end: '2026-08-05T15:30:00Z' };
+
+    const created = await request(app).post(`/api/v1/projects/${project.id}/meetings`).set('Authorization', `Bearer ${clientLogin.token}`).send({ subject: 'Strategy sync', proposedSlots: [slot] });
+    expect(created.status).toBe(201);
+
+    const requestedNotifications = await Notification.findAll({ where: { userId: owner.id, type: 'meeting_requested' } });
+    expect(requestedNotifications.length).toBe(1);
+    expect(requestedNotifications[0].data.meetingId).toBe(created.body.data.meeting.id);
+
+    const ownerLogin = await loginAs(app, owner.email, ownerPassword);
+    const auth = (r) => r.set('Authorization', `Bearer ${ownerLogin.token}`);
+    const confirmed = await auth(request(app).post(`/api/v1/projects/${project.id}/meetings/${created.body.data.meeting.id}/confirm`).send({ confirmedSlot: slot }));
+    expect(confirmed.status).toBe(200);
+
+    const confirmedNotifications = await Notification.findAll({ where: { userId: clientUser.id, type: 'meeting_confirmed' } });
+    expect(confirmedNotifications.length).toBe(1);
+  });
+
+  test('declining a meeting notifies whoever requested it', async () => {
+    const {
+      clientOrg, project, owner, ownerPassword,
+    } = await setupProjectWithOwner();
+    const { user: clientUser, password: clientPassword } = await createRoleAssignedMember(sequelize.models, { organizationId: clientOrg.id, roleKeys: ['client_owner'], membershipType: 'client' });
+    const clientLogin = await loginAs(app, clientUser.email, clientPassword);
+    const created = await request(app).post(`/api/v1/projects/${project.id}/meetings`).set('Authorization', `Bearer ${clientLogin.token}`).send({ subject: 'x', proposedSlots: [{ start: 'a', end: 'b' }] });
+
+    const ownerLogin = await loginAs(app, owner.email, ownerPassword);
+    const declined = await request(app).post(`/api/v1/projects/${project.id}/meetings/${created.body.data.meeting.id}/decline`).set('Authorization', `Bearer ${ownerLogin.token}`);
+    expect(declined.status).toBe(200);
+
+    const declinedNotifications = await Notification.findAll({ where: { userId: clientUser.id, type: 'meeting_declined' } });
+    expect(declinedNotifications.length).toBe(1);
+  });
+
+  test('an owner requesting their own project\'s meeting does not notify themselves', async () => {
+    const { project, owner, ownerPassword } = await setupProjectWithOwner();
+    const login = await loginAs(app, owner.email, ownerPassword);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+    await auth(request(app).post(`/api/v1/projects/${project.id}/meetings`).send({ subject: 'Internal sync', proposedSlots: [{ start: 'a', end: 'b' }] }));
+
+    const notifications = await Notification.findAll({ where: { userId: owner.id, type: 'meeting_requested' } });
+    expect(notifications.length).toBe(0);
   });
 });
 

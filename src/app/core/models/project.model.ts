@@ -1,3 +1,8 @@
+import { Task } from './task.model';
+import { Message } from './message.model';
+import { ClientRequest } from './clientRequest.model';
+import { Meeting } from './meeting.model';
+
 export const PROJECT_STAGES = [
   'Client Onboarding',
   'Content Collection',
@@ -48,4 +53,12 @@ export interface ProjectFinancials {
 
 export interface StageChangeError {
   checklist?: string[];
+}
+
+export interface ProjectDashboard {
+  project: Project;
+  recentTasks: Task[];
+  recentMessages: (Message & { channelName: string | null })[];
+  recentRequests: ClientRequest[];
+  upcomingMeetings: Meeting[];
 }

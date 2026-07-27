@@ -10,7 +10,7 @@ import { FileUploadService } from '../../core/services/file.service';
 import { MembershipService } from '../../core/services/membership.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
 import {
-  Project, ProjectAssignment, ProjectFinancials, PROJECT_STAGES, PROJECT_ROLE_SLOTS,
+  Project, ProjectAssignment, ProjectFinancials, ProjectDashboard, PROJECT_STAGES, PROJECT_ROLE_SLOTS,
 } from '../../core/models/project.model';
 import { Task, TASK_STATUSES, TASK_PRIORITIES } from '../../core/models/task.model';
 import { ProjectChannel, Message } from '../../core/models/message.model';
@@ -78,6 +78,7 @@ export class ProjectsComponent implements OnInit {
   loading = signal(true);
   selectedId = signal<string | null>(null);
   selected = signal<Project | null>(null);
+  dashboard = signal<ProjectDashboard | null>(null);
 
   members = signal<Member[]>([]);
 
@@ -124,11 +125,13 @@ export class ProjectsComponent implements OnInit {
     this.stageChecklist.set(null);
     this.stageError.set('');
     this.financialsLoaded.set(false);
+    this.dashboard.set(null);
     this.projectService.getById(id).subscribe((res) => {
       this.selected.set(res.data.project);
       this.stageTarget = res.data.project.stage;
       this.healthTarget = res.data.project.healthStatus;
     });
+    this.projectService.getDashboard(id).subscribe((res) => this.dashboard.set(res.data.dashboard));
     this.projectService.listAssignments(id).subscribe((res) => this.assignments.set(res.data.assignments));
     this.loadTasks(id);
     this.loadChannels(id);

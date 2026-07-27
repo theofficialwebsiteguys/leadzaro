@@ -3,12 +3,13 @@
 const request = require('supertest');
 const app = require('../app');
 const {
-  sequelize, Organization, Project, ProjectFinancials, ProjectAssignment,
+  sequelize, Organization, Project, ProjectFinancials, ProjectAssignment, Task, ProjectChannel, Message, ClientRequest, Meeting,
 } = require('../models');
 const { createOrganization, createRoleAssignedMember, loginAs } = require('./helpers/factory');
 const {
   listProjectsForRequester, getProjectByIdForRequester, getProjectFinancials,
 } = require('../core/authorization/clientVisibleModels');
+const { CHANNEL_DEFAULTS } = require('../core/projects/projectCatalog');
 
 afterAll(async () => {
   await sequelize.close();
@@ -248,5 +249,91 @@ describe('The Phase-4-opening backfill (already applied to the dev/test DB by mi
     expect(project).not.toBeNull();
     expect(project.agencyOrganizationId).toBe(demoOrg.managingAgencyOrganizationId);
     expect(project.sourceConversionAttemptId).toBeNull();
+  });
+});
+
+describe('Last-worked-context dashboard aggregation', () => {
+  test('a client sees only client-visible recent activity, truncated and sorted most-recent-first', async () => {
+    const { agency, clientOrg, project } = await setupAgencyWithClientProject();
+    const channels = await ProjectChannel.bulkCreate(CHANNEL_DEFAULTS.map((c) => ({
+      projectId: project.id, organizationId: clientOrg.id, agencyOrganizationId: agency.id, key: c.key, name: c.name, visibility: c.visibility,
+    })), { returning: true });
+    const generalChannel = channels.find((c) => c.key === 'general');
+    const internalChannel = channels.find((c) => c.key === 'internal');
+    const { user: employee } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['developer'] });
+
+    const visibleTask = await Task.create({
+      projectId: project.id, organizationId: clientOrg.id, agencyOrganizationId: agency.id, title: 'Client-facing milestone', isClientVisible: true,
+    });
+    await Task.create({
+      projectId: project.id, organizationId: clientOrg.id, agencyOrganizationId: agency.id, title: 'Internal dev note', isClientVisible: false,
+    });
+
+    const visibleMessage = await Message.create({
+      channelId: generalChannel.id, organizationId: clientOrg.id, agencyOrganizationId: agency.id, authorUserId: employee.id, body: 'Great progress this week!',
+    });
+    await Message.create({
+      channelId: internalChannel.id, organizationId: clientOrg.id, agencyOrganizationId: agency.id, authorUserId: employee.id, body: 'internal-only chatter',
+    });
+
+    const { user: clientUser } = await createRoleAssignedMember(sequelize.models, {
+      organizationId: clientOrg.id, roleKeys: ['client_owner'], membershipType: 'client',
+    });
+    const clientRequest = await ClientRequest.create({
+      projectId: project.id, organizationId: clientOrg.id, agencyOrganizationId: agency.id, category: 'bug', description: 'Broken link on homepage', status: 'queued', submittedByUserId: clientUser.id,
+    });
+
+    const meeting = await Meeting.create({
+      projectId: project.id, organizationId: clientOrg.id, agencyOrganizationId: agency.id, requestedByUserId: employee.id, subject: 'Kickoff', proposedSlots: [{ start: 'a', end: 'b' }], status: 'requested',
+    });
+
+    const { user, password } = await createRoleAssignedMember(sequelize.models, {
+      organizationId: clientOrg.id, roleKeys: ['client_owner'], membershipType: 'client',
+    });
+    const login = await loginAs(app, user.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const res = await auth(request(app).get(`/api/v1/projects/${project.id}/dashboard`));
+    expect(res.status).toBe(200);
+    const { dashboard } = res.body.data;
+
+    expect(dashboard.recentTasks.map((t) => t.id)).toEqual([visibleTask.id]);
+    expect(dashboard.recentMessages.map((m) => m.id)).toEqual([visibleMessage.id]);
+    expect(dashboard.recentMessages[0].channelName).toBe(generalChannel.name);
+    expect(dashboard.recentRequests.map((r) => r.id)).toEqual([clientRequest.id]);
+    expect(dashboard.upcomingMeetings.map((m) => m.id)).toEqual([meeting.id]);
+  });
+
+  test('an employee sees internal activity too, and results are capped at 5 per category', async () => {
+    const { agency, clientOrg, project } = await setupAgencyWithClientProject();
+    const { user: employee } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['developer'] });
+
+    const tasks = [];
+    for (let i = 0; i < 7; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      tasks.push(await Task.create({
+        projectId: project.id, organizationId: clientOrg.id, agencyOrganizationId: agency.id, title: `Task ${i}`, isClientVisible: false,
+      }));
+    }
+
+    const { user: pm, password } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['project_manager'] });
+    const login = await loginAs(app, pm.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const res = await auth(request(app).get(`/api/v1/projects/${project.id}/dashboard`));
+    expect(res.status).toBe(200);
+    expect(res.body.data.dashboard.recentTasks.length).toBe(5);
+    expect(res.body.data.dashboard.recentTasks[0].id).toBe(tasks[6].id);
+  });
+
+  test('a project from another agency is not reachable (404), not an empty dashboard', async () => {
+    const { project } = await setupAgencyWithClientProject();
+    const { agency: agencyB } = await setupAgencyWithClientProject();
+    const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: agencyB.id, roleKeys: ['developer'] });
+    const login = await loginAs(app, user.email, password);
+    const auth = (r) => r.set('Authorization', `Bearer ${login.token}`);
+
+    const res = await auth(request(app).get(`/api/v1/projects/${project.id}/dashboard`));
+    expect(res.status).toBe(404);
   });
 });

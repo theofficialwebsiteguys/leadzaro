@@ -30,6 +30,8 @@ router.delete('/:id/assignments/:assignmentId', requirePermission('projects.mana
 router.get('/:id/financials', requirePermission('projects.manage'), controller.getFinancials);
 router.patch('/:id/financials', requirePermission('projects.manage'), controller.updateFinancials);
 
+router.get('/:id/dashboard', requirePermission('projects.view'), controller.getDashboard);
+
 router.use('/:projectId/tasks', require('../tasks/routes'));
 router.use('/:projectId/channels', require('../messaging/routes'));
 router.use('/:projectId/requests', require('../requests/routes'));

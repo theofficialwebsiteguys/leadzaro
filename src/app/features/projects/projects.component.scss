@@ -62,6 +62,29 @@
   &.health-off_track { background: #fee2e2; color: #991b1b; }
 }
 
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.dashboard-column {
+  .label {
+    display: block;
+    color: var(--text-muted, #6b7280);
+    margin-bottom: 6px;
+  }
+}
+
+.dashboard-list {
+  margin: 0;
+  padding-left: 18px;
+
+  li {
+    margin-bottom: 4px;
+  }
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;

@@ -5,6 +5,7 @@ const {
   getProjectByIdForRequester, listClientRequestsForRequester, getClientRequestByIdForRequester,
   listContentInboxItemsForRequester, getContentInboxItemByIdForRequester,
 } = require('../../core/authorization/clientVisibleModels');
+const { notify } = require('../../core/notifications/notificationService');
 
 function invalid(message, statusCode = 422) {
   const err = new Error(message);
@@ -40,7 +41,7 @@ async function createRequest({
   if (!ClientRequest.CATEGORIES.includes(category)) throw invalid(`Unknown category: ${category}`);
   if (!description?.trim()) throw invalid('description is required');
 
-  return ClientRequest.create({
+  const clientRequest = await ClientRequest.create({
     projectId: project.id,
     organizationId: project.organizationId,
     agencyOrganizationId: project.agencyOrganizationId,
@@ -49,6 +50,26 @@ async function createRequest({
     submittedByUserId,
     status: 'queued',
   });
+
+  // architecture § 21: "client submissions" are named explicitly as a
+  // notification trigger. Notifies the project owner if one is set;
+  // there is no assigned-owner-independent "everyone who handles
+  // requests at this agency" list yet (that would need querying every
+  // membership holding requests.manage, deferred as a real but lower-
+  // priority refinement — the unified support queue itself already
+  // surfaces this without a notification).
+  if (project.ownerUserId) {
+    await notify({
+      userId: project.ownerUserId,
+      organizationId: project.agencyOrganizationId,
+      type: 'client_request_submitted',
+      title: `New ${category} request submitted`,
+      body: description,
+      data: { requestId: clientRequest.id, projectId: project.id },
+    });
+  }
+
+  return clientRequest;
 }
 
 async function updateRequestStatus({ context, requestId, status }) {

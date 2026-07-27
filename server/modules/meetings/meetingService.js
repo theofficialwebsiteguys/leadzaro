@@ -5,6 +5,7 @@ const {
   getProjectByIdForRequester, listMeetingsForRequester, getMeetingByIdForRequester,
 } = require('../../core/authorization/clientVisibleModels');
 const { getGoogleCalendarAdapter } = require('../../core/integrations/googleCalendar/googleCalendarAdapter');
+const { notify } = require('../../core/notifications/notificationService');
 
 function invalid(message, statusCode = 422) {
   const err = new Error(message);
@@ -30,7 +31,7 @@ async function requestMeeting({
   if (!subject?.trim()) throw invalid('subject is required');
   if (!Array.isArray(proposedSlots) || proposedSlots.length === 0) throw invalid('at least one proposed time slot is required');
 
-  return Meeting.create({
+  const meeting = await Meeting.create({
     projectId: project.id,
     organizationId: project.organizationId,
     agencyOrganizationId: project.agencyOrganizationId,
@@ -39,6 +40,24 @@ async function requestMeeting({
     proposedSlots,
     status: 'requested',
   });
+
+  // architecture § 21: whoever needs to confirm/decline should hear
+  // about a new request, not just its eventual outcome. project.ownerUserId
+  // is the same "agency-side contact" heuristic used by
+  // client_request_submitted (requestService.js) — skipped when the
+  // requester IS the owner (an owner requesting their own meeting has
+  // nothing to be notified about).
+  if (project.ownerUserId && project.ownerUserId !== requestedByUserId) {
+    await notify({
+      userId: project.ownerUserId,
+      organizationId: project.agencyOrganizationId,
+      type: 'meeting_requested',
+      title: `New meeting requested: ${subject}`,
+      data: { meetingId: meeting.id, projectId: project.id },
+    });
+  }
+
+  return meeting;
 }
 
 /**
@@ -73,6 +92,15 @@ async function confirmMeeting({
     confirmedAt: new Date(),
     googleCalendarEventId: event.eventId,
   });
+
+  await notify({
+    userId: meeting.requestedByUserId,
+    organizationId: meeting.organizationId,
+    type: 'meeting_confirmed',
+    title: `Meeting confirmed: ${meeting.subject}`,
+    data: { meetingId: meeting.id, projectId: meeting.projectId },
+  });
+
   return meeting;
 }
 
@@ -80,6 +108,15 @@ async function declineMeeting({ context, meetingId }) {
   const meeting = await getMeetingByIdForRequester(context, meetingId);
   if (!meeting) throw invalid('Meeting not found', 404);
   await meeting.update({ status: 'declined' });
+
+  await notify({
+    userId: meeting.requestedByUserId,
+    organizationId: meeting.organizationId,
+    type: 'meeting_declined',
+    title: `Meeting declined: ${meeting.subject}`,
+    data: { meetingId: meeting.id, projectId: meeting.projectId },
+  });
+
   return meeting;
 }
 
