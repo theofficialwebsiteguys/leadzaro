@@ -13,5 +13,6 @@ router.use('/public', require('../../modules/public/routes'));
 router.use('/billing', require('../../modules/billing/routes'));
 router.use('/projects', require('../../modules/projects/routes'));
 router.use('/requests', require('../../modules/requests/queueRoutes'));
+router.use('/section-definitions', require('../../modules/websites/sectionDefinitionRoutes'));
 
 module.exports = router;

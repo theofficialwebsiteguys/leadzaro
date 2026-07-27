@@ -1,13 +1,36 @@
 export const WEBSITE_STARTING_MODES = ['template', 'page_kit', 'guided', 'blank'] as const;
 export type WebsiteStartingMode = typeof WEBSITE_STARTING_MODES[number];
 
+export interface WebsiteSection {
+  id: string;
+  componentKey: string;
+  variant?: string;
+  settings?: Record<string, unknown>;
+  content?: Record<string, unknown>;
+}
+
+export interface WebsitePage {
+  id: string;
+  route: string;
+  title: string;
+  sections: WebsiteSection[];
+}
+
+export interface WebsiteSchema {
+  pages: WebsitePage[];
+  navigation?: { items: Array<{ label: string; route: string }> };
+  siteSettings?: Record<string, unknown>;
+  organizationContent?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export interface Website {
   id: string;
   projectId: string;
   designSystemId: string;
   name: string;
   startingMode: WebsiteStartingMode;
-  draftSchema: { pages: Array<{ id: string; route: string; title: string; sections: unknown[] }>; [key: string]: unknown };
+  draftSchema: WebsiteSchema;
   currentPublishedVersionId: string | null;
 }
 

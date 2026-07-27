@@ -9,6 +9,8 @@ import { MeetingService } from '../../core/services/meeting.service';
 import { FileUploadService } from '../../core/services/file.service';
 import { CancellationService } from '../../core/services/cancellation.service';
 import { WebsiteService } from '../../core/services/website.service';
+import { SectionDefinitionService } from '../../core/services/sectionDefinition.service';
+import { WebsitePreviewComponent } from './website-preview/website-preview.component';
 import { MembershipService } from '../../core/services/membership.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
 import {
@@ -21,13 +23,14 @@ import { Meeting } from '../../core/models/meeting.model';
 import { ProjectFile, FILE_SCOPES } from '../../core/models/file.model';
 import { CancellationRequest } from '../../core/models/cancellationRequest.model';
 import { Website, WebsiteVersion } from '../../core/models/website.model';
+import { SectionDefinition } from '../../core/models/sectionDefinition.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 
 @Component({
   selector: 'app-projects',
   standalone: true,
-  imports: [FormsModule, DatePipe, HasPermissionDirective],
+  imports: [FormsModule, DatePipe, HasPermissionDirective, WebsitePreviewComponent],
   templateUrl: './projects.component.html',
   styleUrl: './projects.component.scss',
 })
@@ -40,6 +43,7 @@ export class ProjectsComponent implements OnInit {
   private readonly fileService = inject(FileUploadService);
   private readonly cancellationService = inject(CancellationService);
   private readonly websiteService = inject(WebsiteService);
+  private readonly sectionDefinitionService = inject(SectionDefinitionService);
   private readonly membershipService = inject(MembershipService);
   readonly org = inject(OrganizationContextService);
 
@@ -91,6 +95,8 @@ export class ProjectsComponent implements OnInit {
   draftSchemaText = '';
   draftSchemaError = '';
   newCheckpointLabel = '';
+  showPreview = signal(false);
+  sectionDefinitions = signal<SectionDefinition[]>([]);
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -125,6 +131,9 @@ export class ProjectsComponent implements OnInit {
     this.membershipService.list().subscribe((res) => {
       this.members.set(res.data.memberships.filter((m) => m.membershipType === 'employee' && m.status === 'active'));
     });
+    if (this.org.hasPermission('builder.edit')) {
+      this.sectionDefinitionService.list().subscribe((res) => this.sectionDefinitions.set(res.data.sectionDefinitions));
+    }
   }
 
   load() {

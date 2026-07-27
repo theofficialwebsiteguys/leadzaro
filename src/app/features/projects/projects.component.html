@@ -479,6 +479,13 @@
                 <div class="detail-row"><span class="label">Name</span><span>{{ website()!.name }}</span></div>
                 <div class="detail-row"><span class="label">Starting mode</span><span>{{ website()!.startingMode }}</span></div>
 
+                <button class="btn btn-sm mt-2" (click)="showPreview.set(!showPreview())">{{ showPreview() ? 'Hide Preview' : 'Show Preview' }}</button>
+                @if (showPreview()) {
+                  <div class="mt-2">
+                    <app-website-preview [schema]="website()!.draftSchema" [sectionDefinitions]="sectionDefinitions()" />
+                  </div>
+                }
+
                 <label class="field-label mt-2">Draft schema (JSON)</label>
                 <textarea class="input mb-2" rows="8" [(ngModel)]="draftSchemaText"></textarea>
                 @if (draftSchemaError) {

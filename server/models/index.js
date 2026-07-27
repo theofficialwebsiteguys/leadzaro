@@ -53,6 +53,7 @@ const CancellationRequest = require('./CancellationRequest')(sequelize);
 const DesignSystem = require('./DesignSystem')(sequelize);
 const Website = require('./Website')(sequelize);
 const WebsiteVersion = require('./WebsiteVersion')(sequelize);
+const SectionDefinition = require('./SectionDefinition')(sequelize);
 
 const models = {
   User,
@@ -103,6 +104,7 @@ const models = {
   DesignSystem,
   Website,
   WebsiteVersion,
+  SectionDefinition,
 };
 
 // Run associations

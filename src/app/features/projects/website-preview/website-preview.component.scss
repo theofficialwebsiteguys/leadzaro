@@ -1,0 +1,58 @@
+.preview-shell {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.preview-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  background: var(--bg-2, #f3f4f6);
+  overflow-x: auto;
+}
+
+.preview-tab {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &.active {
+    background: white;
+    font-weight: 600;
+  }
+}
+
+.preview-canvas {
+  padding: 16px;
+}
+
+.preview-section {
+  border: 1px dashed var(--border, #e5e7eb);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.preview-section-label {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.preview-content {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+
+  dt {
+    color: var(--text-muted, #6b7280);
+  }
+
+  dd {
+    margin: 0;
+  }
+}

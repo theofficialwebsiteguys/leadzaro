@@ -1,0 +1,41 @@
+<div class="preview-shell">
+  @if (pages.length === 0) {
+    <p class="text-sm text-muted">No pages in this schema yet.</p>
+  } @else {
+    <div class="preview-tabs">
+      @for (page of pages; track page.id) {
+        <button
+          class="preview-tab"
+          [class.active]="selectedRoute() === page.route"
+          (click)="selectPage(page.route)"
+        >{{ page.title }} <span class="text-muted">({{ page.route }})</span></button>
+      }
+    </div>
+
+    @if (selectedPage; as page) {
+      <div class="preview-canvas">
+        @if (page.sections.length === 0) {
+          <p class="text-sm text-muted">This page has no sections yet.</p>
+        }
+        @for (section of page.sections; track section.id) {
+          <div class="preview-section" [attr.data-component-key]="section.componentKey">
+            <div class="preview-section-label">
+              {{ definitionFor(section)?.name || section.componentKey }}
+              @if (section.variant) { <span class="text-muted">— {{ section.variant }}</span> }
+            </div>
+            @if (contentValues(section).length === 0) {
+              <p class="text-sm text-muted">(no content set)</p>
+            } @else {
+              <dl class="preview-content">
+                @for (item of contentValues(section); track item.key) {
+                  <dt>{{ item.key }}</dt>
+                  <dd>{{ item.value }}</dd>
+                }
+              </dl>
+            }
+          </div>
+        }
+      </div>
+    }
+  }
+</div>

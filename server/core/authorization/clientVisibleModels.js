@@ -15,7 +15,7 @@
 const { Op } = require('sequelize');
 const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
-  DesignSystem, Website, WebsiteVersion,
+  DesignSystem, Website, WebsiteVersion, SectionDefinition,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -362,6 +362,35 @@ async function getNextVersionNumberForWebsite(websiteId) {
 }
 
 /**
+ * SectionDefinition is agency-scoped, not tenant-scoped like every
+ * other model above (current-phase-plan.md § 2d) — a row with
+ * agencyOrganizationId: null is a platform-provided default visible to
+ * everyone; a non-null row is a specific agency's own curated/custom
+ * library, visible to that agency's employees and (read-only, to render
+ * their own site) the clients under it. An employee's "own agency" is
+ * context.organization.id directly; a client's is resolved through
+ * their organization's managingAgencyOrganizationId (already loaded on
+ * context.organization by resolveContext()'s own include).
+ */
+function sectionDefinitionWhereForRequester(context, extraWhere = {}) {
+  const ownAgencyOrganizationId = context.membership.membershipType === 'client'
+    ? context.organization.managingAgencyOrganizationId
+    : context.organization.id;
+  return {
+    ...extraWhere,
+    [Op.or]: [{ agencyOrganizationId: null }, { agencyOrganizationId: ownAgencyOrganizationId }],
+  };
+}
+
+function listSectionDefinitionsForRequester(context, extraWhere = {}) {
+  return SectionDefinition.findAll(scoped({ where: sectionDefinitionWhereForRequester(context, extraWhere), order: [['category', 'ASC'], ['name', 'ASC']] }));
+}
+
+function getSectionDefinitionByIdForRequester(context, sectionDefinitionId) {
+  return SectionDefinition.findOne(scoped({ where: sectionDefinitionWhereForRequester(context, { id: sectionDefinitionId }) }));
+}
+
+/**
  * The one exception to "every read goes through a requester context":
  * system-level operations with no HTTP requester at all (currently:
  * `projectService.ensureProjectForConversion`, triggered by a Stripe
@@ -408,4 +437,6 @@ module.exports = {
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,
+  listSectionDefinitionsForRequester,
+  getSectionDefinitionByIdForRequester,
 };
