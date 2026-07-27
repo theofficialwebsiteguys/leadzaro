@@ -16,6 +16,7 @@ const { Op } = require('sequelize');
 const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
   DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
+  WebsiteComment, WebsiteEditLock, WebsitePresence,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -414,6 +415,44 @@ function getWebsiteEditorAssignmentByIdForRequester(context, assignmentId) {
 }
 
 /**
+ * WebsiteComment mirrors ProjectChannel's client/internal split
+ * (current-phase-plan.md § 2h) — an employee can leave a client-invisible
+ * internal note anchored to the same section a client-visible comment
+ * lives on. A client membership additionally never sees isInternal:
+ * true rows, on top of standard tenant scoping.
+ */
+function websiteCommentWhereForRequester(context, extraWhere = {}) {
+  const base = tenantWhereForRequester(context, extraWhere);
+  return context.membership.membershipType === 'client' ? { ...base, isInternal: false } : base;
+}
+
+function listWebsiteCommentsForRequester(context, extraWhere = {}) {
+  return WebsiteComment.findAll(scoped({ where: websiteCommentWhereForRequester(context, extraWhere), include: [AUTHOR_INCLUDE], order: [['createdAt', 'ASC']] }));
+}
+
+function getWebsiteCommentByIdForRequester(context, commentId) {
+  return WebsiteComment.findOne(scoped({ where: websiteCommentWhereForRequester(context, { id: commentId }) }));
+}
+
+/**
+ * WebsiteEditLock/WebsitePresence carry no sensitive content — knowing
+ * who is editing or viewing what section on a project everyone involved
+ * already has access to isn't sensitive — so plain tenant scoping is
+ * sufficient, no additional split (current-phase-plan.md § 2i).
+ */
+function listWebsiteEditLocksForRequester(context, extraWhere = {}) {
+  return WebsiteEditLock.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere) }));
+}
+
+function getWebsiteEditLockByIdForRequester(context, lockId) {
+  return WebsiteEditLock.findOne(scoped({ where: tenantWhereForRequester(context, { id: lockId }) }));
+}
+
+function listWebsitePresenceForRequester(context, extraWhere = {}) {
+  return WebsitePresence.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), include: [ASSIGNMENT_USER_INCLUDE] }));
+}
+
+/**
  * The one exception to "every read goes through a requester context":
  * system-level operations with no HTTP requester at all (currently:
  * `projectService.ensureProjectForConversion`, triggered by a Stripe
@@ -483,4 +522,9 @@ module.exports = {
   getSectionDefinitionByIdForRequester,
   listWebsiteEditorAssignmentsForRequester,
   getWebsiteEditorAssignmentByIdForRequester,
+  listWebsiteCommentsForRequester,
+  getWebsiteCommentByIdForRequester,
+  listWebsiteEditLocksForRequester,
+  getWebsiteEditLockByIdForRequester,
+  listWebsitePresenceForRequester,
 };

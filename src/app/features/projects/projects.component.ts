@@ -22,7 +22,9 @@ import { ClientRequest, REQUEST_CATEGORIES } from '../../core/models/clientReque
 import { Meeting } from '../../core/models/meeting.model';
 import { ProjectFile, FILE_SCOPES } from '../../core/models/file.model';
 import { CancellationRequest } from '../../core/models/cancellationRequest.model';
-import { Website, WebsiteVersion, WebsiteEditorAssignment } from '../../core/models/website.model';
+import {
+  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteComment, WebsitePresenceEntry,
+} from '../../core/models/website.model';
 import { SectionDefinition } from '../../core/models/sectionDefinition.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
@@ -109,6 +111,12 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   testFormSectionId = '';
   testFormValuesText = '{}';
   testFormResult = signal<string | null>(null);
+  websiteComments = signal<WebsiteComment[]>([]);
+  newCommentAnchorKey = '';
+  newCommentBody = '';
+  newCommentIsInternal = false;
+  websitePresence = signal<WebsitePresenceEntry[]>([]);
+  private presenceIntervalId: ReturnType<typeof setInterval> | null = null;
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -153,11 +161,21 @@ export class ProjectsComponent implements OnInit, OnDestroy {
         if (!id || !this.website()) return;
         this.websiteService.createAutosave(id).subscribe(() => this.lastAutosavedAt.set(new Date()));
       }, 30000);
+      // A presence heartbeat (current-phase-plan.md § 2i) — lets
+      // everyone else viewing this website's Recent Activity see who
+      // else is currently here. Short-TTL: a stale row (tab closed,
+      // heartbeat stopped) simply drops out of the list on its own.
+      this.presenceIntervalId = setInterval(() => {
+        const id = this.selectedId();
+        if (!id || !this.website()) return;
+        this.websiteService.heartbeatPresence(id).subscribe(() => this.loadWebsitePresence(id));
+      }, 20000);
     }
   }
 
   ngOnDestroy() {
     if (this.autosaveIntervalId) clearInterval(this.autosaveIntervalId);
+    if (this.presenceIntervalId) clearInterval(this.presenceIntervalId);
   }
 
   load() {
@@ -183,6 +201,8 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.websiteEditors.set([]);
     this.compareResult.set(null);
     this.testFormResult.set(null);
+    this.websiteComments.set([]);
+    this.websitePresence.set([]);
     this.projectService.getById(id).subscribe((res) => {
       this.selected.set(res.data.project);
       this.stageTarget = res.data.project.stage;
@@ -488,6 +508,11 @@ export class ProjectsComponent implements OnInit, OnDestroy {
         this.draftSchemaText = JSON.stringify(res.data.website.draftSchema, null, 2);
         this.websiteLoaded.set(true);
         this.loadWebsiteVersions(projectId);
+        this.loadWebsiteComments(projectId);
+        this.loadWebsitePresence(projectId);
+        if (this.org.hasPermission('builder.edit')) {
+          this.websiteService.heartbeatPresence(projectId).subscribe(() => this.loadWebsitePresence(projectId));
+        }
         if (this.org.hasPermission('builder.manage')) {
           this.loadWebsiteEditors(projectId);
         }
@@ -600,6 +625,31 @@ export class ProjectsComponent implements OnInit, OnDestroy {
       next: (res) => this.testFormResult.set(`Created client request (category: ${res.data.clientRequest.category})`),
       error: (err) => this.testFormResult.set(err.error?.message || 'Test submission failed'),
     });
+  }
+
+  loadWebsiteComments(projectId: string) {
+    this.websiteService.listComments(projectId).subscribe((res) => this.websiteComments.set(res.data.comments));
+  }
+
+  addWebsiteComment() {
+    const id = this.selectedId();
+    if (!id || !this.newCommentAnchorKey.trim() || !this.newCommentBody.trim()) return;
+    this.websiteService.createComment(id, this.newCommentAnchorKey, this.newCommentBody, this.newCommentIsInternal).subscribe(() => {
+      this.newCommentAnchorKey = '';
+      this.newCommentBody = '';
+      this.newCommentIsInternal = false;
+      this.loadWebsiteComments(id);
+    });
+  }
+
+  resolveWebsiteComment(comment: WebsiteComment) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.websiteService.resolveComment(id, comment.id).subscribe(() => this.loadWebsiteComments(id));
+  }
+
+  loadWebsitePresence(projectId: string) {
+    this.websiteService.listPresence(projectId).subscribe((res) => this.websitePresence.set(res.data.presence));
   }
 
   loadWebsiteEditors(projectId: string) {

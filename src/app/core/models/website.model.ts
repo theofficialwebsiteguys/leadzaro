@@ -73,3 +73,25 @@ export interface WebsiteVersionComparison {
   structuralChange: boolean;
   changes: WebsiteVersionChange[];
 }
+
+export interface WebsiteComment {
+  id: string;
+  websiteId: string;
+  versionId: string | null;
+  anchorKey: string;
+  authorUserId: string;
+  body: string;
+  isInternal: boolean;
+  resolvedAt: string | null;
+  createdAt: string;
+  author?: { id: string; name: string };
+}
+
+export interface WebsitePresenceEntry {
+  id: string;
+  websiteId: string;
+  userId: string;
+  sectionKey: string | null;
+  lastSeenAt: string;
+  user?: { id: string; name: string };
+}

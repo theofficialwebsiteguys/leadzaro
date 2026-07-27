@@ -621,6 +621,52 @@
                     <button class="btn btn-sm" (click)="addWebsiteEditor()">Assign</button>
                   </div>
                 </div>
+
+                @if (websitePresence().length > 0) {
+                  <div class="mt-2">
+                    <label class="field-label">Currently Viewing</label>
+                    <p class="text-sm text-muted mb-0">
+                      @for (p of websitePresence(); track p.id) {
+                        <span class="badge">{{ p.user?.name || p.userId }}@if (p.sectionKey) { &nbsp;({{ p.sectionKey }}) }</span>
+                      }
+                    </p>
+                  </div>
+                }
+
+                <div class="mt-2">
+                  <label class="field-label">Comments</label>
+                  <div class="table-wrap">
+                    <table>
+                      <thead><tr><th>Anchor</th><th>Comment</th><th>By</th><th>Status</th><th></th></tr></thead>
+                      <tbody>
+                        @for (c of websiteComments(); track c.id) {
+                          <tr>
+                            <td>{{ c.anchorKey }}</td>
+                            <td>{{ c.body }}@if (c.isInternal) { <span class="text-muted">(internal)</span> }</td>
+                            <td>{{ c.author?.name || c.authorUserId }}</td>
+                            <td>{{ c.resolvedAt ? 'Resolved' : 'Open' }}</td>
+                            <td>
+                              @if (!c.resolvedAt) {
+                                <button class="btn btn-sm" *hasPermission="'builder.edit'" (click)="resolveWebsiteComment(c)">Resolve</button>
+                              }
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="assign-form" *hasPermission="'builder.edit'">
+                    <input class="input" placeholder="Anchor key (e.g. page_home/hero1)" [(ngModel)]="newCommentAnchorKey" />
+                    <input class="input" placeholder="Comment" [(ngModel)]="newCommentBody" />
+                    @if (org.membership()?.membershipType === 'employee') {
+                      <label class="checkbox-label">
+                        <input type="checkbox" [(ngModel)]="newCommentIsInternal" />
+                        Internal only
+                      </label>
+                    }
+                    <button class="btn btn-sm" (click)="addWebsiteComment()">Add Comment</button>
+                  </div>
+                </div>
               }
             </div>
           </div>

@@ -1,7 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteVersionComparison } from '../models/website.model';
+import {
+  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteVersionComparison, WebsiteComment, WebsitePresenceEntry,
+} from '../models/website.model';
 
 @Injectable({ providedIn: 'root' })
 export class WebsiteService {
@@ -59,5 +61,25 @@ export class WebsiteService {
 
   submitTestForm(projectId: string, pageId: string, sectionId: string, values: unknown): Observable<{ data: { clientRequest: { id: string; category: string } } }> {
     return this.http.post<{ data: { clientRequest: { id: string; category: string } } }>(`/api/v1/projects/${projectId}/website/forms/test-submit`, { pageId, sectionId, values });
+  }
+
+  listComments(projectId: string): Observable<{ data: { comments: WebsiteComment[] } }> {
+    return this.http.get<{ data: { comments: WebsiteComment[] } }>(`/api/v1/projects/${projectId}/website/comments`);
+  }
+
+  createComment(projectId: string, anchorKey: string, body: string, isInternal: boolean): Observable<{ data: { comment: WebsiteComment } }> {
+    return this.http.post<{ data: { comment: WebsiteComment } }>(`/api/v1/projects/${projectId}/website/comments`, { anchorKey, body, isInternal });
+  }
+
+  resolveComment(projectId: string, commentId: string): Observable<{ data: { comment: WebsiteComment } }> {
+    return this.http.post<{ data: { comment: WebsiteComment } }>(`/api/v1/projects/${projectId}/website/comments/${commentId}/resolve`, {});
+  }
+
+  heartbeatPresence(projectId: string, sectionKey?: string): Observable<{ data: { presence: WebsitePresenceEntry } }> {
+    return this.http.post<{ data: { presence: WebsitePresenceEntry } }>(`/api/v1/projects/${projectId}/website/presence`, { sectionKey });
+  }
+
+  listPresence(projectId: string): Observable<{ data: { presence: WebsitePresenceEntry[] } }> {
+    return this.http.get<{ data: { presence: WebsitePresenceEntry[] } }>(`/api/v1/projects/${projectId}/website/presence`);
   }
 }

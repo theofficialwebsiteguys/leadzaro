@@ -7,6 +7,8 @@ const { resolveContext, requirePermission } = require('../../core/authorization/
 const { validate } = require('../../middleware/validate');
 const controller = require('./websiteController');
 const editorAssignmentController = require('./websiteEditorAssignmentController');
+const commentController = require('./websiteCommentController');
+const collaborationController = require('./websiteCollaborationController');
 
 router.use(authenticate, resolveContext());
 
@@ -42,5 +44,21 @@ router.post('/editors', requirePermission('builder.manage'), [
   body('editingLevel').notEmpty(),
 ], validate, editorAssignmentController.create);
 router.delete('/editors/:assignmentId', requirePermission('builder.manage'), editorAssignmentController.remove);
+
+router.get('/comments', requirePermission('projects.view'), commentController.list);
+router.post('/comments', requirePermission('builder.edit'), [
+  body('anchorKey').notEmpty(),
+  body('body').notEmpty(),
+], validate, commentController.create);
+router.post('/comments/:commentId/resolve', requirePermission('builder.edit'), commentController.resolve);
+
+router.get('/locks', requirePermission('projects.view'), collaborationController.listLocks);
+router.post('/locks', requirePermission('builder.edit'), [
+  body('sectionKey').notEmpty(),
+], validate, collaborationController.acquireLock);
+router.delete('/locks/:lockId', requirePermission('builder.edit'), collaborationController.releaseLock);
+
+router.get('/presence', requirePermission('projects.view'), collaborationController.listPresence);
+router.post('/presence', requirePermission('builder.edit'), collaborationController.heartbeatPresence);
 
 module.exports = router;
