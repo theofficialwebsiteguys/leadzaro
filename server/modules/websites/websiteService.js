@@ -4,9 +4,11 @@ const { DesignSystem, Website, WebsiteVersion } = require('../../models');
 const {
   getProjectByIdForRequester, getWebsiteByProjectIdForRequester, getWebsiteByIdForRequester,
   listWebsiteVersionsForRequester, getWebsiteVersionByIdForRequester, getNextVersionNumberForWebsite,
-  pruneOldAutosaveVersions, listSectionDefinitionsForRequester,
+  pruneOldAutosaveVersions, listSectionDefinitionsForRequester, getDesignSystemLibraryTemplateByIdForRequester,
 } = require('../../core/authorization/clientVisibleModels');
-const { DEFAULT_DESIGN_TOKENS, buildBlankSchema } = require('../../core/websites/websiteCatalog');
+const {
+  DEFAULT_DESIGN_TOKENS, buildBlankSchema, buildStarterSchema, TEMPLATE_STARTER_COMPONENT_KEYS, PAGE_KIT_STARTER_COMPONENT_KEYS,
+} = require('../../core/websites/websiteCatalog');
 const { resolveEffectiveEditingLevel, levelSatisfies } = require('../../core/websites/editingLevel');
 const { diffSchemaChanges } = require('../../core/websites/schemaDiff');
 const requestService = require('../requests/requestService');
@@ -36,23 +38,87 @@ async function getWebsite(context, projectId) {
 }
 
 /**
- * Only 'blank' actually produces a real starting schema this slice —
- * current-phase-plan.md § 2n defers 'page_kit'/'guided' to a later
- * slice once the section library exists to build on, and 'template'
- * has no real catalog to select from until slice 8's library
- * governance. Rejecting the other three now is more honest than
- * silently falling back to a blank schema under a different label.
+ * Resolves the starting draftSchema (and, for 'template', the tokens to
+ * fork) for each mode (current-phase-plan.md § 2n):
+ *  - 'blank': an empty homepage, as before.
+ *  - 'template': a full curated starter homepage, forking a library
+ *    DesignSystem's tokens for branding — employee-only (§ 2a: a
+ *    library template is "visible only to employees... never to a
+ *    client directly"), and requires an explicit designSystemTemplateId
+ *    so the caller must have actually seen it via the browsing list.
+ *  - 'page_kit': the same assembly as 'template' but with a shorter
+ *    fixed section list ("a partial, page-level starting point") and
+ *    no design-system selection — open to clients too, same as 'blank'.
+ *  - 'guided': the identical assembly primitive, but the section list
+ *    is the caller's own explicit choice rather than a fixed curated
+ *    one — the "wizard-driven assembly"; each chosen key is validated
+ *    against the caller's own visible, published section library.
+ * Every non-blank mode's section list is tolerant of gaps (an agency's
+ * library may not define every curated key) except 'guided', where an
+ * unrecognized key is a caller error, not a silent gap — the whole
+ * point of a guided pick is that every choice came from a real list.
  */
+async function resolveStartingSchema({
+  context, startingMode, designSystemTemplateId, sectionComponentKeys,
+}) {
+  if (startingMode === 'blank') {
+    return { draftSchema: buildBlankSchema(), tokens: DEFAULT_DESIGN_TOKENS, forkedFromDesignSystemId: null };
+  }
+
+  if (startingMode === 'template') {
+    if (context.membership.membershipType === 'client') {
+      throw invalid('Only an agency employee can start a website from a library template', 403);
+    }
+    if (!designSystemTemplateId) throw invalid('designSystemTemplateId is required for the template starting mode');
+    const libraryTemplate = await getDesignSystemLibraryTemplateByIdForRequester(context, designSystemTemplateId);
+    if (!libraryTemplate) throw invalid('Design system template not found', 404);
+
+    const sectionDefinitions = await listSectionDefinitionsForRequester(context);
+    return {
+      draftSchema: buildStarterSchema(sectionDefinitions, TEMPLATE_STARTER_COMPONENT_KEYS),
+      tokens: libraryTemplate.tokens,
+      forkedFromDesignSystemId: libraryTemplate.id,
+    };
+  }
+
+  if (startingMode === 'page_kit') {
+    const sectionDefinitions = await listSectionDefinitionsForRequester(context);
+    return {
+      draftSchema: buildStarterSchema(sectionDefinitions, PAGE_KIT_STARTER_COMPONENT_KEYS),
+      tokens: DEFAULT_DESIGN_TOKENS,
+      forkedFromDesignSystemId: null,
+    };
+  }
+
+  // startingMode === 'guided'
+  if (!Array.isArray(sectionComponentKeys) || sectionComponentKeys.length === 0) {
+    throw invalid('sectionComponentKeys is required for the guided starting mode');
+  }
+  const sectionDefinitions = await listSectionDefinitionsForRequester(context);
+  const visibleKeys = new Set(sectionDefinitions.map((definition) => definition.componentKey));
+  const unknownKey = sectionComponentKeys.find((key) => !visibleKeys.has(key));
+  if (unknownKey) throw invalid(`Unknown or unavailable section componentKey: ${unknownKey}`, 422);
+
+  return {
+    draftSchema: buildStarterSchema(sectionDefinitions, sectionComponentKeys),
+    tokens: DEFAULT_DESIGN_TOKENS,
+    forkedFromDesignSystemId: null,
+  };
+}
+
 async function createWebsite({
-  context, projectId, name, startingMode, actorUserId,
+  context, projectId, name, startingMode, designSystemTemplateId, sectionComponentKeys, actorUserId,
 }) {
   const project = await assertProjectAccess(context, projectId);
   if (!Website.STARTING_MODES.includes(startingMode)) throw invalid(`Unknown startingMode: ${startingMode}`);
-  if (startingMode !== 'blank') throw invalid(`Starting mode '${startingMode}' is not yet available`, 422);
   if (!name?.trim()) throw invalid('name is required');
 
   const existing = await getWebsiteByProjectIdForRequester(context, project.id);
   if (existing) throw invalid('This project already has a website', 409);
+
+  const { draftSchema, tokens, forkedFromDesignSystemId } = await resolveStartingSchema({
+    context, startingMode, designSystemTemplateId, sectionComponentKeys,
+  });
 
   // Fork, never reference: a client's own DesignSystem row is created
   // fresh here (current-phase-plan.md § 2a correction) so a later edit
@@ -62,12 +128,11 @@ async function createWebsite({
     agencyOrganizationId: project.agencyOrganizationId,
     organizationId: project.organizationId,
     name: `${name} Design System`,
-    tokens: DEFAULT_DESIGN_TOKENS,
+    tokens,
     isLibraryTemplate: false,
+    forkedFromDesignSystemId,
     createdByUserId: actorUserId,
   });
-
-  const draftSchema = buildBlankSchema();
 
   const website = await Website.create({
     projectId: project.id,
@@ -113,7 +178,11 @@ async function createWebsite({
 async function authorizeAndClassifySchemaChange(context, website, newSchema) {
   const effectiveLevel = await resolveEffectiveEditingLevel(context, website.id);
 
-  const sectionDefinitions = await listSectionDefinitionsForRequester(context);
+  // includeUnpublished: existing content may reference a section whose
+  // library entry has since been deprecated (§ 2n governance is
+  // additive — it curates what's offered for *new* use, never
+  // retroactively strips classification from content already placed).
+  const sectionDefinitions = await listSectionDefinitionsForRequester(context, {}, { includeUnpublished: true });
   const sectionDefinitionsByKey = new Map(sectionDefinitions.map((definition) => [definition.componentKey, definition]));
   const { changes, structuralChange } = diffSchemaChanges(website.draftSchema, newSchema, sectionDefinitionsByKey);
 
@@ -222,7 +291,7 @@ async function compareVersions({
   const fromVersion = await getVersion(context, projectId, fromVersionId);
   const toVersion = await getVersion(context, projectId, toVersionId);
 
-  const sectionDefinitions = await listSectionDefinitionsForRequester(context);
+  const sectionDefinitions = await listSectionDefinitionsForRequester(context, {}, { includeUnpublished: true });
   const sectionDefinitionsByKey = new Map(sectionDefinitions.map((definition) => [definition.componentKey, definition]));
   const { changes, structuralChange } = diffSchemaChanges(fromVersion.schema, toVersion.schema, sectionDefinitionsByKey);
 

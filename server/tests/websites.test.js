@@ -78,7 +78,7 @@ describe('Creating a website', () => {
     expect(res.status).toBe(201);
   });
 
-  test('a non-blank startingMode is rejected as not yet available', async () => {
+  test('the template starting mode requires an explicit designSystemTemplateId (slice 8 coverage of the real assembly path lives in libraryGovernance.test.js)', async () => {
     const { agency, project } = await setupProject();
     const { user, password } = await createRoleAssignedMember(sequelize.models, { organizationId: agency.id, roleKeys: ['developer'] });
     const login = await loginAs(app, user.email, password);
@@ -86,6 +86,7 @@ describe('Creating a website', () => {
 
     const res = await auth(request(app).post(`/api/v1/projects/${project.id}/website`).send({ name: 'x', startingMode: 'template' }));
     expect(res.status).toBe(422);
+    expect(res.body.message).toMatch(/designSystemTemplateId/);
   });
 
   test('a project cannot have two websites', async () => {

@@ -294,6 +294,62 @@ function getDesignSystemByIdForRequester(context, designSystemId) {
 }
 
 /**
+ * Library-template browsing (current-phase-plan.md § 2a/§ 2n): distinct
+ * from the plain tenant-scoped accessors above, which only ever match a
+ * client's own forked instance (organizationId set) — a library
+ * template row always has organizationId: null and would never match
+ * tenantWhereForRequester's exact-agency-id check for a platform-wide
+ * (agencyOrganizationId: null) row, so this uses the same OR-scoping
+ * shape as sectionDefinitionWhereForRequester. Unlike SectionDefinition,
+ * though, § 2a is explicit that a library template is "visible only to
+ * employees... never to a client directly" — a client's own website
+ * still gets its branding via the forked DesignSystem instance, never a
+ * live read of the library row itself, so a client query here is made
+ * to match nothing rather than reusing the OR-scoped set.
+ */
+function designSystemLibraryWhereForRequester(context, extraWhere = {}) {
+  if (context.membership.membershipType === 'client') {
+    return { ...extraWhere, id: null }; // matches no row — id is a non-null PK
+  }
+  return {
+    ...extraWhere,
+    isLibraryTemplate: true,
+    [Op.or]: [{ agencyOrganizationId: null }, { agencyOrganizationId: context.organization.id }],
+  };
+}
+
+function listDesignSystemTemplatesForBrowsing(context) {
+  return DesignSystem.findAll(scoped({
+    where: designSystemLibraryWhereForRequester(context, { status: 'published' }),
+    order: [['name', 'ASC']],
+  }));
+}
+
+function getDesignSystemLibraryTemplateByIdForRequester(context, designSystemId) {
+  return DesignSystem.findOne(scoped({
+    where: designSystemLibraryWhereForRequester(context, { id: designSystemId, status: 'published' }),
+  }));
+}
+
+/**
+ * Governance surface, mirroring listSectionDefinitionsForGovernance —
+ * only an agency's own custom library templates are curatable via this
+ * API; the platform-provided base library is migration-seeded only.
+ */
+function listDesignSystemTemplatesForGovernance(context) {
+  return DesignSystem.findAll(scoped({
+    where: { agencyOrganizationId: context.organization.id, isLibraryTemplate: true },
+    order: [['name', 'ASC']],
+  }));
+}
+
+function getDesignSystemTemplateForGovernance(context, designSystemId) {
+  return DesignSystem.findOne(scoped({
+    where: { id: designSystemId, agencyOrganizationId: context.organization.id, isLibraryTemplate: true },
+  }));
+}
+
+/**
  * Website denormalizes organizationId/agencyOrganizationId directly,
  * same reasoning as Task/Message/Meeting — a Website is 1:1 with a
  * Project (current-phase-plan.md § 2b) and needs no additional
@@ -386,12 +442,43 @@ function sectionDefinitionWhereForRequester(context, extraWhere = {}) {
   };
 }
 
-function listSectionDefinitionsForRequester(context, extraWhere = {}) {
-  return SectionDefinition.findAll(scoped({ where: sectionDefinitionWhereForRequester(context, extraWhere), order: [['category', 'ASC'], ['name', 'ASC']] }));
+/**
+ * `includeUnpublished` defaults to false (published-only) — the correct
+ * default for browsing/picking a section to add to a page. Internal
+ * classification callers (schema diffing/enforcement, version compare)
+ * pass true: a section already placed in existing content must still be
+ * classified correctly even if its library entry was since deprecated,
+ * matching current-phase-plan.md § 2n's governance being additive
+ * (curating what's offered for *new* use), never retroactive.
+ */
+function listSectionDefinitionsForRequester(context, extraWhere = {}, { includeUnpublished = false } = {}) {
+  const where = sectionDefinitionWhereForRequester(context, extraWhere);
+  if (!includeUnpublished) where.status = 'published';
+  return SectionDefinition.findAll(scoped({ where, order: [['category', 'ASC'], ['name', 'ASC']] }));
 }
 
 function getSectionDefinitionByIdForRequester(context, sectionDefinitionId) {
   return SectionDefinition.findOne(scoped({ where: sectionDefinitionWhereForRequester(context, { id: sectionDefinitionId }) }));
+}
+
+/**
+ * Governance surface (current-phase-plan.md § 2n): a builder.manage
+ * holder curates only their OWN agency's custom sections — system rows
+ * (agencyOrganizationId: null) are migration-seeded and never mutable
+ * via this API, so these accessors deliberately use plain equality,
+ * not the OR-scoped browse accessor above.
+ */
+function listSectionDefinitionsForGovernance(context) {
+  return SectionDefinition.findAll(scoped({
+    where: { agencyOrganizationId: context.organization.id },
+    order: [['category', 'ASC'], ['name', 'ASC']],
+  }));
+}
+
+function getSectionDefinitionForGovernance(context, sectionDefinitionId) {
+  return SectionDefinition.findOne(scoped({
+    where: { id: sectionDefinitionId, agencyOrganizationId: context.organization.id },
+  }));
 }
 
 /**
@@ -511,6 +598,10 @@ module.exports = {
   getCancellationRequestByIdForRequester,
   listDesignSystemsForRequester,
   getDesignSystemByIdForRequester,
+  listDesignSystemTemplatesForBrowsing,
+  getDesignSystemLibraryTemplateByIdForRequester,
+  listDesignSystemTemplatesForGovernance,
+  getDesignSystemTemplateForGovernance,
   listWebsitesForRequester,
   getWebsiteByIdForRequester,
   getWebsiteByProjectIdForRequester,
@@ -520,6 +611,8 @@ module.exports = {
   pruneOldAutosaveVersions,
   listSectionDefinitionsForRequester,
   getSectionDefinitionByIdForRequester,
+  listSectionDefinitionsForGovernance,
+  getSectionDefinitionForGovernance,
   listWebsiteEditorAssignmentsForRequester,
   getWebsiteEditorAssignmentByIdForRequester,
   listWebsiteCommentsForRequester,

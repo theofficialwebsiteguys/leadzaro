@@ -2,6 +2,10 @@ const { DataTypes } = require('sequelize');
 const { installVisibilityGuard } = require('../core/authorization/visibilityGuard');
 
 const STATES = ['managed', 'extended', 'registered_custom', 'detached'];
+// Library-governance lifecycle (current-phase-plan.md § 2n) — distinct
+// from STATES above, which describes Angular-integration status (§ 2d),
+// not whether this section is currently offered for new use.
+const LIBRARY_STATUSES = ['draft', 'published', 'deprecated'];
 
 module.exports = (sequelize) => {
   const SectionDefinition = sequelize.define('SectionDefinition', {
@@ -25,10 +29,14 @@ module.exports = (sequelize) => {
     },
     previewImageUrl: { type: DataTypes.STRING(500), allowNull: true },
     isSystemDefined: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    status: {
+      type: DataTypes.STRING(20), allowNull: false, defaultValue: 'published', validate: { isIn: [LIBRARY_STATUSES] },
+    },
     createdByUserId: { type: DataTypes.UUID, allowNull: true },
   });
 
   SectionDefinition.STATES = STATES;
+  SectionDefinition.LIBRARY_STATUSES = LIBRARY_STATUSES;
 
   installVisibilityGuard(SectionDefinition);
 

@@ -4,6 +4,8 @@ export interface SectionSettingSchemaEntry {
   requiresReview: boolean;
 }
 
+export type LibraryStatus = 'draft' | 'published' | 'deprecated';
+
 export interface SectionDefinition {
   id: string;
   agencyOrganizationId: string | null;
@@ -15,4 +17,5 @@ export interface SectionDefinition {
   state: 'managed' | 'extended' | 'registered_custom' | 'detached';
   previewImageUrl: string | null;
   isSystemDefined: boolean;
+  status: LibraryStatus;
 }

@@ -13,8 +13,15 @@ export class WebsiteService {
     return this.http.get<{ data: { website: Website } }>(`/api/v1/projects/${projectId}/website`);
   }
 
-  create(projectId: string, name: string, startingMode: string): Observable<{ data: { website: Website } }> {
-    return this.http.post<{ data: { website: Website } }>(`/api/v1/projects/${projectId}/website`, { name, startingMode });
+  create(
+    projectId: string,
+    name: string,
+    startingMode: string,
+    options?: { designSystemTemplateId?: string; sectionComponentKeys?: string[] }
+  ): Observable<{ data: { website: Website } }> {
+    return this.http.post<{ data: { website: Website } }>(`/api/v1/projects/${projectId}/website`, {
+      name, startingMode, ...options,
+    });
   }
 
   saveDraft(projectId: string, draftSchema: unknown): Observable<{ data: { website: Website } }> {

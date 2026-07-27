@@ -27,6 +27,9 @@
     <button class="tab-btn" *hasPermission="'impersonation.use'" [class.active]="tab() === 'impersonation'" (click)="setTab('impersonation')">
       <lz-icon name="user" [size]="15" /> View As Client
     </button>
+    <button class="tab-btn" *hasPermission="'builder.manage'" [class.active]="tab() === 'library'" (click)="setTab('library')">
+      <lz-icon name="settings" [size]="15" /> Website Library
+    </button>
   </div>
 
   @if (tab() === 'members') {
@@ -216,6 +219,83 @@
         <button class="btn btn-ghost btn-sm" [disabled]="auditPage() >= auditTotalPages()" (click)="loadAudit(auditPage() + 1)">Next →</button>
       </div>
     }
+  }
+
+  @if (tab() === 'library') {
+    <div class="alert alert-info mb-4">
+      Curate this agency's own website-builder section and design-system template library. Platform-provided defaults are seed-managed and not editable here. A new entry starts as <strong>draft</strong> (invisible when building a site) until published; deprecating it hides it from new use without affecting sites that already use it.
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header"><strong>Section Library</strong></div>
+      <div class="card-body">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Component Key</th><th>Category</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              @for (s of sectionLibrary(); track s.id) {
+                <tr>
+                  <td class="font-medium">{{ s.name }}</td>
+                  <td class="text-sm text-muted">{{ s.componentKey }}</td>
+                  <td class="text-sm text-muted">{{ s.category }}</td>
+                  <td><span class="badge">{{ s.status }}</span></td>
+                  <td>
+                    @if (s.status !== 'published') {
+                      <button class="btn btn-sm" (click)="publishLibrarySection(s)">Publish</button>
+                    }
+                    @if (s.status !== 'deprecated') {
+                      <button class="btn btn-sm" (click)="deprecateLibrarySection(s)">Deprecate</button>
+                    }
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="5" class="text-sm text-muted">No custom sections yet.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <div class="assign-form mt-2">
+          <input class="input" placeholder="Name" [(ngModel)]="newLibrarySectionName" />
+          <input class="input" placeholder="Component key (e.g. testimonial)" [(ngModel)]="newLibrarySectionComponentKey" />
+          <input class="input" placeholder="Category" [(ngModel)]="newLibrarySectionCategory" />
+          <button class="btn btn-sm" (click)="createLibrarySection()">Add Section</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><strong>Design System Templates</strong></div>
+      <div class="card-body">
+        <p class="text-sm text-muted mb-2">Used by the 'template' website starting mode — an employee forks a published template's tokens onto a new client site.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              @for (d of designSystemLibrary(); track d.id) {
+                <tr>
+                  <td class="font-medium">{{ d.name }}</td>
+                  <td><span class="badge">{{ d.status }}</span></td>
+                  <td>
+                    @if (d.status !== 'published') {
+                      <button class="btn btn-sm" (click)="publishLibraryDesignSystemTemplate(d)">Publish</button>
+                    }
+                    @if (d.status !== 'deprecated') {
+                      <button class="btn btn-sm" (click)="deprecateLibraryDesignSystemTemplate(d)">Deprecate</button>
+                    }
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="3" class="text-sm text-muted">No custom design system templates yet.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <div class="assign-form mt-2">
+          <input class="input" placeholder="Name" [(ngModel)]="newLibraryDesignSystemName" />
+          <button class="btn btn-sm" (click)="createLibraryDesignSystemTemplate()">Add Template</button>
+        </div>
+      </div>
+    </div>
   }
 
 </div>

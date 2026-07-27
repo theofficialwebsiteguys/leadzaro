@@ -473,7 +473,38 @@
                 <div *hasPermission="'builder.edit'">
                   <p class="text-sm text-muted mb-2">This project has no website yet.</p>
                   <input class="input mb-2" placeholder="Website name" [(ngModel)]="newWebsiteName" />
-                  <button class="btn btn-secondary" (click)="createWebsite()">Create Blank Website</button>
+                  <label class="field-label">Starting mode</label>
+                  <select class="input mb-2" [(ngModel)]="newWebsiteStartingMode">
+                    <option value="blank">Blank</option>
+                    <option value="page_kit">Page kit (a single starter page)</option>
+                    <option value="guided">Guided (pick your own sections)</option>
+                    @if (org.membership()?.membershipType === 'employee') {
+                      <option value="template">Complete template</option>
+                    }
+                  </select>
+
+                  @if (newWebsiteStartingMode === 'template') {
+                    <label class="field-label">Design system template</label>
+                    <select class="input mb-2" [(ngModel)]="newWebsiteDesignSystemTemplateId">
+                      <option value="">Choose…</option>
+                      @for (t of designSystemTemplates(); track t.id) {
+                        <option [value]="t.id">{{ t.name }}</option>
+                      }
+                    </select>
+                  }
+
+                  @if (newWebsiteStartingMode === 'guided') {
+                    <label class="field-label">Sections (in the order you'd like them)</label>
+                    <div class="section-chip-list mb-2">
+                      @for (s of sectionDefinitions(); track s.componentKey) {
+                        <button type="button" class="section-chip" [class.selected]="newWebsiteGuidedComponentKeys.has(s.componentKey)" (click)="toggleGuidedComponentKey(s.componentKey)">
+                          {{ s.name }}
+                        </button>
+                      }
+                    </div>
+                  }
+
+                  <button class="btn btn-secondary" (click)="createWebsite()">Create Website</button>
                 </div>
               } @else {
                 <div class="detail-row"><span class="label">Name</span><span>{{ website()!.name }}</span></div>

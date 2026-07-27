@@ -11,10 +11,14 @@ import { RoleService, RoleOption } from '../../core/services/role.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ImpersonationCandidateService, ImpersonationCandidate } from '../../core/services/impersonation.service';
 import { Member, Invitation, AuthSessionInfo, AuditLogEntry, MembershipType } from '../../core/models/organization.model';
+import { SectionDefinitionService } from '../../core/services/sectionDefinition.service';
+import { DesignSystemTemplateService } from '../../core/services/designSystemTemplate.service';
+import { SectionDefinition } from '../../core/models/sectionDefinition.model';
+import { DesignSystemTemplate } from '../../core/models/designSystemTemplate.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 import { IconComponent } from '../../shared/icon/icon.component';
 
-type Tab = 'members' | 'invitations' | 'sessions' | 'audit' | 'impersonation';
+type Tab = 'members' | 'invitations' | 'sessions' | 'audit' | 'impersonation' | 'library';
 
 @Component({
   selector: 'app-administration',
@@ -30,6 +34,8 @@ export class AdministrationComponent implements OnInit {
   private readonly auditService = inject(AuditService);
   private readonly roleService = inject(RoleService);
   private readonly impersonationCandidateService = inject(ImpersonationCandidateService);
+  private readonly sectionDefinitionService = inject(SectionDefinitionService);
+  private readonly designSystemTemplateService = inject(DesignSystemTemplateService);
   private readonly router = inject(Router);
   readonly auth = inject(AuthService);
   readonly org = inject(OrganizationContextService);
@@ -61,6 +67,14 @@ export class AdministrationComponent implements OnInit {
   impersonationCandidates = signal<ImpersonationCandidate[]>([]);
   impersonationStarting = signal(false);
 
+  sectionLibrary = signal<SectionDefinition[]>([]);
+  newLibrarySectionName = '';
+  newLibrarySectionComponentKey = '';
+  newLibrarySectionCategory = '';
+
+  designSystemLibrary = signal<DesignSystemTemplate[]>([]);
+  newLibraryDesignSystemName = '';
+
   ngOnInit() {
     // Mirrors the tab gating in the template: land on the first tab this
     // membership actually has permission for, rather than assuming
@@ -73,6 +87,7 @@ export class AdministrationComponent implements OnInit {
     if (this.tab() === 'invitations') this.loadInvitations();
     if (this.tab() === 'audit') this.loadAudit(1);
     if (this.tab() === 'impersonation') this.loadImpersonationCandidates();
+    if (this.tab() === 'library') this.loadLibrary();
 
     this.roleService.list().subscribe((res) => {
       this.employeeRoles.set(res.data.roles.filter((r) => r.scope === 'employee'));
@@ -81,7 +96,7 @@ export class AdministrationComponent implements OnInit {
   }
 
   private availableTabs(): Tab[] {
-    return ['members', 'invitations', 'sessions', 'audit', 'impersonation'];
+    return ['members', 'invitations', 'sessions', 'audit', 'impersonation', 'library'];
   }
 
   private tabPermission(tab: Tab): string | null {
@@ -91,6 +106,7 @@ export class AdministrationComponent implements OnInit {
       sessions: null,
       audit: 'audit.view',
       impersonation: 'impersonation.use',
+      library: 'builder.manage',
     };
     return map[tab];
   }
@@ -101,6 +117,7 @@ export class AdministrationComponent implements OnInit {
     if (tab === 'sessions' && this.sessions().length === 0) this.loadSessions();
     if (tab === 'audit' && this.auditEntries().length === 0) this.loadAudit(1);
     if (tab === 'impersonation') this.loadImpersonationCandidates();
+    if (tab === 'library') this.loadLibrary();
   }
 
   loadImpersonationCandidates() {
@@ -232,5 +249,54 @@ export class AdministrationComponent implements OnInit {
 
   rolesForType(type: MembershipType): RoleOption[] {
     return type === 'employee' ? this.employeeRoles() : this.clientRoles();
+  }
+
+  loadLibrary() {
+    this.sectionDefinitionService.listForGovernance().subscribe((res) => this.sectionLibrary.set(res.data.sectionDefinitions));
+    this.designSystemTemplateService.listForGovernance().subscribe((res) => this.designSystemLibrary.set(res.data.designSystemTemplates));
+  }
+
+  createLibrarySection() {
+    if (!this.newLibrarySectionName.trim() || !this.newLibrarySectionComponentKey.trim() || !this.newLibrarySectionCategory.trim()) return;
+    this.sectionDefinitionService.create({
+      name: this.newLibrarySectionName,
+      componentKey: this.newLibrarySectionComponentKey,
+      category: this.newLibrarySectionCategory,
+    }).subscribe({
+      next: () => {
+        this.newLibrarySectionName = '';
+        this.newLibrarySectionComponentKey = '';
+        this.newLibrarySectionCategory = '';
+        this.loadLibrary();
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to create section'),
+    });
+  }
+
+  publishLibrarySection(section: SectionDefinition) {
+    this.sectionDefinitionService.publish(section.id).subscribe(() => this.loadLibrary());
+  }
+
+  deprecateLibrarySection(section: SectionDefinition) {
+    this.sectionDefinitionService.deprecate(section.id).subscribe(() => this.loadLibrary());
+  }
+
+  createLibraryDesignSystemTemplate() {
+    if (!this.newLibraryDesignSystemName.trim()) return;
+    this.designSystemTemplateService.create({ name: this.newLibraryDesignSystemName }).subscribe({
+      next: () => {
+        this.newLibraryDesignSystemName = '';
+        this.loadLibrary();
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to create design system template'),
+    });
+  }
+
+  publishLibraryDesignSystemTemplate(template: DesignSystemTemplate) {
+    this.designSystemTemplateService.publish(template.id).subscribe(() => this.loadLibrary());
+  }
+
+  deprecateLibraryDesignSystemTemplate(template: DesignSystemTemplate) {
+    this.designSystemTemplateService.deprecate(template.id).subscribe(() => this.loadLibrary());
   }
 }

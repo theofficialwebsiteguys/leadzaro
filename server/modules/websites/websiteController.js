@@ -25,6 +25,8 @@ async function createWebsite(req, res, next) {
       projectId: req.params.projectId,
       name: req.body.name,
       startingMode: req.body.startingMode,
+      designSystemTemplateId: req.body.designSystemTemplateId,
+      sectionComponentKeys: req.body.sectionComponentKeys,
       actorUserId: req.user.id,
     });
 

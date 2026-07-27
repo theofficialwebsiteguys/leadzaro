@@ -105,6 +105,29 @@
   margin-bottom: 4px;
 }
 
+.section-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.section-chip {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-light);
+  background: none;
+  font-size: .78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+
+  &.selected {
+    background: var(--primary-100);
+    border-color: var(--primary-dark);
+    color: var(--primary-dark);
+    font-weight: 500;
+  }
+}
+
 .channels-layout {
   display: flex;
   gap: 0;

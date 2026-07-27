@@ -10,6 +10,7 @@ import { FileUploadService } from '../../core/services/file.service';
 import { CancellationService } from '../../core/services/cancellation.service';
 import { WebsiteService } from '../../core/services/website.service';
 import { SectionDefinitionService } from '../../core/services/sectionDefinition.service';
+import { DesignSystemTemplateService } from '../../core/services/designSystemTemplate.service';
 import { WebsitePreviewComponent } from './website-preview/website-preview.component';
 import { MembershipService } from '../../core/services/membership.service';
 import { OrganizationContextService } from '../../core/services/organization-context.service';
@@ -26,6 +27,7 @@ import {
   Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteComment, WebsitePresenceEntry,
 } from '../../core/models/website.model';
 import { SectionDefinition } from '../../core/models/sectionDefinition.model';
+import { DesignSystemTemplate } from '../../core/models/designSystemTemplate.model';
 import { Member } from '../../core/models/organization.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 
@@ -46,6 +48,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   private readonly cancellationService = inject(CancellationService);
   private readonly websiteService = inject(WebsiteService);
   private readonly sectionDefinitionService = inject(SectionDefinitionService);
+  private readonly designSystemTemplateService = inject(DesignSystemTemplateService);
   private readonly membershipService = inject(MembershipService);
   readonly org = inject(OrganizationContextService);
 
@@ -94,6 +97,10 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   websiteLoaded = signal(false);
   websiteVersions = signal<WebsiteVersion[]>([]);
   newWebsiteName = '';
+  newWebsiteStartingMode = 'blank';
+  newWebsiteDesignSystemTemplateId = '';
+  newWebsiteGuidedComponentKeys = new Set<string>();
+  designSystemTemplates = signal<DesignSystemTemplate[]>([]);
   draftSchemaText = '';
   draftSchemaError = '';
   newCheckpointLabel = '';
@@ -153,6 +160,11 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     });
     if (this.org.hasPermission('builder.edit')) {
       this.sectionDefinitionService.list().subscribe((res) => this.sectionDefinitions.set(res.data.sectionDefinitions));
+      // Empty for a client membership (current-phase-plan.md § 2a — a
+      // library template is employee-only, never a client-visible
+      // browsing list) — the 'template' starting mode option below is
+      // hidden accordingly rather than shown and then rejected.
+      this.designSystemTemplateService.list().subscribe((res) => this.designSystemTemplates.set(res.data.designSystemTemplates));
       // A lightweight recovery safety net (current-phase-plan.md § 2c) —
       // silently snapshots the current draft every 30s while a website
       // is loaded; the server prunes old autosave rows automatically.
@@ -528,13 +540,41 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.websiteService.listVersions(projectId).subscribe((res) => this.websiteVersions.set(res.data.versions));
   }
 
+  toggleGuidedComponentKey(componentKey: string) {
+    if (this.newWebsiteGuidedComponentKeys.has(componentKey)) this.newWebsiteGuidedComponentKeys.delete(componentKey);
+    else this.newWebsiteGuidedComponentKeys.add(componentKey);
+  }
+
   createWebsite() {
     const id = this.selectedId();
     if (!id || !this.newWebsiteName.trim()) return;
-    this.websiteService.create(id, this.newWebsiteName, 'blank').subscribe(() => {
-      this.newWebsiteName = '';
-      this.loadWebsite(id);
-      this.actionMessage.set('Website created');
+
+    const options: { designSystemTemplateId?: string; sectionComponentKeys?: string[] } = {};
+    if (this.newWebsiteStartingMode === 'template') {
+      if (!this.newWebsiteDesignSystemTemplateId) {
+        this.actionMessage.set('Choose a design system template first');
+        return;
+      }
+      options.designSystemTemplateId = this.newWebsiteDesignSystemTemplateId;
+    }
+    if (this.newWebsiteStartingMode === 'guided') {
+      if (this.newWebsiteGuidedComponentKeys.size === 0) {
+        this.actionMessage.set('Choose at least one section first');
+        return;
+      }
+      options.sectionComponentKeys = Array.from(this.newWebsiteGuidedComponentKeys);
+    }
+
+    this.websiteService.create(id, this.newWebsiteName, this.newWebsiteStartingMode, options).subscribe({
+      next: () => {
+        this.newWebsiteName = '';
+        this.newWebsiteStartingMode = 'blank';
+        this.newWebsiteDesignSystemTemplateId = '';
+        this.newWebsiteGuidedComponentKeys.clear();
+        this.loadWebsite(id);
+        this.actionMessage.set('Website created');
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to create website'),
     });
   }
 
