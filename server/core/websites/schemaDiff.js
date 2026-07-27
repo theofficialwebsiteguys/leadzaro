@@ -9,6 +9,31 @@ function sectionsSignature(sections) {
 }
 
 /**
+ * Diffs one of the two website-global content scopes (current-phase-
+ * plan.md § 2f: siteSettings, organizationContent — as distinct from
+ * page/section content). Every changed key here is classified
+ * 'professional' + requiresReview: true unconditionally, never looked
+ * up per-key — architecture § 13 names "design, navigation... legal
+ * copy" as requiring review regardless of who's editing, and these two
+ * maps are precisely the cross-page, not-scoped-to-any-one-section
+ * content architecture § 13 is describing (e.g. business NAP data,
+ * site-wide header/footer content).
+ */
+function diffGlobalContentScope(oldSchema, newSchema, scope) {
+  const oldBucket = oldSchema?.[scope] || {};
+  const newBucket = newSchema?.[scope] || {};
+  const keys = new Set([...Object.keys(oldBucket), ...Object.keys(newBucket)]);
+  const changes = [];
+  for (const key of keys) {
+    if (JSON.stringify(oldBucket[key]) === JSON.stringify(newBucket[key])) continue;
+    changes.push({
+      scope, key, editingLevel: 'professional', requiresReview: true,
+    });
+  }
+  return changes;
+}
+
+/**
  * Compares an old and new draftSchema and classifies every actual
  * change against each section's own SectionDefinition.settingsSchema
  * (current-phase-plan.md § 2e's per-property editing-level design —
@@ -23,10 +48,15 @@ function sectionsSignature(sections) {
  * section list added/removed/reordered) is always requiresReview and
  * requires at least 'professional', regardless of any single property's
  * own tag, since it isn't a property of any one section — reported
- * separately from the per-property change list.
+ * separately from the per-property change list. siteSettings/
+ * organizationContent changes (§ 2f) are diffed the same way, always
+ * at 'professional'/requiresReview — see diffGlobalContentScope.
  */
 function diffSchemaChanges(oldSchema, newSchema, sectionDefinitionsByKey) {
-  const changes = [];
+  const changes = [
+    ...diffGlobalContentScope(oldSchema, newSchema, 'siteSettings'),
+    ...diffGlobalContentScope(oldSchema, newSchema, 'organizationContent'),
+  ];
   let structuralChange = false;
 
   const oldPages = oldSchema?.pages || [];
@@ -54,6 +84,7 @@ function diffSchemaChanges(oldSchema, newSchema, sectionDefinitionsByKey) {
           if (JSON.stringify(oldBucket[key]) === JSON.stringify(newBucket[key])) continue;
           const entry = definition?.settingsSchema?.[key];
           changes.push({
+            scope: 'section',
             pageId: newPage.id,
             sectionId: newSection.id,
             key,

@@ -56,4 +56,8 @@ export class WebsiteService {
       params: { from: fromVersionId, to: toVersionId },
     });
   }
+
+  submitTestForm(projectId: string, pageId: string, sectionId: string, values: unknown): Observable<{ data: { clientRequest: { id: string; category: string } } }> {
+    return this.http.post<{ data: { clientRequest: { id: string; category: string } } }>(`/api/v1/projects/${projectId}/website/forms/test-submit`, { pageId, sectionId, values });
+  }
 }

@@ -31,6 +31,11 @@ router.post('/versions/autosave', requirePermission('builder.edit'), controller.
 router.post('/versions/:versionId/restore', requirePermission('builder.edit'), controller.restoreVersion);
 router.post('/versions/:versionId/publish', requirePermission('builder.publish'), controller.publishVersion);
 
+router.post('/forms/test-submit', requirePermission('builder.edit'), [
+  body('pageId').notEmpty(),
+  body('sectionId').notEmpty(),
+], validate, controller.submitTestForm);
+
 router.get('/editors', requirePermission('builder.manage'), editorAssignmentController.list);
 router.post('/editors', requirePermission('builder.manage'), [
   body('userId').notEmpty(),

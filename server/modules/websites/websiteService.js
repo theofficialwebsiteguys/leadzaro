@@ -9,6 +9,7 @@ const {
 const { DEFAULT_DESIGN_TOKENS, buildBlankSchema } = require('../../core/websites/websiteCatalog');
 const { resolveEffectiveEditingLevel, levelSatisfies } = require('../../core/websites/editingLevel');
 const { diffSchemaChanges } = require('../../core/websites/schemaDiff');
+const requestService = require('../requests/requestService');
 
 // Named checkpoints and published versions are never pruned — only the
 // autosave trail is bounded, so a website with heavy churn doesn't grow
@@ -234,6 +235,45 @@ async function compareVersions({
 }
 
 /**
+ * The form builder's one real submit target this phase wires up end-
+ * to-end (current-phase-plan.md § 2j): a 'form' section's fields are
+ * defined in its own content, submitTarget selects where a submission
+ * goes. 'client_request' reuses Phase 4's existing ClientRequest
+ * machinery directly rather than inventing new submission-storage
+ * plumbing — a form response becomes a real, agency-visible ClientRequest
+ * (category 'form') with the submitted field values as its description.
+ *
+ * This is deliberately an authenticated builder-context test submission
+ * (builder.edit-gated, called from within the app), not a real public-
+ * visitor submission — this phase has no live-hosted, publicly
+ * reachable rendering of a website at all (that's Phase 6 code
+ * generation + Phase 7 hosting); it proves the wiring is correct end-
+ * to-end so a later phase's real public submission path has a known-
+ * working target to call into, not a placeholder.
+ */
+async function submitTestForm({
+  context, projectId, pageId, sectionId, values, submittedByUserId,
+}) {
+  const website = await getWebsite(context, projectId);
+  const page = (website.draftSchema?.pages || []).find((p) => p.id === pageId);
+  const section = page?.sections?.find((s) => s.id === sectionId);
+  if (!section || section.componentKey !== 'form') throw invalid('Form section not found on this page', 404);
+
+  const submitTarget = section.content?.submitTarget;
+  if (!submitTarget || submitTarget.type !== 'client_request') {
+    throw invalid('This form has no client_request submitTarget configured', 422);
+  }
+
+  return requestService.createRequest({
+    context,
+    projectId,
+    category: 'form',
+    description: JSON.stringify(values || {}),
+    submittedByUserId,
+  });
+}
+
+/**
  * builder.publish only (route-gated) — collapses "approve" and
  * "publish" into one action for this foundation phase rather than
  * requiring a separate approval step; the trusted senior roles that
@@ -295,4 +335,5 @@ module.exports = {
   compareVersions,
   restoreVersion,
   publishVersion,
+  submitTestForm,
 };

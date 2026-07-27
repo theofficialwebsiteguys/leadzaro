@@ -581,6 +581,20 @@
                   </div>
                 }
 
+                <div class="mt-2" *hasPermission="'builder.edit'">
+                  <label class="field-label">Test Submit a Form Section</label>
+                  <p class="text-sm text-muted mb-2">Simulates a visitor filling out a 'form' section — creates a real Client Request. Real public submissions arrive once the site is actually hosted (Phase 7).</p>
+                  <div class="assign-form">
+                    <input class="input" placeholder="Page ID" [(ngModel)]="testFormPageId" />
+                    <input class="input" placeholder="Section ID" [(ngModel)]="testFormSectionId" />
+                  </div>
+                  <textarea class="input mb-2 mt-2" rows="2" placeholder='{"email": "test@example.com"}' [(ngModel)]="testFormValuesText"></textarea>
+                  <button class="btn btn-sm" (click)="submitTestForm()">Test Submit</button>
+                  @if (testFormResult()) {
+                    <div class="alert alert-info mt-2">{{ testFormResult() }}</div>
+                  }
+                </div>
+
                 <div *hasPermission="'builder.manage'" class="mt-2">
                   <label class="field-label">Editor Access</label>
                   <div class="table-wrap">

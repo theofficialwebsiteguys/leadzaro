@@ -105,6 +105,10 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   compareFromVersionId = '';
   compareToVersionId = '';
   compareResult = signal<{ structuralChange: boolean; changes: Array<{ key: string; editingLevel: string; requiresReview: boolean }> } | null>(null);
+  testFormPageId = 'page_home';
+  testFormSectionId = '';
+  testFormValuesText = '{}';
+  testFormResult = signal<string | null>(null);
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -178,6 +182,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.websiteVersions.set([]);
     this.websiteEditors.set([]);
     this.compareResult.set(null);
+    this.testFormResult.set(null);
     this.projectService.getById(id).subscribe((res) => {
       this.selected.set(res.data.project);
       this.stageTarget = res.data.project.stage;
@@ -577,6 +582,23 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.websiteService.compareVersions(id, this.compareFromVersionId, this.compareToVersionId).subscribe({
       next: (res) => this.compareResult.set(res.data.comparison),
       error: (err) => this.actionMessage.set(err.error?.message || 'Failed to compare versions'),
+    });
+  }
+
+  submitTestForm() {
+    const id = this.selectedId();
+    if (!id || !this.testFormSectionId.trim()) return;
+    this.testFormResult.set(null);
+    let values: unknown;
+    try {
+      values = JSON.parse(this.testFormValuesText);
+    } catch {
+      this.testFormResult.set('Invalid JSON in values');
+      return;
+    }
+    this.websiteService.submitTestForm(id, this.testFormPageId, this.testFormSectionId, values).subscribe({
+      next: (res) => this.testFormResult.set(`Created client request (category: ${res.data.clientRequest.category})`),
+      error: (err) => this.testFormResult.set(err.error?.message || 'Test submission failed'),
     });
   }
 

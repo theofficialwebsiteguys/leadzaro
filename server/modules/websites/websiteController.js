@@ -160,6 +160,33 @@ async function publishVersion(req, res, next) {
   }
 }
 
+async function submitTestForm(req, res, next) {
+  try {
+    const clientRequest = await websiteService.submitTestForm({
+      context: req.context,
+      projectId: req.params.projectId,
+      pageId: req.body.pageId,
+      sectionId: req.body.sectionId,
+      values: req.body.values,
+      submittedByUserId: req.user.id,
+    });
+
+    await recordAudit({
+      organizationId: req.context.organization.id,
+      actorUserId: req.user.id,
+      action: 'website.form_test_submitted',
+      targetType: 'ClientRequest',
+      targetId: clientRequest.id,
+      metadata: { pageId: req.body.pageId, sectionId: req.body.sectionId },
+      req,
+    });
+
+    return success(res, { clientRequest }, 'Test submission created', 201);
+  } catch (err) {
+    handleServiceError(err, res, next);
+  }
+}
+
 module.exports = {
   getWebsite,
   createWebsite,
@@ -171,4 +198,5 @@ module.exports = {
   compareVersions,
   restoreVersion,
   publishVersion,
+  submitTestForm,
 };
