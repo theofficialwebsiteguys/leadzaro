@@ -24,6 +24,7 @@ const seoRedirectController = require('./seoRedirectController');
 const seoAuditController = require('./seoAuditController');
 const seoTaskCycleController = require('./seoTaskCycleController');
 const seoDashboardController = require('./seoDashboardController');
+const seoSearchConsoleController = require('./seoSearchConsoleController');
 
 router.use(authenticate, resolveContext());
 
@@ -161,5 +162,9 @@ router.post('/seo/task-cycles', requirePermission('builder.manage'), [
 router.get('/seo/task-cycles', requirePermission('builder.manage'), seoTaskCycleController.list);
 
 router.get('/seo/dashboard', requirePermission('projects.view'), seoDashboardController.get);
+
+router.post('/seo/search-console', requirePermission('builder.manage'), [
+  body('propertyUrl').optional({ values: 'falsy' }).isLength({ max: 500 }),
+], validate, seoSearchConsoleController.set);
 
 module.exports = router;
