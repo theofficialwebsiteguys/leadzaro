@@ -22,6 +22,7 @@ const exportController = require('./websiteExportController');
 const seoPageSettingsController = require('./seoPageSettingsController');
 const seoRedirectController = require('./seoRedirectController');
 const seoAuditController = require('./seoAuditController');
+const seoTaskCycleController = require('./seoTaskCycleController');
 
 router.use(authenticate, resolveContext());
 
@@ -152,5 +153,10 @@ router.post('/seo/audits', requirePermission('builder.manage'), [
 ], validate, seoAuditController.run);
 router.get('/seo/audits', requirePermission('builder.manage'), seoAuditController.list);
 router.get('/seo/audits/:auditId', requirePermission('builder.manage'), seoAuditController.get);
+
+router.post('/seo/task-cycles', requirePermission('builder.manage'), [
+  body('cyclePeriod').optional({ values: 'falsy' }).matches(/^\d{4}-\d{2}$/),
+], validate, seoTaskCycleController.generate);
+router.get('/seo/task-cycles', requirePermission('builder.manage'), seoTaskCycleController.list);
 
 module.exports = router;

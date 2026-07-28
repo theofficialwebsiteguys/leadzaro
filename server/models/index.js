@@ -68,6 +68,7 @@ const SeoEntitlementGrant = require('./SeoEntitlementGrant')(sequelize);
 const WebsitePageSeoSettings = require('./WebsitePageSeoSettings')(sequelize);
 const WebsiteRedirect = require('./WebsiteRedirect')(sequelize);
 const WebsiteSeoAudit = require('./WebsiteSeoAudit')(sequelize);
+const SeoTaskCycle = require('./SeoTaskCycle')(sequelize);
 
 const models = {
   User,
@@ -133,6 +134,7 @@ const models = {
   WebsitePageSeoSettings,
   WebsiteRedirect,
   WebsiteSeoAudit,
+  SeoTaskCycle,
 };
 
 // Run associations

@@ -19,7 +19,7 @@ const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
   DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
   WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
-  WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsEvent, SeoEntitlementGrant, WebsitePageSeoSettings, WebsiteRedirect, WebsiteSeoAudit,
+  WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsEvent, SeoEntitlementGrant, WebsitePageSeoSettings, WebsiteRedirect, WebsiteSeoAudit, SeoTaskCycle,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -694,6 +694,20 @@ function getWebsiteSeoAuditByIdForRequester(context, auditId) {
   return WebsiteSeoAudit.findOne(scoped({ where: tenantWhereForRequester(context, { id: auditId }) }));
 }
 
+/**
+ * SeoTaskCycle (current-phase-plan.md § 2d) — employee-only.
+ */
+function assertEmployeeContextForSeoTaskCycle(context) {
+  if (context.membership.membershipType === 'client') {
+    throw new Error('SeoTaskCycle is never reachable by a client-membership request');
+  }
+}
+
+function listSeoTaskCyclesForRequester(context, extraWhere = {}) {
+  assertEmployeeContextForSeoTaskCycle(context);
+  return SeoTaskCycle.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), order: [['createdAt', 'DESC']] }));
+}
+
 async function getWebsiteAnalyticsSummaryForRequester(context, websiteId, { rangeDays = 30 } = {}) {
   const since = new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000);
   const rows = await WebsiteAnalyticsEvent.findAll(scoped({
@@ -972,6 +986,7 @@ module.exports = {
   getWebsiteRedirectByIdForRequester,
   listWebsiteSeoAuditsForRequester,
   getWebsiteSeoAuditByIdForRequester,
+  listSeoTaskCyclesForRequester,
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,
