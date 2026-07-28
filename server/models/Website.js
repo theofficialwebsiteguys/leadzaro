@@ -25,6 +25,13 @@ module.exports = (sequelize) => {
     },
     currentPublishedVersionId: { type: DataTypes.UUID, allowNull: true },
     draftHasPendingReviewChanges: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    // Phase 7 (current-phase-plan.md § 2b) — which WebsiteDeployment is
+    // actually serving live production hosting right now. A different
+    // concept from currentPublishedVersionId (the design-review
+    // "approved" pointer): this is set ONLY on a successful production
+    // deploy and is never touched on a failed/rolled-back attempt, so
+    // it always agrees with whatever build is genuinely live.
+    currentLiveProductionDeploymentId: { type: DataTypes.UUID, allowNull: true },
     createdByUserId: { type: DataTypes.UUID, allowNull: true },
   });
 

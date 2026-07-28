@@ -14,6 +14,8 @@ const codegenController = require('./websiteCodegenController');
 const deploymentController = require('./websiteDeploymentController');
 const developmentHandoffController = require('./websiteDevelopmentHandoffController');
 const mergeBackController = require('./websiteMergeBackController');
+const domainController = require('./websiteDomainController');
+const productionDeployController = require('./productionDeployController');
 
 router.use(authenticate, resolveContext());
 
@@ -80,5 +82,27 @@ router.post('/versions/:versionId/promote-to-development', requirePermission('bu
 router.post('/merge-back', requirePermission('builder.develop'), [
   body('branchName').notEmpty(),
 ], validate, mergeBackController.mergeBack);
+
+router.get('/domain', requirePermission('builder.manage'), domainController.get);
+router.post('/domain/check-availability', requirePermission('builder.manage'), [
+  body('domain').notEmpty(),
+], validate, domainController.checkAvailability);
+router.post('/domain/register', requirePermission('builder.manage'), [
+  body('domain').notEmpty(),
+], validate, domainController.register);
+router.post('/domain/dns-records', requirePermission('builder.manage'), [
+  body('records').isArray(),
+], validate, domainController.updateDns);
+router.post('/domain/map-document-root', requirePermission('builder.manage'), [
+  body('path').notEmpty(),
+], validate, domainController.mapDocumentRoot);
+
+router.get('/production-deployments', requirePermission('builder.manage'), productionDeployController.listDeployments);
+// /production-deployments/current must be registered before the
+// /production-deployments/:deploymentId wildcard below — same ordering
+// reason as /versions/compare above.
+router.get('/production-deployments/current', requirePermission('builder.manage'), productionDeployController.getCurrentLive);
+router.get('/production-deployments/:deploymentId', requirePermission('builder.manage'), productionDeployController.getDeployment);
+router.post('/versions/:versionId/deploy-production', requirePermission('builder.manage'), productionDeployController.deploy);
 
 module.exports = router;

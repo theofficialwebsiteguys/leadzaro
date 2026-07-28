@@ -17,6 +17,7 @@ const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
   DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
   WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
+  WebsiteDomain,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -442,6 +443,44 @@ function getWebsiteDevelopmentHandoffByIdForRequester(context, handoffId) {
 }
 
 /**
+ * WebsiteDomain (current-phase-plan.md § 2d) — employee-only, full row,
+ * decided explicitly during the pre-implementation review rather than a
+ * partial-field client-visibility branch (registrar/DNS internals are
+ * sensitive; expiresAt/autoRenew are billing-adjacent). Same reasoning
+ * as WebsiteDeployment/WebsiteDevelopmentHandoff above.
+ */
+function assertEmployeeContextForDomain(context) {
+  if (context.membership.membershipType === 'client') {
+    throw new Error('WebsiteDomain is never reachable by a client-membership request');
+  }
+}
+
+function getWebsiteDomainForRequester(context, websiteId) {
+  assertEmployeeContextForDomain(context);
+  return WebsiteDomain.findOne(scoped({ where: tenantWhereForRequester(context, { websiteId }) }));
+}
+
+function listWebsiteDomainsForRequester(context, extraWhere = {}) {
+  assertEmployeeContextForDomain(context);
+  return WebsiteDomain.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), order: [['createdAt', 'DESC']] }));
+}
+
+async function findOrCreateWebsiteDomainForRequester(context, website, domain) {
+  assertEmployeeContextForDomain(context);
+  const [record] = await WebsiteDomain.findOrCreate(scoped({
+    where: { websiteId: website.id },
+    defaults: {
+      websiteId: website.id,
+      organizationId: website.organizationId,
+      agencyOrganizationId: website.agencyOrganizationId,
+      domain,
+      createdByUserId: context.user.id,
+    },
+  }));
+  return record;
+}
+
+/**
  * WebsiteVersion's visibility is NOT just tenant scoping — a client
  * membership must never see another user's in-progress draft/autosave
  * work (e.g. a designer's unfinished changes), only the currently
@@ -684,6 +723,9 @@ module.exports = {
   getWebsiteDeploymentByIdForRequester,
   listWebsiteDevelopmentHandoffsForRequester,
   getWebsiteDevelopmentHandoffByIdForRequester,
+  getWebsiteDomainForRequester,
+  listWebsiteDomainsForRequester,
+  findOrCreateWebsiteDomainForRequester,
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,

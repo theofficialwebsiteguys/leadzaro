@@ -95,6 +95,8 @@ function validateEnv() {
   checkLiveProviderCredentials(errors, { providerEnvVar: 'GOOGLE_CALENDAR_PROVIDER', defaultProvider, requiredVars: ['GOOGLE_CALENDAR_CREDENTIALS_JSON'] });
   checkLiveProviderCredentials(errors, { providerEnvVar: 'STORAGE_PROVIDER', defaultProvider, requiredVars: ['GCS_CREDENTIALS_JSON', 'GCS_BUCKET_NAME'] });
   checkLiveProviderCredentials(errors, { providerEnvVar: 'GITHUB_PROVIDER', defaultProvider, requiredVars: ['GITHUB_APP_CREDENTIALS_JSON', 'GITHUB_ORG'] });
+  checkLiveProviderCredentials(errors, { providerEnvVar: 'NAMECHEAP_PROVIDER', defaultProvider, requiredVars: ['NAMECHEAP_API_CREDENTIALS_JSON'] });
+  checkLiveProviderCredentials(errors, { providerEnvVar: 'CPANEL_PROVIDER', defaultProvider, requiredVars: ['CPANEL_API_CREDENTIALS_JSON'] });
 
   if (warnings.length) {
     for (const w of warnings) {
@@ -176,6 +178,26 @@ const env = {
   GITHUB_PROVIDER: process.env.GITHUB_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
   GITHUB_APP_CREDENTIALS_JSON: process.env.GITHUB_APP_CREDENTIALS_JSON || '',
   GITHUB_ORG: process.env.GITHUB_ORG || '',
+
+  // No real Namecheap API credentials exist yet (Phase 7 — domain
+  // registration, DNS records, renewal, transfer). Same reasoning as
+  // every other provider above: mock in dev (a full in-memory domain
+  // registry to build and test the domain-management workflow against),
+  // disabled in production unless explicitly opted into — never
+  // actually register a domain or change live DNS from this codebase
+  // (CLAUDE.md rule 8).
+  NAMECHEAP_PROVIDER: process.env.NAMECHEAP_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
+  NAMECHEAP_API_CREDENTIALS_JSON: process.env.NAMECHEAP_API_CREDENTIALS_JSON || '',
+
+  // No real cPanel API credentials exist yet (Phase 7 — shared-hosting
+  // upload, document-root mapping, backup/restore, health checks). Same
+  // reasoning as every other provider above: mock in dev (a full
+  // in-memory hosting-account simulation to build and test the
+  // production deploy/rollback pipeline against), disabled in
+  // production unless explicitly opted into — never actually upload to
+  // a real cPanel account from this codebase (CLAUDE.md rule 8).
+  CPANEL_PROVIDER: process.env.CPANEL_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
+  CPANEL_API_CREDENTIALS_JSON: process.env.CPANEL_API_CREDENTIALS_JSON || '',
 };
 
 module.exports = { env, validateEnv };

@@ -2,7 +2,7 @@ const { DataTypes } = require('sequelize');
 const { installVisibilityGuard } = require('../core/authorization/visibilityGuard');
 
 const ENVIRONMENTS = ['preview', 'production'];
-const STATUSES = ['pending', 'building', 'live', 'failed'];
+const STATUSES = ['pending', 'building', 'live', 'failed', 'rolled_back', 'rollback_failed'];
 
 module.exports = (sequelize) => {
   const WebsiteDeployment = sequelize.define('WebsiteDeployment', {
@@ -29,6 +29,14 @@ module.exports = (sequelize) => {
       type: DataTypes.STRING(20), allowNull: false, defaultValue: 'pending', validate: { isIn: [STATUSES] },
     },
     deployedByUserId: { type: DataTypes.UUID, allowNull: true },
+    // Production only (current-phase-plan.md § 2b) — a snapshot of
+    // Website.currentLiveProductionDeploymentId at the moment this
+    // attempt started, so every attempt has an explicit, queryable
+    // predecessor; and the cPanel adapter's own backup id for this
+    // attempt. Both null for preview deploys, which never back up or
+    // roll back.
+    previousLiveDeploymentId: { type: DataTypes.UUID, allowNull: true },
+    backupRef: { type: DataTypes.STRING(255), allowNull: true },
   });
 
   WebsiteDeployment.ENVIRONMENTS = ENVIRONMENTS;
@@ -37,6 +45,7 @@ module.exports = (sequelize) => {
   WebsiteDeployment.associate = (models) => {
     WebsiteDeployment.belongsTo(models.Website, { foreignKey: 'websiteId', as: 'website' });
     WebsiteDeployment.belongsTo(models.WebsiteVersion, { foreignKey: 'websiteVersionId', as: 'websiteVersion' });
+    WebsiteDeployment.belongsTo(models.WebsiteDeployment, { foreignKey: 'previousLiveDeploymentId', as: 'previousLiveDeployment' });
   };
 
   installVisibilityGuard(WebsiteDeployment);
