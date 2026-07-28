@@ -9,6 +9,7 @@ import { MeetingService } from '../../core/services/meeting.service';
 import { FileUploadService } from '../../core/services/file.service';
 import { CancellationService } from '../../core/services/cancellation.service';
 import { WebsiteService } from '../../core/services/website.service';
+import { SeoService } from '../../core/services/seo.service';
 import { SectionDefinitionService } from '../../core/services/sectionDefinition.service';
 import { DesignSystemTemplateService } from '../../core/services/designSystemTemplate.service';
 import { WebsitePreviewComponent } from './website-preview/website-preview.component';
@@ -30,6 +31,9 @@ import {
 import { SectionDefinition } from '../../core/models/sectionDefinition.model';
 import { DesignSystemTemplate } from '../../core/models/designSystemTemplate.model';
 import { Member } from '../../core/models/organization.model';
+import {
+  SeoPageListEntry, WebsiteRedirect, WebsiteSeoAudit, SeoTaskCycle, SeoDashboard, WebsitePageSeoSettings,
+} from '../../core/models/seo.model';
 import { HasPermissionDirective } from '../../core/directives/has-permission.directive';
 
 @Component({
@@ -48,6 +52,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   private readonly fileService = inject(FileUploadService);
   private readonly cancellationService = inject(CancellationService);
   private readonly websiteService = inject(WebsiteService);
+  private readonly seoService = inject(SeoService);
   private readonly sectionDefinitionService = inject(SectionDefinitionService);
   private readonly designSystemTemplateService = inject(DesignSystemTemplateService);
   private readonly membershipService = inject(MembershipService);
@@ -147,6 +152,19 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   newGoogleAnalyticsMeasurementId = '';
   exportedBundle = signal<WebsiteExportBundle | null>(null);
   exportingWebsite = signal(false);
+
+  // Phase 8 — Premium SEO and Advanced Services
+  seoDashboard = signal<SeoDashboard | null>(null);
+  seoPages = signal<SeoPageListEntry[]>([]);
+  seoPageEdits: Record<string, { metaTitle: string; metaDescription: string; robotsDirective: WebsitePageSeoSettings['robotsDirective'] }> = {};
+  seoRedirects = signal<WebsiteRedirect[]>([]);
+  newRedirectFromPath = '';
+  newRedirectToPath = '';
+  seoAudits = signal<WebsiteSeoAudit[]>([]);
+  runningSeoAudit = signal(false);
+  seoTaskCycles = signal<SeoTaskCycle[]>([]);
+  newSearchConsolePropertyUrl = '';
+  seoEntitlementReason = '';
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -248,6 +266,12 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.publicFormSubmissions.set([]);
     this.analyticsSummary.set([]);
     this.exportedBundle.set(null);
+    this.seoDashboard.set(null);
+    this.seoPages.set([]);
+    this.seoPageEdits = {};
+    this.seoRedirects.set([]);
+    this.seoAudits.set([]);
+    this.seoTaskCycles.set([]);
     this.projectService.getById(id).subscribe((res) => {
       this.selected.set(res.data.project);
       this.stageTarget = res.data.project.stage;
@@ -570,6 +594,9 @@ export class ProjectsComponent implements OnInit, OnDestroy {
           this.loadCurrentLiveDeployment(projectId);
           this.loadPublicFormSubmissions(projectId);
           this.loadAnalyticsSummary(projectId);
+        }
+        if (this.org.hasPermission('projects.view')) {
+          this.loadSeoDashboard(projectId);
         }
       },
       error: () => {
@@ -959,6 +986,139 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     link.download = `${bundle.website.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-export-v${bundle.version.versionNumber}.json`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  // --- Phase 8: Premium SEO and Advanced Services ---
+
+  loadSeoDashboard(projectId: string) {
+    this.seoService.getDashboard(projectId).subscribe((res) => {
+      this.seoDashboard.set(res.data.dashboard);
+      if (res.data.dashboard.entitled && this.org.hasPermission('builder.manage')) {
+        this.loadSeoPages(projectId);
+        this.loadSeoRedirects(projectId);
+        this.loadSeoAudits(projectId);
+        this.loadSeoTaskCycles(projectId);
+      }
+    });
+  }
+
+  grantSeoEntitlement() {
+    const project = this.selected();
+    const id = this.selectedId();
+    if (!id || !project || !this.seoEntitlementReason.trim()) return;
+    this.seoService.grantEntitlement(project.organizationId, this.seoEntitlementReason).subscribe({
+      next: () => {
+        this.seoEntitlementReason = '';
+        this.actionMessage.set('SEO entitlement granted');
+        this.loadSeoDashboard(id);
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to grant SEO entitlement'),
+    });
+  }
+
+  loadSeoPages(projectId: string) {
+    this.seoService.listPageSettings(projectId).subscribe((res) => {
+      this.seoPages.set(res.data.pages);
+      for (const page of res.data.pages) {
+        this.seoPageEdits[page.pageId] = {
+          metaTitle: page.seoSettings?.metaTitle || '',
+          metaDescription: page.seoSettings?.metaDescription || '',
+          robotsDirective: page.seoSettings?.robotsDirective || 'index,follow',
+        };
+      }
+    });
+  }
+
+  saveSeoPageSettings(pageId: string) {
+    const id = this.selectedId();
+    const edit = this.seoPageEdits[pageId];
+    if (!id || !edit) return;
+    this.seoService.upsertPageSettings(id, pageId, edit).subscribe({
+      next: () => {
+        this.actionMessage.set('Page SEO settings saved');
+        this.loadSeoPages(id);
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to save page SEO settings'),
+    });
+  }
+
+  loadSeoRedirects(projectId: string) {
+    this.seoService.listRedirects(projectId).subscribe((res) => this.seoRedirects.set(res.data.redirects));
+  }
+
+  createSeoRedirect() {
+    const id = this.selectedId();
+    if (!id || !this.newRedirectFromPath.trim() || !this.newRedirectToPath.trim()) return;
+    this.seoService.createRedirect(id, this.newRedirectFromPath, this.newRedirectToPath).subscribe({
+      next: () => {
+        this.newRedirectFromPath = '';
+        this.newRedirectToPath = '';
+        this.actionMessage.set('Redirect created');
+        this.loadSeoRedirects(id);
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to create redirect'),
+    });
+  }
+
+  deleteSeoRedirect(redirect: WebsiteRedirect) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.seoService.deleteRedirect(id, redirect.id).subscribe(() => this.loadSeoRedirects(id));
+  }
+
+  loadSeoAudits(projectId: string) {
+    this.seoService.listAudits(projectId).subscribe((res) => this.seoAudits.set(res.data.audits));
+  }
+
+  countSeoFindings(audit: WebsiteSeoAudit, severity: 'error' | 'warning'): number {
+    return (audit.findings || []).filter((f) => f.severity === severity).length;
+  }
+
+  runSeoAudit(version: WebsiteVersion) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.runningSeoAudit.set(true);
+    this.seoService.runAudit(id, version.id).subscribe({
+      next: (res) => {
+        this.actionMessage.set(res.message);
+        this.runningSeoAudit.set(false);
+        this.loadSeoAudits(id);
+        this.loadSeoDashboard(id);
+      },
+      error: (err) => {
+        this.actionMessage.set(err.error?.message || 'Failed to run SEO audit');
+        this.runningSeoAudit.set(false);
+      },
+    });
+  }
+
+  loadSeoTaskCycles(projectId: string) {
+    this.seoService.listTaskCycles(projectId).subscribe((res) => this.seoTaskCycles.set(res.data.cycles));
+  }
+
+  generateSeoTaskCycle() {
+    const id = this.selectedId();
+    if (!id) return;
+    this.seoService.generateTaskCycle(id).subscribe({
+      next: (res) => {
+        this.actionMessage.set(res.message);
+        this.loadSeoTaskCycles(id);
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to generate SEO task cycle'),
+    });
+  }
+
+  connectSearchConsole() {
+    const id = this.selectedId();
+    if (!id || !this.newSearchConsolePropertyUrl.trim()) return;
+    this.seoService.setSearchConsoleProperty(id, this.newSearchConsolePropertyUrl).subscribe({
+      next: () => {
+        this.newSearchConsolePropertyUrl = '';
+        this.actionMessage.set('Google Search Console connection updated');
+        this.loadSeoDashboard(id);
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to connect Search Console'),
+    });
   }
 
   provisionWebsiteRepository() {

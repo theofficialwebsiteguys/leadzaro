@@ -580,6 +580,9 @@
                                 {{ deployingToProduction() ? 'Deploying…' : 'Deploy to Production' }}
                               </button>
                               <button class="btn btn-sm" *hasPermission="'builder.manage'" [disabled]="exportingWebsite()" (click)="exportWebsite(v)">Export</button>
+                              @if (seoDashboard()?.entitled) {
+                                <button class="btn btn-sm" *hasPermission="'builder.manage'" [disabled]="runningSeoAudit()" (click)="runSeoAudit(v)">Run SEO Audit</button>
+                              }
                             </td>
                           </tr>
                         }
@@ -860,6 +863,116 @@
                     <label class="field-label">Export Ready</label>
                     <p class="text-sm text-muted mb-2">{{ bundle.files.length }} file(s) exported at {{ bundle.exportedAt | date:'MMM d, y, h:mm a' }}.</p>
                     <button class="btn btn-sm" (click)="downloadExportedBundle()">Download JSON</button>
+                  </div>
+                }
+
+                @if (seoDashboard(); as dashboard) {
+                  <div class="mt-2" *hasPermission="'projects.view'">
+                    <label class="field-label">SEO</label>
+                    @if (!dashboard.entitled) {
+                      <p class="text-sm text-muted mb-2">This client does not have an active SEO entitlement.</p>
+                      <div class="assign-form" *hasPermission="'seo.manage_entitlements'">
+                        <input class="input" placeholder="Reason (e.g. promotional trial)" [(ngModel)]="seoEntitlementReason" />
+                        <button class="btn btn-sm" (click)="grantSeoEntitlement()">Grant SEO Entitlement</button>
+                      </div>
+                    } @else {
+                      <div class="detail-row"><span class="label">Redirects</span><span>{{ dashboard.redirectCount }}</span></div>
+                      <div class="detail-row"><span class="label">Pages with SEO settings</span><span>{{ dashboard.pageSettingsConfiguredCount }}</span></div>
+                      <div class="detail-row"><span class="label">SEO task cycles run</span><span>{{ dashboard.taskCycleCount }}</span></div>
+                      @if (dashboard.latestAudit; as latest) {
+                        <div class="detail-row"><span class="label">Latest audit</span><span>{{ latest.errorCount }} error(s), {{ latest.warningCount }} warning(s) — {{ latest.createdAt | date:'MMM d, y, h:mm a' }}</span></div>
+                      } @else {
+                        <p class="text-sm text-muted mb-2">No audit has been run yet.</p>
+                      }
+                      <div class="detail-row"><span class="label">Google Search Console</span><span>{{ dashboard.googleSearchConsolePropertyUrl || 'Not connected' }}</span></div>
+
+                      <div *hasPermission="'builder.manage'" class="mt-2">
+                        <label class="field-label">Page Metadata</label>
+                        <div class="table-wrap">
+                          <table>
+                            <thead><tr><th>Page</th><th>Meta Title</th><th>Meta Description</th><th>Robots</th><th></th></tr></thead>
+                            <tbody>
+                              @for (page of seoPages(); track page.pageId) {
+                                <tr>
+                                  <td>{{ page.title }}</td>
+                                  <td><input class="input" [(ngModel)]="seoPageEdits[page.pageId].metaTitle" /></td>
+                                  <td><input class="input" [(ngModel)]="seoPageEdits[page.pageId].metaDescription" /></td>
+                                  <td>
+                                    <select class="input" [(ngModel)]="seoPageEdits[page.pageId].robotsDirective">
+                                      <option value="index,follow">index,follow</option>
+                                      <option value="noindex,follow">noindex,follow</option>
+                                      <option value="index,nofollow">index,nofollow</option>
+                                      <option value="noindex,nofollow">noindex,nofollow</option>
+                                    </select>
+                                  </td>
+                                  <td><button class="btn btn-sm" (click)="saveSeoPageSettings(page.pageId)">Save</button></td>
+                                </tr>
+                              }
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <label class="field-label mt-2">Redirects</label>
+                        <div class="table-wrap">
+                          <table>
+                            <thead><tr><th>From</th><th>To</th><th>Status</th><th></th></tr></thead>
+                            <tbody>
+                              @for (redirect of seoRedirects(); track redirect.id) {
+                                <tr>
+                                  <td>{{ redirect.fromPath }}</td>
+                                  <td>{{ redirect.toPath }}</td>
+                                  <td>{{ redirect.statusCode }}</td>
+                                  <td><button class="btn btn-sm" (click)="deleteSeoRedirect(redirect)">Delete</button></td>
+                                </tr>
+                              }
+                            </tbody>
+                          </table>
+                        </div>
+                        <div class="assign-form">
+                          <input class="input" placeholder="/old-path" [(ngModel)]="newRedirectFromPath" />
+                          <input class="input" placeholder="/new-path" [(ngModel)]="newRedirectToPath" />
+                          <button class="btn btn-sm" (click)="createSeoRedirect()">Add Redirect</button>
+                        </div>
+
+                        <label class="field-label mt-2">Audits</label>
+                        <div class="table-wrap">
+                          <table>
+                            <thead><tr><th>When</th><th>Errors</th><th>Warnings</th></tr></thead>
+                            <tbody>
+                              @for (audit of seoAudits(); track audit.id) {
+                                <tr>
+                                  <td>{{ audit.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                                  <td>{{ countSeoFindings(audit, 'error') }}</td>
+                                  <td>{{ countSeoFindings(audit, 'warning') }}</td>
+                                </tr>
+                              }
+                            </tbody>
+                          </table>
+                        </div>
+                        <p class="text-sm text-muted mb-2">Run a new audit against a version above using "Run SEO Audit".</p>
+
+                        <label class="field-label mt-2">Recurring SEO Tasks</label>
+                        @if (seoTaskCycles().length > 0) {
+                          <div class="table-wrap">
+                            <table>
+                              <thead><tr><th>Period</th><th>Generated</th></tr></thead>
+                              <tbody>
+                                @for (cycle of seoTaskCycles(); track cycle.id) {
+                                  <tr><td>{{ cycle.cyclePeriod }}</td><td>{{ cycle.createdAt | date:'MMM d, y' }}</td></tr>
+                                }
+                              </tbody>
+                            </table>
+                          </div>
+                        }
+                        <button class="btn btn-sm" (click)="generateSeoTaskCycle()">Generate This Month's SEO Tasks</button>
+
+                        <label class="field-label mt-2">Google Search Console</label>
+                        <div class="assign-form">
+                          <input class="input" placeholder="https://example.com/ or sc-domain:example.com" [(ngModel)]="newSearchConsolePropertyUrl" />
+                          <button class="btn btn-sm" (click)="connectSearchConsole()">Connect</button>
+                        </div>
+                      </div>
+                    }
                   </div>
                 }
 
