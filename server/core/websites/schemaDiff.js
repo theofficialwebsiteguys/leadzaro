@@ -89,6 +89,40 @@ function diffSectionChanges(oldSection, newSection, pageId, definition) {
 }
 
 /**
+ * Closing-review fix (High): a section instance removed entirely from
+ * a page previously produced NO change entry at all — only the
+ * aggregate structuralChange flag (professional+, the same undifferentiated
+ * bar as a harmless reorder) — meaning a detached instance's content/
+ * settings were unremovable through the builder (blocked by
+ * authorizeAndClassifySchemaChange above) but the WHOLE INSTANCE could
+ * simply be deleted from the page with no additional check at all.
+ * Deletion is strictly more destructive than any single content/settings
+ * edit, so it must be classified at least as strictly — reusing the
+ * exact same `bucket: 'content'` shape the content-edit rule already
+ * checks, rather than inventing a parallel rule that could drift from it.
+ */
+function diffRemovedSections(oldPage, newPage, sectionDefinitionsByKey) {
+  const newSectionIds = new Set((newPage.sections || []).map((section) => section.id));
+  const removedSections = (oldPage.sections || []).filter((section) => !newSectionIds.has(section.id));
+
+  return removedSections.map((oldSection) => {
+    const definition = sectionDefinitionsByKey.get(oldSection.componentKey);
+    const sectionState = resolveEffectiveComponentState(oldSection, definition);
+    return {
+      scope: 'section',
+      pageId: newPage.id,
+      sectionId: oldSection.id,
+      bucket: 'content',
+      key: '__removed__',
+      sectionState,
+      builderEditable: false,
+      editingLevel: 'advanced',
+      requiresReview: true,
+    };
+  });
+}
+
+/**
  * Compares an old and new draftSchema and classifies every actual
  * change against each section's own SectionDefinition.settingsSchema
  * (current-phase-plan.md § 2e's per-property editing-level design —
@@ -124,6 +158,8 @@ function diffSchemaChanges(oldSchema, newSchema, sectionDefinitionsByKey) {
     if (!oldPage) continue; // a brand-new page — already counted as structural above
 
     if (sectionsSignature(oldPage.sections) !== sectionsSignature(newPage.sections)) structuralChange = true;
+
+    changes.push(...diffRemovedSections(oldPage, newPage, sectionDefinitionsByKey));
 
     const oldSectionsById = new Map((oldPage.sections || []).map((section) => [section.id, section]));
     for (const newSection of newPage.sections || []) {

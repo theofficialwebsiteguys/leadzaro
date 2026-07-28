@@ -100,6 +100,41 @@ describe('Detached section instances: builder-side enforcement (current-phase-pl
     expect(res.status).toBe(200);
   });
 
+  /**
+   * Closing-review regression (High finding): a section instance
+   * removed entirely from a page previously produced no per-section
+   * change entry at all — only the aggregate structuralChange flag,
+   * gated at the same professional+ bar as a harmless reorder — so a
+   * detached instance's content/settings were unremovable, but the
+   * WHOLE INSTANCE could simply be deleted with no additional check.
+   */
+  test('a detached instance cannot be removed from the page entirely, even by an advanced-level developer — deletion is strictly more destructive than any single edit', async () => {
+    const { project, developerAuth, section } = await setupProjectWithWebsiteAndCustomSection();
+    const base = await developerAuth(request(app).get(`/api/v1/projects/${project.id}/website`));
+    const withDetached = structuredClone(base.body.data.website.draftSchema);
+    withDetached.pages[0].sections.push(
+      {
+        id: 'custom1', componentKey: section.componentKey, state: 'detached', content: { quote: 'Custom work' }, settings: {},
+      },
+      { id: 'text1', componentKey: 'text', content: { body: 'Hello' } }
+    );
+    await developerAuth(request(app).patch(`/api/v1/projects/${project.id}/website/draft`).send({ draftSchema: withDetached }));
+
+    const removeDetached = structuredClone(withDetached);
+    removeDetached.pages[0].sections = removeDetached.pages[0].sections.filter((s) => s.id !== 'custom1');
+    const res = await developerAuth(request(app).patch(`/api/v1/projects/${project.id}/website/draft`).send({ draftSchema: removeDetached }));
+    expect(res.status).toBe(403);
+    expect(res.body.message).toMatch(/detached/i);
+
+    // A non-detached (managed) section on the same page can still be
+    // freely removed — this rule is specific to detached instances,
+    // not a blanket "sections can never be deleted."
+    const removeManaged = structuredClone(withDetached);
+    removeManaged.pages[0].sections = removeManaged.pages[0].sections.filter((s) => s.id !== 'text1');
+    const managedRes = await developerAuth(request(app).patch(`/api/v1/projects/${project.id}/website/draft`).send({ draftSchema: removeManaged }));
+    expect(managedRes.status).toBe(200);
+  });
+
   test('toggling a section into detached state itself requires advanced-level editing and always flags requiresReview', async () => {
     const {
       agency, clientOrg, project, developerAuth, section,

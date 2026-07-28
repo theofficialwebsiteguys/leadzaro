@@ -210,10 +210,10 @@ async function authorizeAndClassifySchemaChange(context, website, newSchema) {
   const blockedByDetachment = changes.find((change) => change.sectionState === 'detached' && change.bucket
     && (change.bucket === 'content' || !change.builderEditable));
   if (blockedByDetachment) {
-    throw invalid(
-      `"${blockedByDetachment.key}" on this section is detached from the builder — it is now custom, developer-owned code and can no longer be edited here`,
-      403
-    );
+    const description = blockedByDetachment.key === '__removed__'
+      ? 'This section is detached from the builder — it is now custom, developer-owned code and cannot be removed here'
+      : `"${blockedByDetachment.key}" on this section is detached from the builder — it is now custom, developer-owned code and can no longer be edited here`;
+    throw invalid(description, 403);
   }
 
   return structuralChange || changes.some((change) => change.requiresReview);
