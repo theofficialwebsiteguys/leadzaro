@@ -93,6 +93,31 @@ async function mapDocumentRoot(req, res, next) {
   }
 }
 
+async function checkRenewal(req, res, next) {
+  try {
+    const result = await websiteDomainService.checkRenewal({ context: req.context, projectId: req.params.projectId });
+
+    if (result.noticeSent) {
+      await recordAudit({
+        organizationId: req.context.organization.id,
+        actorUserId: req.user.id,
+        action: 'website.domain_renewal_notice_sent',
+        targetType: 'WebsiteDomain',
+        metadata: {
+          projectId: req.params.projectId,
+          notifiedEmployeeUserIds: result.notifiedEmployeeUserIds,
+          notifiedClientUserIds: result.notifiedClientUserIds,
+        },
+        req,
+      });
+    }
+
+    return success(res, result);
+  } catch (err) {
+    handleServiceError(err, res, next);
+  }
+}
+
 module.exports = {
-  get, checkAvailability, register, updateDns, mapDocumentRoot,
+  get, checkAvailability, register, updateDns, mapDocumentRoot, checkRenewal,
 };

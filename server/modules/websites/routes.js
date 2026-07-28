@@ -98,6 +98,7 @@ router.post('/domain/dns-records', requirePermission('builder.manage'), [
 router.post('/domain/map-document-root', requirePermission('builder.manage'), [
   body('path').notEmpty(),
 ], validate, domainController.mapDocumentRoot);
+router.post('/domain/check-renewal', requirePermission('builder.manage'), domainController.checkRenewal);
 
 router.get('/production-deployments', requirePermission('builder.manage'), productionDeployController.listDeployments);
 // /production-deployments/current must be registered before the

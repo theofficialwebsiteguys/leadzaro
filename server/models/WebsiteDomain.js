@@ -29,6 +29,7 @@ module.exports = (sequelize) => {
     dnsRecords: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
     cpanelAccount: { type: DataTypes.STRING(255), allowNull: true },
     documentRootPath: { type: DataTypes.STRING(500), allowNull: true },
+    renewalNoticeSentAt: { type: DataTypes.DATE, allowNull: true },
     createdByUserId: { type: DataTypes.UUID, allowNull: true },
   });
 
