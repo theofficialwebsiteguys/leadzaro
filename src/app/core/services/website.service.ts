@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteVersionComparison, WebsiteComment, WebsitePresenceEntry, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
+  WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsEvent, WebsiteAnalyticsSummaryRow, WebsiteExportBundle,
 } from '../models/website.model';
 
 @Injectable({ providedIn: 'root' })
@@ -120,5 +121,87 @@ export class WebsiteService {
 
   mergeBack(projectId: string, branchName: string, title: string): Observable<{ data: { branchName: string; baseBranch: string } }> {
     return this.http.post<{ data: { branchName: string; baseBranch: string } }>(`/api/v1/projects/${projectId}/website/merge-back`, { branchName, title });
+  }
+
+  // --- Phase 7: domain management ---
+
+  getDomain(projectId: string): Observable<{ data: { domain: WebsiteDomain | null } }> {
+    return this.http.get<{ data: { domain: WebsiteDomain | null } }>(`/api/v1/projects/${projectId}/website/domain`);
+  }
+
+  checkDomainAvailability(projectId: string, domain: string): Observable<{ data: { domain: string; available: boolean } }> {
+    return this.http.post<{ data: { domain: string; available: boolean } }>(`/api/v1/projects/${projectId}/website/domain/check-availability`, { domain });
+  }
+
+  registerDomain(projectId: string, domain: string, years?: number): Observable<{ data: { domain: WebsiteDomain } }> {
+    return this.http.post<{ data: { domain: WebsiteDomain } }>(`/api/v1/projects/${projectId}/website/domain/register`, { domain, years });
+  }
+
+  updateDomainDnsRecords(projectId: string, records: Array<{ type: string; host: string; value: string }>): Observable<{ data: { domain: WebsiteDomain } }> {
+    return this.http.post<{ data: { domain: WebsiteDomain } }>(`/api/v1/projects/${projectId}/website/domain/dns-records`, { records });
+  }
+
+  mapDocumentRoot(projectId: string, path: string): Observable<{ data: { domain: WebsiteDomain } }> {
+    return this.http.post<{ data: { domain: WebsiteDomain } }>(`/api/v1/projects/${projectId}/website/domain/map-document-root`, { path });
+  }
+
+  checkDomainRenewal(projectId: string): Observable<{ data: { noticeSent: boolean; reason?: string } }> {
+    return this.http.post<{ data: { noticeSent: boolean; reason?: string } }>(`/api/v1/projects/${projectId}/website/domain/check-renewal`, {});
+  }
+
+  initiateDomainTransfer(projectId: string): Observable<{ data: { domain: WebsiteDomain } }> {
+    return this.http.post<{ data: { domain: WebsiteDomain } }>(`/api/v1/projects/${projectId}/website/domain/initiate-transfer`, {});
+  }
+
+  // --- Phase 7: production deployment + rollback ---
+
+  deployToProduction(projectId: string, versionId: string): Observable<{ message: string; data: { deployment: WebsiteDeployment } }> {
+    return this.http.post<{ message: string; data: { deployment: WebsiteDeployment } }>(`/api/v1/projects/${projectId}/website/versions/${versionId}/deploy-production`, {});
+  }
+
+  listProductionDeployments(projectId: string): Observable<{ data: { deployments: WebsiteDeployment[] } }> {
+    return this.http.get<{ data: { deployments: WebsiteDeployment[] } }>(`/api/v1/projects/${projectId}/website/production-deployments`);
+  }
+
+  getCurrentLiveDeployment(projectId: string): Observable<{ data: { deployment: WebsiteDeployment | null } }> {
+    return this.http.get<{ data: { deployment: WebsiteDeployment | null } }>(`/api/v1/projects/${projectId}/website/production-deployments/current`);
+  }
+
+  // --- Phase 7: public form submission triage ---
+
+  listPublicFormSubmissions(projectId: string, status?: string): Observable<{ data: { submissions: WebsitePublicFormSubmission[] } }> {
+    return this.http.get<{ data: { submissions: WebsitePublicFormSubmission[] } }>(`/api/v1/projects/${projectId}/website/public-form-submissions`, {
+      params: status ? { status } : {},
+    });
+  }
+
+  convertPublicFormSubmission(projectId: string, submissionId: string): Observable<{ data: { submission: WebsitePublicFormSubmission; clientRequest: { id: string } } }> {
+    return this.http.post<{ data: { submission: WebsitePublicFormSubmission; clientRequest: { id: string } } }>(`/api/v1/projects/${projectId}/website/public-form-submissions/${submissionId}/convert`, {});
+  }
+
+  updatePublicFormSubmissionStatus(projectId: string, submissionId: string, status: 'discarded' | 'spam'): Observable<{ data: { submission: WebsitePublicFormSubmission } }> {
+    return this.http.post<{ data: { submission: WebsitePublicFormSubmission } }>(`/api/v1/projects/${projectId}/website/public-form-submissions/${submissionId}/status`, { status });
+  }
+
+  // --- Phase 7: hybrid analytics + guided Google Analytics connection ---
+
+  listAnalyticsEvents(projectId: string): Observable<{ data: { events: WebsiteAnalyticsEvent[] } }> {
+    return this.http.get<{ data: { events: WebsiteAnalyticsEvent[] } }>(`/api/v1/projects/${projectId}/website/analytics/events`);
+  }
+
+  getAnalyticsSummary(projectId: string, rangeDays?: number): Observable<{ data: { summary: WebsiteAnalyticsSummaryRow[] } }> {
+    return this.http.get<{ data: { summary: WebsiteAnalyticsSummaryRow[] } }>(`/api/v1/projects/${projectId}/website/analytics/summary`, {
+      params: rangeDays ? { rangeDays } : {},
+    });
+  }
+
+  setGoogleAnalyticsMeasurementId(projectId: string, measurementId: string): Observable<{ data: { website: Website } }> {
+    return this.http.post<{ data: { website: Website } }>(`/api/v1/projects/${projectId}/website/analytics/google-analytics`, { measurementId });
+  }
+
+  // --- Phase 7: employee-controlled full website export ---
+
+  exportWebsite(projectId: string, versionId: string): Observable<{ data: { export: WebsiteExportBundle } }> {
+    return this.http.get<{ data: { export: WebsiteExportBundle } }>(`/api/v1/projects/${projectId}/website/versions/${versionId}/export`);
   }
 }

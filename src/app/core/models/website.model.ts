@@ -41,6 +41,12 @@ export interface Website {
   startingMode: WebsiteStartingMode;
   draftSchema: WebsiteSchema;
   currentPublishedVersionId: string | null;
+  // Phase 7 (current-phase-plan.md § 2b) — which WebsiteDeployment is
+  // actually serving live production hosting right now, distinct from
+  // currentPublishedVersionId's design-review "approved" pointer.
+  currentLiveProductionDeploymentId?: string | null;
+  // Guided Google Analytics connection (current-phase-plan.md § 2d).
+  googleAnalyticsMeasurementId?: string | null;
 }
 
 export type WebsiteVersionStatus = 'draft' | 'pending_review' | 'approved' | 'published';
@@ -115,6 +121,8 @@ export interface WebsiteRepository {
   status: 'provisioning' | 'active' | 'error';
 }
 
+export type WebsiteDeploymentStatus = 'pending' | 'building' | 'live' | 'failed' | 'rolled_back' | 'rollback_failed';
+
 export interface WebsiteDeployment {
   id: string;
   websiteId: string;
@@ -123,7 +131,11 @@ export interface WebsiteDeployment {
   branchName: string;
   commitSha: string | null;
   previewUrl: string | null;
-  status: 'pending' | 'building' | 'live' | 'failed';
+  status: WebsiteDeploymentStatus;
+  // Production only (current-phase-plan.md § 2b) — null for preview
+  // deploys and for a website's first-ever production attempt.
+  previousLiveDeploymentId?: string | null;
+  backupRef?: string | null;
   createdAt: string;
 }
 
@@ -135,4 +147,58 @@ export interface WebsiteDevelopmentHandoff {
   technicalHandoffNotes: string | null;
   status: 'initiated' | 'preview_ready' | 'in_development';
   createdAt: string;
+}
+
+// Phase 7 — Production Website Operations (current-phase-plan.md).
+// Employee-only, mirroring WebsiteDeployment/WebsiteDevelopmentHandoff.
+export interface WebsiteDomain {
+  id: string;
+  websiteId: string;
+  provider: string;
+  domain: string;
+  status: 'pending' | 'active' | 'expired' | 'transferring';
+  registeredAt: string | null;
+  expiresAt: string | null;
+  autoRenew: boolean;
+  dnsRecords: Array<{ type: string; host: string; value: string }>;
+  cpanelAccount: string | null;
+  documentRootPath: string | null;
+  renewalNoticeSentAt: string | null;
+}
+
+export interface WebsitePublicFormSubmission {
+  id: string;
+  websiteId: string;
+  websiteVersionId: string;
+  pageId: string;
+  sectionId: string;
+  values: Record<string, unknown>;
+  status: 'pending_review' | 'converted' | 'discarded' | 'spam';
+  convertedToClientRequestId: string | null;
+  createdAt: string;
+}
+
+export interface WebsiteAnalyticsEvent {
+  id: string;
+  websiteId: string;
+  eventType: string;
+  path: string | null;
+  sessionId: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface WebsiteAnalyticsSummaryRow {
+  day: string;
+  eventType: string;
+  count: number;
+}
+
+export interface WebsiteExportBundle {
+  exportedAt: string;
+  website: { id: string; name: string; domain: string | null };
+  version: {
+    id: string; versionNumber: number; label: string | null; status: WebsiteVersionStatus;
+  };
+  files: Array<{ path: string; content: string }>;
 }

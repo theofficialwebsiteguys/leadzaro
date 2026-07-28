@@ -1,6 +1,6 @@
 import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { DatePipe } from '@angular/common';
+import { DatePipe, JsonPipe } from '@angular/common';
 import { ProjectService } from '../../core/services/project.service';
 import { TaskService } from '../../core/services/task.service';
 import { MessagingService } from '../../core/services/messaging.service';
@@ -25,6 +25,7 @@ import { ProjectFile, FILE_SCOPES } from '../../core/models/file.model';
 import { CancellationRequest } from '../../core/models/cancellationRequest.model';
 import {
   Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteComment, WebsitePresenceEntry, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
+  WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsSummaryRow, WebsiteExportBundle,
 } from '../../core/models/website.model';
 import { SectionDefinition } from '../../core/models/sectionDefinition.model';
 import { DesignSystemTemplate } from '../../core/models/designSystemTemplate.model';
@@ -34,7 +35,7 @@ import { HasPermissionDirective } from '../../core/directives/has-permission.dir
 @Component({
   selector: 'app-projects',
   standalone: true,
-  imports: [FormsModule, DatePipe, HasPermissionDirective, WebsitePreviewComponent],
+  imports: [FormsModule, DatePipe, JsonPipe, HasPermissionDirective, WebsitePreviewComponent],
   templateUrl: './projects.component.html',
   styleUrl: './projects.component.scss',
 })
@@ -132,6 +133,21 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   mergeBackBranchName = '';
   mergeBackTitle = '';
 
+  // Phase 7 — Production Website Operations
+  websiteDomain = signal<WebsiteDomain | null>(null);
+  newDomainName = '';
+  newDomainYears = 1;
+  domainAvailability = signal<{ domain: string; available: boolean } | null>(null);
+  newDocumentRootPath = '';
+  productionDeployments = signal<WebsiteDeployment[]>([]);
+  currentLiveDeployment = signal<WebsiteDeployment | null>(null);
+  deployingToProduction = signal(false);
+  publicFormSubmissions = signal<WebsitePublicFormSubmission[]>([]);
+  analyticsSummary = signal<WebsiteAnalyticsSummaryRow[]>([]);
+  newGoogleAnalyticsMeasurementId = '';
+  exportedBundle = signal<WebsiteExportBundle | null>(null);
+  exportingWebsite = signal(false);
+
   projects = signal<Project[]>([]);
   loading = signal(true);
   selectedId = signal<string | null>(null);
@@ -225,6 +241,13 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.websiteRepository.set(null);
     this.websiteDeployments.set([]);
     this.websiteDevelopmentHandoffs.set([]);
+    this.websiteDomain.set(null);
+    this.domainAvailability.set(null);
+    this.productionDeployments.set([]);
+    this.currentLiveDeployment.set(null);
+    this.publicFormSubmissions.set([]);
+    this.analyticsSummary.set([]);
+    this.exportedBundle.set(null);
     this.projectService.getById(id).subscribe((res) => {
       this.selected.set(res.data.project);
       this.stageTarget = res.data.project.stage;
@@ -542,6 +565,11 @@ export class ProjectsComponent implements OnInit, OnDestroy {
         }
         if (this.org.hasPermission('builder.manage')) {
           this.loadWebsiteEditors(projectId);
+          this.loadWebsiteDomain(projectId);
+          this.loadProductionDeployments(projectId);
+          this.loadCurrentLiveDeployment(projectId);
+          this.loadPublicFormSubmissions(projectId);
+          this.loadAnalyticsSummary(projectId);
         }
       },
       error: () => {
@@ -765,6 +793,172 @@ export class ProjectsComponent implements OnInit, OnDestroy {
       },
       error: (err) => this.actionMessage.set(err.error?.message || 'Failed to deploy preview'),
     });
+  }
+
+  // --- Phase 7: domain management ---
+
+  loadWebsiteDomain(projectId: string) {
+    this.websiteService.getDomain(projectId).subscribe((res) => this.websiteDomain.set(res.data.domain));
+  }
+
+  checkDomainAvailability() {
+    const id = this.selectedId();
+    if (!id || !this.newDomainName.trim()) return;
+    this.websiteService.checkDomainAvailability(id, this.newDomainName).subscribe((res) => this.domainAvailability.set(res.data));
+  }
+
+  registerDomain() {
+    const id = this.selectedId();
+    if (!id || !this.newDomainName.trim()) return;
+    this.websiteService.registerDomain(id, this.newDomainName, this.newDomainYears).subscribe({
+      next: (res) => {
+        this.websiteDomain.set(res.data.domain);
+        this.domainAvailability.set(null);
+        this.actionMessage.set(`Domain ${res.data.domain.domain} registered`);
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to register domain'),
+    });
+  }
+
+  mapDocumentRoot() {
+    const id = this.selectedId();
+    if (!id || !this.newDocumentRootPath.trim()) return;
+    this.websiteService.mapDocumentRoot(id, this.newDocumentRootPath).subscribe({
+      next: (res) => {
+        this.websiteDomain.set(res.data.domain);
+        this.actionMessage.set('Document root mapped');
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to map document root'),
+    });
+  }
+
+  checkDomainRenewal() {
+    const id = this.selectedId();
+    if (!id) return;
+    this.websiteService.checkDomainRenewal(id).subscribe({
+      next: (res) => this.actionMessage.set(res.data.noticeSent ? 'Renewal notice sent' : `No notice sent (${res.data.reason})`),
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to check renewal'),
+    });
+  }
+
+  initiateDomainTransfer() {
+    const id = this.selectedId();
+    if (!id) return;
+    this.websiteService.initiateDomainTransfer(id).subscribe({
+      next: (res) => {
+        this.websiteDomain.set(res.data.domain);
+        this.actionMessage.set('Domain transfer initiated');
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to initiate transfer'),
+    });
+  }
+
+  // --- Phase 7: production deployment + the major gate's rollback ---
+
+  loadProductionDeployments(projectId: string) {
+    this.websiteService.listProductionDeployments(projectId).subscribe((res) => this.productionDeployments.set(res.data.deployments));
+  }
+
+  loadCurrentLiveDeployment(projectId: string) {
+    this.websiteService.getCurrentLiveDeployment(projectId).subscribe((res) => this.currentLiveDeployment.set(res.data.deployment));
+  }
+
+  deployToProduction(version: WebsiteVersion) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.deployingToProduction.set(true);
+    this.websiteService.deployToProduction(id, version.id).subscribe({
+      next: (res) => {
+        this.actionMessage.set(res.message);
+        this.deployingToProduction.set(false);
+        this.loadProductionDeployments(id);
+        this.loadCurrentLiveDeployment(id);
+      },
+      error: (err) => {
+        this.actionMessage.set(err.error?.message || 'Failed to deploy to production');
+        this.deployingToProduction.set(false);
+      },
+    });
+  }
+
+  // --- Phase 7: public form submission triage ---
+
+  loadPublicFormSubmissions(projectId: string) {
+    this.websiteService.listPublicFormSubmissions(projectId, 'pending_review').subscribe((res) => this.publicFormSubmissions.set(res.data.submissions));
+  }
+
+  convertPublicFormSubmission(submission: WebsitePublicFormSubmission) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.websiteService.convertPublicFormSubmission(id, submission.id).subscribe({
+      next: () => {
+        this.actionMessage.set('Submission converted to a client request');
+        this.loadPublicFormSubmissions(id);
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to convert submission'),
+    });
+  }
+
+  updatePublicFormSubmissionStatus(submission: WebsitePublicFormSubmission, status: 'discarded' | 'spam') {
+    const id = this.selectedId();
+    if (!id) return;
+    this.websiteService.updatePublicFormSubmissionStatus(id, submission.id, status).subscribe({
+      next: () => {
+        this.actionMessage.set(`Submission marked ${status}`);
+        this.loadPublicFormSubmissions(id);
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to update submission'),
+    });
+  }
+
+  // --- Phase 7: hybrid analytics + guided Google Analytics connection ---
+
+  loadAnalyticsSummary(projectId: string) {
+    this.websiteService.getAnalyticsSummary(projectId).subscribe((res) => this.analyticsSummary.set(res.data.summary));
+  }
+
+  setGoogleAnalyticsMeasurementId() {
+    const id = this.selectedId();
+    if (!id || !this.newGoogleAnalyticsMeasurementId.trim()) return;
+    this.websiteService.setGoogleAnalyticsMeasurementId(id, this.newGoogleAnalyticsMeasurementId).subscribe({
+      next: (res) => {
+        this.website.set(res.data.website);
+        this.newGoogleAnalyticsMeasurementId = '';
+        this.actionMessage.set('Google Analytics connection updated');
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to connect Google Analytics'),
+    });
+  }
+
+  // --- Phase 7: employee-controlled full website export ---
+
+  exportWebsite(version: WebsiteVersion) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.exportingWebsite.set(true);
+    this.websiteService.exportWebsite(id, version.id).subscribe({
+      next: (res) => {
+        this.exportedBundle.set(res.data.export);
+        this.exportingWebsite.set(false);
+        this.actionMessage.set(`Exported ${res.data.export.files.length} file(s)`);
+      },
+      error: (err) => {
+        this.actionMessage.set(err.error?.message || 'Failed to export website');
+        this.exportingWebsite.set(false);
+      },
+    });
+  }
+
+  downloadExportedBundle() {
+    const bundle = this.exportedBundle();
+    if (!bundle) return;
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${bundle.website.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-export-v${bundle.version.versionNumber}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   provisionWebsiteRepository() {

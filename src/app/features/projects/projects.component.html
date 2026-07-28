@@ -576,6 +576,10 @@
                               <button class="btn btn-sm" *hasPermission="'builder.develop'" (click)="generateWebsite(v)">Generate</button>
                               <button class="btn btn-sm" *hasPermission="'builder.develop'" (click)="deployPreview(v)">Deploy Preview</button>
                               <button class="btn btn-sm" *hasPermission="'builder.develop'" (click)="promoteToDevelopment(v)">Promote to Development</button>
+                              <button class="btn btn-sm" *hasPermission="'builder.manage'" [disabled]="deployingToProduction()" (click)="deployToProduction(v)">
+                                {{ deployingToProduction() ? 'Deploying…' : 'Deploy to Production' }}
+                              </button>
+                              <button class="btn btn-sm" *hasPermission="'builder.manage'" [disabled]="exportingWebsite()" (click)="exportWebsite(v)">Export</button>
                             </td>
                           </tr>
                         }
@@ -735,6 +739,129 @@
                     <button class="btn btn-sm" (click)="addWebsiteEditor()">Assign</button>
                   </div>
                 </div>
+
+                <div *hasPermission="'builder.manage'" class="mt-2">
+                  <label class="field-label">Domain</label>
+                  @if (websiteDomain(); as domain) {
+                    <div class="detail-row"><span class="label">Domain</span><span>{{ domain.domain }}</span></div>
+                    <div class="detail-row"><span class="label">Status</span><span>{{ domain.status }}</span></div>
+                    @if (domain.expiresAt) {
+                      <div class="detail-row"><span class="label">Expires</span><span>{{ domain.expiresAt | date:'MMM d, y' }}</span></div>
+                    }
+                    @if (domain.documentRootPath) {
+                      <div class="detail-row"><span class="label">Document Root</span><span>{{ domain.cpanelAccount }}: {{ domain.documentRootPath }}</span></div>
+                    }
+                    <div class="assign-form mt-2">
+                      <input class="input" placeholder="Document root path" [(ngModel)]="newDocumentRootPath" />
+                      <button class="btn btn-sm" (click)="mapDocumentRoot()">Map Document Root</button>
+                    </div>
+                    <div class="mt-2">
+                      <button class="btn btn-sm" (click)="checkDomainRenewal()">Check Renewal</button>
+                      @if (domain.status === 'active') {
+                        <button class="btn btn-sm" (click)="initiateDomainTransfer()">Initiate Transfer</button>
+                      }
+                    </div>
+                  } @else {
+                    <p class="text-sm text-muted mb-2">No domain has been registered yet.</p>
+                    <div class="assign-form">
+                      <input class="input" placeholder="example.com" [(ngModel)]="newDomainName" />
+                      <input class="input" type="number" min="1" placeholder="Years" [(ngModel)]="newDomainYears" />
+                      <button class="btn btn-sm" (click)="checkDomainAvailability()">Check Availability</button>
+                      <button class="btn btn-sm" (click)="registerDomain()">Register</button>
+                    </div>
+                    @if (domainAvailability(); as avail) {
+                      <p class="text-sm mt-2">{{ avail.domain }}: {{ avail.available ? 'available' : 'not available' }}</p>
+                    }
+                  }
+                </div>
+
+                <div *hasPermission="'builder.manage'" class="mt-2">
+                  <label class="field-label">Production Deployments</label>
+                  @if (currentLiveDeployment(); as live) {
+                    <div class="alert alert-info mb-2">Currently live: v{{ live.websiteVersionId }} deployed {{ live.createdAt | date:'MMM d, y, h:mm a' }} ({{ live.status }})</div>
+                  }
+                  @if (productionDeployments().length > 0) {
+                    <div class="table-wrap">
+                      <table>
+                        <thead><tr><th>Status</th><th>Branch</th><th>Backup Ref</th><th>When</th></tr></thead>
+                        <tbody>
+                          @for (d of productionDeployments(); track d.id) {
+                            <tr>
+                              <td>{{ d.status }}</td>
+                              <td>{{ d.branchName }}</td>
+                              <td>{{ d.backupRef || '—' }}</td>
+                              <td>{{ d.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  } @else {
+                    <p class="text-sm text-muted mb-0">No production deployments yet — use "Deploy to Production" on a version above.</p>
+                  }
+                </div>
+
+                <div *hasPermission="'builder.manage'" class="mt-2">
+                  <label class="field-label">Public Form Submissions (pending review)</label>
+                  @if (publicFormSubmissions().length > 0) {
+                    <div class="table-wrap">
+                      <table>
+                        <thead><tr><th>Page/Section</th><th>Values</th><th>When</th><th></th></tr></thead>
+                        <tbody>
+                          @for (s of publicFormSubmissions(); track s.id) {
+                            <tr>
+                              <td>{{ s.pageId }} / {{ s.sectionId }}</td>
+                              <td>{{ s.values | json }}</td>
+                              <td>{{ s.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                              <td>
+                                <button class="btn btn-sm" (click)="convertPublicFormSubmission(s)">Convert to Request</button>
+                                <button class="btn btn-sm" (click)="updatePublicFormSubmissionStatus(s, 'discarded')">Discard</button>
+                                <button class="btn btn-sm" (click)="updatePublicFormSubmissionStatus(s, 'spam')">Mark Spam</button>
+                              </td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  } @else {
+                    <p class="text-sm text-muted mb-0">No pending public form submissions.</p>
+                  }
+                </div>
+
+                <div *hasPermission="'builder.manage'" class="mt-2">
+                  <label class="field-label">Analytics &amp; Google Analytics Connection</label>
+                  @if (analyticsSummary().length > 0) {
+                    <div class="table-wrap">
+                      <table>
+                        <thead><tr><th>Day</th><th>Event</th><th>Count</th></tr></thead>
+                        <tbody>
+                          @for (row of analyticsSummary(); track row.day + row.eventType) {
+                            <tr>
+                              <td>{{ row.day | date:'MMM d, y' }}</td>
+                              <td>{{ row.eventType }}</td>
+                              <td>{{ row.count }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  } @else {
+                    <p class="text-sm text-muted mb-2">No analytics events recorded yet.</p>
+                  }
+                  <div class="detail-row"><span class="label">Google Analytics</span><span>{{ website()?.googleAnalyticsMeasurementId || 'Not connected' }}</span></div>
+                  <div class="assign-form mt-2">
+                    <input class="input" placeholder="G-XXXXXXXXXX" [(ngModel)]="newGoogleAnalyticsMeasurementId" />
+                    <button class="btn btn-sm" (click)="setGoogleAnalyticsMeasurementId()">Connect</button>
+                  </div>
+                </div>
+
+                @if (exportedBundle(); as bundle) {
+                  <div class="mt-2">
+                    <label class="field-label">Export Ready</label>
+                    <p class="text-sm text-muted mb-2">{{ bundle.files.length }} file(s) exported at {{ bundle.exportedAt | date:'MMM d, y, h:mm a' }}.</p>
+                    <button class="btn btn-sm" (click)="downloadExportedBundle()">Download JSON</button>
+                  </div>
+                }
 
                 @if (websitePresence().length > 0) {
                   <div class="mt-2">
