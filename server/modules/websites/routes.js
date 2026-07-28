@@ -13,6 +13,7 @@ const repositoryController = require('./websiteRepositoryController');
 const codegenController = require('./websiteCodegenController');
 const deploymentController = require('./websiteDeploymentController');
 const developmentHandoffController = require('./websiteDevelopmentHandoffController');
+const mergeBackController = require('./websiteMergeBackController');
 
 router.use(authenticate, resolveContext());
 
@@ -75,5 +76,9 @@ router.post('/versions/:versionId/deploy-preview', requirePermission('builder.de
 
 router.get('/development-handoffs', requirePermission('builder.develop'), developmentHandoffController.list);
 router.post('/versions/:versionId/promote-to-development', requirePermission('builder.develop'), developmentHandoffController.promote);
+
+router.post('/merge-back', requirePermission('builder.develop'), [
+  body('branchName').notEmpty(),
+], validate, mergeBackController.mergeBack);
 
 module.exports = router;

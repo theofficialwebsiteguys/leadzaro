@@ -129,6 +129,8 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   websiteDeployments = signal<WebsiteDeployment[]>([]);
   websiteDevelopmentHandoffs = signal<WebsiteDevelopmentHandoff[]>([]);
   newHandoffNotes = '';
+  mergeBackBranchName = '';
+  mergeBackTitle = '';
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -737,6 +739,19 @@ export class ProjectsComponent implements OnInit, OnDestroy {
         this.loadWebsiteDeployments(id);
       },
       error: (err) => this.actionMessage.set(err.error?.message || 'Failed to promote to development'),
+    });
+  }
+
+  mergeBack() {
+    const id = this.selectedId();
+    if (!id || !this.mergeBackBranchName.trim()) return;
+    this.websiteService.mergeBack(id, this.mergeBackBranchName, this.mergeBackTitle).subscribe({
+      next: (res) => {
+        this.actionMessage.set(`Merged "${res.data.branchName}" back into "${res.data.baseBranch}"`);
+        this.mergeBackBranchName = '';
+        this.mergeBackTitle = '';
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to merge back'),
     });
   }
 

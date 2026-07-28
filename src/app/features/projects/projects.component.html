@@ -699,6 +699,16 @@
                   }
                 </div>
 
+                <div *hasPermission="'builder.develop'" class="mt-2">
+                  <label class="field-label">Merge Back</label>
+                  <p class="text-sm text-muted mb-2">Merge a developer's custom-code branch (e.g. a development handoff branch above) back into the repository's default branch.</p>
+                  <div class="assign-form">
+                    <input class="input" placeholder="Branch name" [(ngModel)]="mergeBackBranchName" />
+                    <input class="input" placeholder="Title (optional)" [(ngModel)]="mergeBackTitle" />
+                    <button class="btn btn-sm" (click)="mergeBack()">Merge Back</button>
+                  </div>
+                </div>
+
                 <div *hasPermission="'builder.manage'" class="mt-2">
                   <label class="field-label">Editor Access</label>
                   <div class="table-wrap">

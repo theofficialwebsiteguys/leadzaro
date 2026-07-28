@@ -117,4 +117,8 @@ export class WebsiteService {
   promoteToDevelopment(projectId: string, versionId: string, technicalHandoffNotes: string): Observable<{ data: { handoff: WebsiteDevelopmentHandoff } }> {
     return this.http.post<{ data: { handoff: WebsiteDevelopmentHandoff } }>(`/api/v1/projects/${projectId}/website/versions/${versionId}/promote-to-development`, { technicalHandoffNotes });
   }
+
+  mergeBack(projectId: string, branchName: string, title: string): Observable<{ data: { branchName: string; baseBranch: string } }> {
+    return this.http.post<{ data: { branchName: string; baseBranch: string } }>(`/api/v1/projects/${projectId}/website/merge-back`, { branchName, title });
+  }
 }
