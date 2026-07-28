@@ -118,6 +118,26 @@ async function checkRenewal(req, res, next) {
   }
 }
 
+async function initiateTransfer(req, res, next) {
+  try {
+    const domain = await websiteDomainService.initiateTransfer({ context: req.context, projectId: req.params.projectId });
+
+    await recordAudit({
+      organizationId: req.context.organization.id,
+      actorUserId: req.user.id,
+      action: 'website.domain_transfer_initiated',
+      targetType: 'WebsiteDomain',
+      targetId: domain.id,
+      metadata: { projectId: req.params.projectId, domain: domain.domain },
+      req,
+    });
+
+    return success(res, { domain }, 'Domain transfer initiated');
+  } catch (err) {
+    handleServiceError(err, res, next);
+  }
+}
+
 module.exports = {
-  get, checkAvailability, register, updateDns, mapDocumentRoot, checkRenewal,
+  get, checkAvailability, register, updateDns, mapDocumentRoot, checkRenewal, initiateTransfer,
 };

@@ -18,6 +18,7 @@ const domainController = require('./websiteDomainController');
 const productionDeployController = require('./productionDeployController');
 const publicFormTriageController = require('./websitePublicFormTriageController');
 const analyticsController = require('./websiteAnalyticsController');
+const exportController = require('./websiteExportController');
 
 router.use(authenticate, resolveContext());
 
@@ -99,6 +100,7 @@ router.post('/domain/map-document-root', requirePermission('builder.manage'), [
   body('path').notEmpty(),
 ], validate, domainController.mapDocumentRoot);
 router.post('/domain/check-renewal', requirePermission('builder.manage'), domainController.checkRenewal);
+router.post('/domain/initiate-transfer', requirePermission('builder.manage'), domainController.initiateTransfer);
 
 router.get('/production-deployments', requirePermission('builder.manage'), productionDeployController.listDeployments);
 // /production-deployments/current must be registered before the
@@ -120,5 +122,7 @@ router.get('/analytics/summary', requirePermission('projects.view'), analyticsCo
 router.post('/analytics/google-analytics', requirePermission('builder.manage'), [
   body('measurementId').optional({ values: 'falsy' }).isLength({ max: 50 }),
 ], validate, analyticsController.setGoogleAnalyticsMeasurementId);
+
+router.get('/versions/:versionId/export', requirePermission('builder.manage'), exportController.exportWebsite);
 
 module.exports = router;

@@ -181,6 +181,29 @@ async function checkRenewal({ context, projectId }) {
   };
 }
 
+/**
+ * Domain transfer workflow (current-phase-plan.md § 5, slice 9 —
+ * roadmap outcome "cancellation export and domain transfer workflow").
+ * Namecheap's own real transfer process is multi-step and asynchronous
+ * (an EPP/auth code exchange, a receiving-registrar confirmation) —
+ * this initiates it and records the resulting 'transferring' status;
+ * it does not simulate the full multi-day handshake, matching this
+ * codebase's established "structural correctness over full external
+ * process simulation" scope boundary (the same one Phase 6 applied to
+ * GitHub PR merges).
+ */
+async function initiateTransfer({ context, projectId }) {
+  const website = await getWebsite(context, projectId);
+  const record = await getWebsiteDomainForRequester(context, website.id);
+  if (!record) throw invalid('No domain registered for this website', 404);
+  if (record.status !== 'active') throw invalid(`Cannot initiate a transfer for a domain in status '${record.status}'`, 409);
+
+  const adapter = getNamecheapAdapter();
+  const result = await adapter.initiateTransfer(record.domain);
+  await record.update({ status: result.status });
+  return record;
+}
+
 module.exports = {
-  getDomain, checkAvailability, registerDomain, updateDnsRecords, mapDocumentRoot, cpanelAccountForWebsite, checkRenewal,
+  getDomain, checkAvailability, registerDomain, updateDnsRecords, mapDocumentRoot, cpanelAccountForWebsite, checkRenewal, initiateTransfer,
 };
