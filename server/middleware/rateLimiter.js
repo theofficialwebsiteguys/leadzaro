@@ -43,6 +43,24 @@ const publicFormLimiter = rateLimit({
   message: { success: false, message: 'Too many submissions, please try again later.' },
 });
 
+// Phase 7 (current-phase-plan.md § 2e, review finding #3): a separate
+// instance from publicFormLimiter above, not a reuse of it. That
+// limiter is keyed by IP alone and was built for a single tenant's own
+// marketing pages (/inbound-leads); this one serves potentially
+// thousands of different client websites through one route pattern —
+// keying by IP alone would let one shared office/NAT/coffee-shop IP
+// submitting to Client A's contact form exhaust the same budget as
+// Client B's, an unrelated tenant. Keying by IP + websiteId keeps each
+// website's own budget independent.
+const publicWebsiteFormLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `${req.ip}:${req.params.websiteId}`,
+  message: { success: false, message: 'Too many submissions, please try again later.' },
+});
+
 module.exports = {
-  rateLimiter, authLimiter, searchLimiter, publicFormLimiter,
+  rateLimiter, authLimiter, searchLimiter, publicFormLimiter, publicWebsiteFormLimiter,
 };

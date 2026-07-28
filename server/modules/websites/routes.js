@@ -16,6 +16,7 @@ const developmentHandoffController = require('./websiteDevelopmentHandoffControl
 const mergeBackController = require('./websiteMergeBackController');
 const domainController = require('./websiteDomainController');
 const productionDeployController = require('./productionDeployController');
+const publicFormTriageController = require('./websitePublicFormTriageController');
 
 router.use(authenticate, resolveContext());
 
@@ -104,5 +105,12 @@ router.get('/production-deployments', requirePermission('builder.manage'), produ
 router.get('/production-deployments/current', requirePermission('builder.manage'), productionDeployController.getCurrentLive);
 router.get('/production-deployments/:deploymentId', requirePermission('builder.manage'), productionDeployController.getDeployment);
 router.post('/versions/:versionId/deploy-production', requirePermission('builder.manage'), productionDeployController.deploy);
+
+router.get('/public-form-submissions', requirePermission('builder.manage'), publicFormTriageController.list);
+router.get('/public-form-submissions/:submissionId', requirePermission('builder.manage'), publicFormTriageController.get);
+router.post('/public-form-submissions/:submissionId/convert', requirePermission('builder.manage'), publicFormTriageController.convert);
+router.post('/public-form-submissions/:submissionId/status', requirePermission('builder.manage'), [
+  body('status').isIn(['discarded', 'spam']),
+], validate, publicFormTriageController.discard);
 
 module.exports = router;

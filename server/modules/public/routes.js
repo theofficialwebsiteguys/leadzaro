@@ -1,11 +1,12 @@
 'use strict';
 
 const router = require('express').Router();
-const { body } = require('express-validator');
+const { body, param } = require('express-validator');
 const { validate } = require('../../middleware/validate');
-const { publicFormLimiter } = require('../../middleware/rateLimiter');
+const { publicFormLimiter, publicWebsiteFormLimiter } = require('../../middleware/rateLimiter');
 const { CAMPAIGN_SLUGS } = require('../../core/crm/inboundCampaigns');
 const controller = require('./inboundLeadController');
+const websitePublicFormController = require('./websitePublicFormController');
 
 // Entirely public, no authentication — this is the whole point (a
 // marketing-page visitor submitting an inbound lead form).
@@ -25,5 +26,20 @@ router.post('/inbound-leads', publicFormLimiter, [
   // Honeypot — intentionally not documented to real users; must stay empty.
   body('website').optional({ values: 'falsy' }).isLength({ max: 200 }),
 ], validate, controller.submit);
+
+// Entirely public, no authentication — a real visitor submitting a
+// generated website's own contact/lead form (current-phase-plan.md §
+// 2e). publicWebsiteFormLimiter is a dedicated instance, keyed by IP +
+// websiteId — never publicFormLimiter above, which is a single-tenant,
+// IP-only limiter built for Website Guys' own marketing pages, not
+// thousands of different client websites sharing one route pattern.
+router.post('/websites/:websiteId/submit-form', publicWebsiteFormLimiter, [
+  param('websiteId').isUUID(),
+  body('pageId').notEmpty().isLength({ max: 255 }),
+  body('sectionId').notEmpty().isLength({ max: 255 }),
+  body('values').optional().isObject(),
+  // Honeypot — intentionally not documented to real users; must stay empty.
+  body('website').optional({ values: 'falsy' }).isLength({ max: 200 }),
+], validate, websitePublicFormController.submit);
 
 module.exports = router;

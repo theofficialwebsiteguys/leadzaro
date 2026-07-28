@@ -17,7 +17,7 @@ const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
   DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
   WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
-  WebsiteDomain,
+  WebsiteDomain, WebsitePublicFormSubmission,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -481,6 +481,75 @@ async function findOrCreateWebsiteDomainForRequester(context, website, domain) {
 }
 
 /**
+ * The ONLY place in this codebase allowed to look up a Website with NO
+ * requester context at all (current-phase-plan.md § 2e; review finding
+ * #1). A genuine anonymous site visitor has neither a membership nor
+ * an organization to scope by — "bypass the guard" is not itself an
+ * option, since the hook throws unconditionally on any unmarked query
+ * (verified during the pre-implementation review). This is the same
+ * documented-exception shape as getNextVersionNumberForWebsite/
+ * pruneOldAutosaveVersions above, just for the opposite reason: no
+ * internal-bookkeeping shortcut, no requester to scope by in the first
+ * place. Returns only the minimal fields the public write path needs
+ * — never the full row — and matches on currentLiveProductionDeploymentId
+ * being set so a draft-only or not-yet-deployed website is treated
+ * identically to one that doesn't exist (finding #10 — the controller
+ * returns the same generic 404 for both).
+ */
+function getLiveWebsiteForPublicSubmission(websiteId) {
+  return Website.findOne(scoped({
+    where: { id: websiteId, currentLiveProductionDeploymentId: { [Op.ne]: null } },
+    attributes: ['id', 'currentLiveProductionDeploymentId', 'organizationId', 'agencyOrganizationId'],
+  }));
+}
+
+/**
+ * Resolves the exact WebsiteVersion currently live in production, for
+ * the same anonymous, no-requester-context reason as
+ * getLiveWebsiteForPublicSubmission immediately above — the public
+ * form-submission/analytics-event write paths need the live schema
+ * (to validate a submitted section is really a 'form' section, and to
+ * record which version a submission targeted) with no requester to
+ * scope by. Never used to serve draft or non-live content — the
+ * deploymentId passed in must already have come from
+ * currentLiveProductionDeploymentId.
+ */
+async function getLiveWebsiteVersionForPublicSubmission(deploymentId) {
+  const deployment = await WebsiteDeployment.findOne(scoped({
+    where: { id: deploymentId }, attributes: ['id', 'websiteVersionId'],
+  }));
+  if (!deployment) return null;
+  return WebsiteVersion.findOne(scoped({ where: { id: deployment.websiteVersionId } }));
+}
+
+/**
+ * WebsitePublicFormSubmission (current-phase-plan.md § 2e) —
+ * employee-only, mirroring WebsiteDomain/WebsiteDeployment. The
+ * anonymous public write path (server/modules/public/) never uses
+ * these — creating a row is never guarded by installVisibilityGuard in
+ * the first place (only find/count are hooked), so the public
+ * controller creates rows directly, deriving organizationId/
+ * agencyOrganizationId server-side from getLiveWebsiteForPublicSubmission's
+ * verified result. These accessors are for the employee-side triage
+ * view only.
+ */
+function assertEmployeeContextForPublicFormSubmission(context) {
+  if (context.membership.membershipType === 'client') {
+    throw new Error('WebsitePublicFormSubmission is never reachable by a client-membership request');
+  }
+}
+
+function listWebsitePublicFormSubmissionsForRequester(context, extraWhere = {}) {
+  assertEmployeeContextForPublicFormSubmission(context);
+  return WebsitePublicFormSubmission.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), order: [['createdAt', 'DESC']] }));
+}
+
+function getWebsitePublicFormSubmissionByIdForRequester(context, submissionId) {
+  assertEmployeeContextForPublicFormSubmission(context);
+  return WebsitePublicFormSubmission.findOne(scoped({ where: tenantWhereForRequester(context, { id: submissionId }) }));
+}
+
+/**
  * WebsiteVersion's visibility is NOT just tenant scoping — a client
  * membership must never see another user's in-progress draft/autosave
  * work (e.g. a designer's unfinished changes), only the currently
@@ -726,6 +795,10 @@ module.exports = {
   getWebsiteDomainForRequester,
   listWebsiteDomainsForRequester,
   findOrCreateWebsiteDomainForRequester,
+  getLiveWebsiteForPublicSubmission,
+  getLiveWebsiteVersionForPublicSubmission,
+  listWebsitePublicFormSubmissionsForRequester,
+  getWebsitePublicFormSubmissionByIdForRequester,
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,

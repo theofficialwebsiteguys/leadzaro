@@ -62,6 +62,7 @@ const WebsiteRepository = require('./WebsiteRepository')(sequelize);
 const WebsiteDeployment = require('./WebsiteDeployment')(sequelize);
 const WebsiteDevelopmentHandoff = require('./WebsiteDevelopmentHandoff')(sequelize);
 const WebsiteDomain = require('./WebsiteDomain')(sequelize);
+const WebsitePublicFormSubmission = require('./WebsitePublicFormSubmission')(sequelize);
 
 const models = {
   User,
@@ -121,6 +122,7 @@ const models = {
   WebsiteDeployment,
   WebsiteDevelopmentHandoff,
   WebsiteDomain,
+  WebsitePublicFormSubmission,
 };
 
 // Run associations
