@@ -19,7 +19,7 @@ const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
   DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
   WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
-  WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsEvent,
+  WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsEvent, SeoEntitlementGrant,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -575,6 +575,53 @@ function listWebsiteAnalyticsEventsForRequester(context, extraWhere = {}) {
   }));
 }
 
+/**
+ * SeoEntitlementGrant (current-phase-plan.md § 2a) — the manual half of
+ * SEO entitlement resolution, employee-only. `organizationId` here is
+ * the *client* organization the grant applies to, so tenant scoping
+ * for an employee (agencyOrganizationId) still correctly limits this
+ * to "my own agency's clients' grants" — a client-membership request
+ * is blocked entirely, matching WebsiteDomain/WebsiteDeployment.
+ */
+function assertEmployeeContextForSeoEntitlement(context) {
+  if (context.membership.membershipType === 'client') {
+    throw new Error('SeoEntitlementGrant is never reachable by a client-membership request');
+  }
+}
+
+function listSeoEntitlementGrantsForRequester(context, extraWhere = {}) {
+  assertEmployeeContextForSeoEntitlement(context);
+  return SeoEntitlementGrant.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), order: [['createdAt', 'DESC']] }));
+}
+
+function getSeoEntitlementGrantByIdForRequester(context, grantId) {
+  assertEmployeeContextForSeoEntitlement(context);
+  return SeoEntitlementGrant.findOne(scoped({ where: tenantWhereForRequester(context, { id: grantId }) }));
+}
+
+/**
+ * Deliberately bypasses the client-visibility filter above, for the
+ * same reason getNextVersionNumberForWebsite/findProjectByOrganizationIdSystemLevel
+ * do — this is an internal existence check (does an active grant exist
+ * for this organization?), called from seoEntitlementService.hasSeoEntitlement
+ * after the caller has already resolved the target Website/organization
+ * through the normal accessor path. It's a boolean resolution, not a
+ * requester-facing read of the row's own content, and computing it
+ * from a requester-scoped view would be wrong anyway: entitlement
+ * resolution must see every grant regardless of which specific
+ * employee happens to be making the request that triggered the check.
+ */
+function hasActiveSeoEntitlementGrantSystemLevel(organizationId) {
+  const now = new Date();
+  return SeoEntitlementGrant.findOne(scoped({
+    where: {
+      organizationId,
+      revokedAt: null,
+      [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: now } }],
+    },
+  })).then((grant) => !!grant);
+}
+
 async function getWebsiteAnalyticsSummaryForRequester(context, websiteId, { rangeDays = 30 } = {}) {
   const since = new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000);
   const rows = await WebsiteAnalyticsEvent.findAll(scoped({
@@ -843,6 +890,9 @@ module.exports = {
   getWebsitePublicFormSubmissionByIdForRequester,
   listWebsiteAnalyticsEventsForRequester,
   getWebsiteAnalyticsSummaryForRequester,
+  listSeoEntitlementGrantsForRequester,
+  getSeoEntitlementGrantByIdForRequester,
+  hasActiveSeoEntitlementGrantSystemLevel,
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,

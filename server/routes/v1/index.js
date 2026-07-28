@@ -15,5 +15,6 @@ router.use('/projects', require('../../modules/projects/routes'));
 router.use('/requests', require('../../modules/requests/queueRoutes'));
 router.use('/section-definitions', require('../../modules/websites/sectionDefinitionRoutes'));
 router.use('/design-system-templates', require('../../modules/websites/designSystemTemplateRoutes'));
+router.use('/seo', require('../../modules/seo/routes'));
 
 module.exports = router;

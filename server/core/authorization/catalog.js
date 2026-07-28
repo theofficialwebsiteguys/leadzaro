@@ -52,6 +52,7 @@ const PERMISSIONS = [
   { key: 'builder.publish', category: 'builder', description: 'Approve and publish a pending website version' },
   { key: 'builder.manage', category: 'builder', description: 'Manage website editor assignments and the section/design-system library' },
   { key: 'builder.develop', category: 'builder', description: 'Trigger Angular code generation, merge developer branches back, and register custom components' },
+  { key: 'seo.manage_entitlements', category: 'seo', description: 'Manually grant or revoke a client organization\'s SEO add-on entitlement' },
 ];
 
 const PERMISSION_KEYS = new Set(PERMISSIONS.map((p) => p.key));
@@ -116,7 +117,7 @@ const EMPLOYEE_ROLES = [
   { key: 'advanced_designer', name: 'Advanced Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'builder.edit', 'builder.publish', 'builder.develop'] },
   { key: 'developer', name: 'Developer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'builder.edit', 'builder.publish', 'builder.develop'] },
   { key: 'support', name: 'Support', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage'] },
-  { key: 'billing', name: 'Billing', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'billing.manage_webhooks', 'billing.manage_service_plans'] },
+  { key: 'billing', name: 'Billing', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'billing.manage_webhooks', 'billing.manage_service_plans', 'seo.manage_entitlements'] },
 ].map((role) => ({
   ...role,
   scope: 'employee',
