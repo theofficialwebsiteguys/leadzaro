@@ -20,6 +20,7 @@ const publicFormTriageController = require('./websitePublicFormTriageController'
 const analyticsController = require('./websiteAnalyticsController');
 const exportController = require('./websiteExportController');
 const seoPageSettingsController = require('./seoPageSettingsController');
+const seoRedirectController = require('./seoRedirectController');
 
 router.use(authenticate, resolveContext());
 
@@ -136,5 +137,13 @@ router.put('/seo/pages/:pageId', requireAnyPermission(['builder.edit', 'builder.
 ], validate, seoPageSettingsController.upsert);
 router.get('/seo/sitemap.xml', requirePermission('builder.manage'), seoPageSettingsController.sitemap);
 router.get('/seo/robots.txt', requirePermission('builder.manage'), seoPageSettingsController.robots);
+
+router.get('/seo/redirects', requirePermission('builder.manage'), seoRedirectController.list);
+router.post('/seo/redirects', requirePermission('builder.manage'), [
+  body('fromPath').notEmpty(),
+  body('toPath').notEmpty(),
+  body('statusCode').optional().isInt(),
+], validate, seoRedirectController.create);
+router.delete('/seo/redirects/:redirectId', requirePermission('builder.manage'), seoRedirectController.remove);
 
 module.exports = router;

@@ -173,6 +173,37 @@ describe('generateWebsiteFiles (Phase 6 slice 4)', () => {
     expect(JSON.parse(schemaFile.content)).toEqual(schema);
   });
 
+  test('a WebsiteRedirect is emitted as a real Angular redirectTo route, placed before the page routes it might shadow', () => {
+    const files = generateWebsiteFiles({
+      schema: buildMultiPageSchema(),
+      sectionDefinitionsByKey: SECTION_DEFINITIONS_BY_KEY,
+      designTokens: { colors: {}, fonts: {} },
+      websiteId: 'website-1',
+      websiteVersionId: 'version-1',
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      redirects: [{ fromPath: '/old-contact', toPath: '/contact' }],
+    });
+    const routesFile = files.find((f) => f.path === 'generated/configuration/routes.ts');
+    expect(routesFile.content).toMatch(/path: 'old-contact', redirectTo: 'contact', pathMatch: 'full'/);
+    const redirectIndex = routesFile.content.indexOf("path: 'old-contact'");
+    const pageIndex = routesFile.content.indexOf("path: '',");
+    expect(redirectIndex).toBeGreaterThan(-1);
+    expect(redirectIndex).toBeLessThan(pageIndex);
+  });
+
+  test('no redirects produces the exact same routes output as before (no stray empty entries)', () => {
+    const files = generateWebsiteFiles({
+      schema: buildMultiPageSchema(),
+      sectionDefinitionsByKey: SECTION_DEFINITIONS_BY_KEY,
+      designTokens: { colors: {}, fonts: {} },
+      websiteId: 'website-1',
+      websiteVersionId: 'version-1',
+      generatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const routesFile = files.find((f) => f.path === 'generated/configuration/routes.ts');
+    expect(routesFile.content).not.toContain('redirectTo');
+  });
+
   test(
     'the generated TypeScript actually typechecks against the project\'s real @angular/core and @angular/router types',
     () => {
@@ -190,6 +221,28 @@ describe('generateWebsiteFiles (Phase 6 slice 4)', () => {
         // Surface the real tsc diagnostics in the failure — essential for
         // ever debugging a generator regression, not just "it failed".
         throw new Error(`Generated Angular output failed to typecheck:\n${result.output}`);
+      }
+      expect(result.success).toBe(true);
+    },
+    30000
+  );
+
+  test(
+    'a generated routes.ts including a real redirect route actually typechecks against @angular/router\'s real Routes type',
+    () => {
+      const files = generateWebsiteFiles({
+        schema: buildMultiPageSchema(),
+        sectionDefinitionsByKey: SECTION_DEFINITIONS_BY_KEY,
+        designTokens: { colors: { primary: '#2563eb' }, fonts: { body: 'Inter' } },
+        websiteId: 'website-1',
+        websiteVersionId: 'version-1',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        redirects: [{ fromPath: '/old-contact', toPath: '/contact' }],
+      });
+
+      const result = typecheckGeneratedFiles(files);
+      if (!result.success) {
+        throw new Error(`Generated Angular output (with a redirect) failed to typecheck:\n${result.output}`);
       }
       expect(result.success).toBe(true);
     },

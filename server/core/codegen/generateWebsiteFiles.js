@@ -201,16 +201,38 @@ function toRoutePath(route) {
   return route.replace(/^\//, '');
 }
 
-function generateRoutesFile(pages) {
+/**
+ * Redirects (Phase 8 slice 3, current-phase-plan.md § 2c) — real,
+ * functioning Angular client-side routes, not just stored metadata
+ * with no enforcement. Reviewed correction: unlike Phase 6/7's Live-
+ * adapter deferrals (blocked by a genuine absence of live credentials
+ * in this environment), nothing blocks a real redirect from working
+ * today — RouterModule's own redirectTo/pathMatch is pure generated
+ * code. A server/hosting-level 301 (.htaccess/cPanel rule) remains an
+ * explicitly deferred, separate concern pending live cPanel
+ * credentials; this is the client-side half, real and shipping now.
+ * Placed before the page routes so an exact-match redirect is never
+ * shadowed by a same-path page route (Angular matches routes in
+ * array order).
+ */
+function generateRedirectRouteEntries(redirects) {
+  return (redirects || [])
+    .map((redirect) => `  { path: '${toRoutePath(redirect.fromPath)}', redirectTo: '${toRoutePath(redirect.toPath)}', pathMatch: 'full' },`)
+    .join('\n');
+}
+
+function generateRoutesFile(pages, redirects = []) {
   // routes.ts lives at generated/configuration/routes.ts; page components
   // live at generated/pages/*.component.ts — a sibling directory, not a
   // child of configuration/, hence '../pages/...' not './pages/...'.
   const imports = pages
     .map((page) => `import { ${toPascalCase(page.id)}Component } from '../pages/${toKebabCase(page.id)}.component';`)
     .join('\n');
-  const entries = pages
+  const redirectEntries = generateRedirectRouteEntries(redirects);
+  const pageEntries = pages
     .map((page) => `  { path: '${toRoutePath(page.route)}', component: ${toPascalCase(page.id)}Component },`)
     .join('\n');
+  const entries = [redirectEntries, pageEntries].filter(Boolean).join('\n');
 
   const content = `import { Routes } from '@angular/router';
 ${imports}
@@ -265,7 +287,7 @@ function generateConfigFile({
  * module's own top-of-file documentation.
  */
 function generateWebsiteFiles({
-  schema, sectionDefinitionsByKey, designTokens, websiteId, websiteVersionId, generatedAt, googleAnalyticsMeasurementId,
+  schema, sectionDefinitionsByKey, designTokens, websiteId, websiteVersionId, generatedAt, googleAnalyticsMeasurementId, redirects,
 }) {
   const pages = schema?.pages || [];
   const pageFiles = pages.map((page) => generatePageComponentFile(page, sectionDefinitionsByKey));
@@ -286,7 +308,7 @@ function generateWebsiteFiles({
   return [
     ...pageFiles.map(({ path, content }) => ({ path, content })),
     ...standardComponentFiles,
-    generateRoutesFile(pages),
+    generateRoutesFile(pages, redirects),
     generateDesignTokensFile(designTokens),
     generateGlobalStylesFile(),
     generateSiteSchemaFile(schema),

@@ -19,7 +19,7 @@ const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
   DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
   WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
-  WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsEvent, SeoEntitlementGrant, WebsitePageSeoSettings,
+  WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsEvent, SeoEntitlementGrant, WebsitePageSeoSettings, WebsiteRedirect,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -653,6 +653,27 @@ async function upsertWebsitePageSeoSettingsForRequester(context, website, pageId
   });
 }
 
+/**
+ * WebsiteRedirect (current-phase-plan.md § 2c) — employee-only, a
+ * technical/structural concern like domain/document-root mapping, not
+ * a content-editing one.
+ */
+function assertEmployeeContextForRedirect(context) {
+  if (context.membership.membershipType === 'client') {
+    throw new Error('WebsiteRedirect is never reachable by a client-membership request');
+  }
+}
+
+function listWebsiteRedirectsForRequester(context, extraWhere = {}) {
+  assertEmployeeContextForRedirect(context);
+  return WebsiteRedirect.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), order: [['fromPath', 'ASC']] }));
+}
+
+function getWebsiteRedirectByIdForRequester(context, redirectId) {
+  assertEmployeeContextForRedirect(context);
+  return WebsiteRedirect.findOne(scoped({ where: tenantWhereForRequester(context, { id: redirectId }) }));
+}
+
 async function getWebsiteAnalyticsSummaryForRequester(context, websiteId, { rangeDays = 30 } = {}) {
   const since = new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000);
   const rows = await WebsiteAnalyticsEvent.findAll(scoped({
@@ -927,6 +948,8 @@ module.exports = {
   listWebsitePageSeoSettingsForRequester,
   getWebsitePageSeoSettingsForRequester,
   upsertWebsitePageSeoSettingsForRequester,
+  listWebsiteRedirectsForRequester,
+  getWebsiteRedirectByIdForRequester,
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,

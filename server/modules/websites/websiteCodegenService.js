@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  getWebsiteRepositoryForRequester, getDesignSystemByIdForRequester, listSectionDefinitionsForRequester,
+  getWebsiteRepositoryForRequester, getDesignSystemByIdForRequester, listSectionDefinitionsForRequester, listWebsiteRedirectsForRequester,
 } = require('../../core/authorization/clientVisibleModels');
 const { getGitHubAdapter } = require('../../core/integrations/github/githubAdapter');
 const { commitGeneratedFiles } = require('../../core/codegen/angularGenerator');
@@ -37,6 +37,10 @@ async function buildGeneratedFiles(context, website, version) {
   const designSystem = await getDesignSystemByIdForRequester(context, website.designSystemId);
   const sectionDefinitions = await listSectionDefinitionsForRequester(context, {}, { includeUnpublished: true });
   const sectionDefinitionsByKey = new Map(sectionDefinitions.map((definition) => [definition.componentKey, definition]));
+  // Every caller of buildGeneratedFiles is already an employee-only
+  // action (builder.develop/builder.manage) — safe to use the
+  // employee-only redirects accessor unconditionally.
+  const redirects = await listWebsiteRedirectsForRequester(context, { websiteId: website.id });
 
   return generateWebsiteFiles({
     schema: version.schema,
@@ -46,6 +50,7 @@ async function buildGeneratedFiles(context, website, version) {
     websiteVersionId: version.id,
     generatedAt: new Date().toISOString(),
     googleAnalyticsMeasurementId: website.googleAnalyticsMeasurementId,
+    redirects,
   });
 }
 
