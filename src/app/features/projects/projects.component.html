@@ -553,6 +553,10 @@
                   <button class="btn btn-sm" (click)="createCheckpoint()">Create Checkpoint</button>
                 </div>
 
+                <div *hasPermission="'builder.develop'" class="mt-2">
+                  <input class="input" placeholder="Technical handoff notes (used by Promote to Development, below)" [(ngModel)]="newHandoffNotes" />
+                </div>
+
                 @if (websiteVersions().length > 0) {
                   <div class="table-wrap mt-2">
                     <table>
@@ -571,6 +575,7 @@
                               }
                               <button class="btn btn-sm" *hasPermission="'builder.develop'" (click)="generateWebsite(v)">Generate</button>
                               <button class="btn btn-sm" *hasPermission="'builder.develop'" (click)="deployPreview(v)">Deploy Preview</button>
+                              <button class="btn btn-sm" *hasPermission="'builder.develop'" (click)="promoteToDevelopment(v)">Promote to Development</button>
                             </td>
                           </tr>
                         }
@@ -668,6 +673,29 @@
                     </div>
                   } @else {
                     <p class="text-sm text-muted mb-0">No preview deployments yet — use "Deploy Preview" on a version above.</p>
+                  }
+                </div>
+
+                <div *hasPermission="'builder.develop'" class="mt-2">
+                  <label class="field-label">Development Handoffs</label>
+                  @if (websiteDevelopmentHandoffs().length > 0) {
+                    <div class="table-wrap">
+                      <table>
+                        <thead><tr><th>Branch</th><th>Status</th><th>Notes</th><th>When</th></tr></thead>
+                        <tbody>
+                          @for (h of websiteDevelopmentHandoffs(); track h.id) {
+                            <tr>
+                              <td>{{ h.branchName }}</td>
+                              <td>{{ h.status }}</td>
+                              <td>{{ h.technicalHandoffNotes || '—' }}</td>
+                              <td>{{ h.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  } @else {
+                    <p class="text-sm text-muted mb-0">No development handoffs yet — use "Promote to Development" on a version above.</p>
                   }
                 </div>
 

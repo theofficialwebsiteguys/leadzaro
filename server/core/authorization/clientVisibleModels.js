@@ -16,7 +16,7 @@ const { Op } = require('sequelize');
 const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
   DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
-  WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository, WebsiteDeployment,
+  WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -422,6 +422,26 @@ function getWebsiteDeploymentByIdForRequester(context, deploymentId) {
 }
 
 /**
+ * WebsiteDevelopmentHandoff — employee-only, same reasoning as
+ * WebsiteDeployment immediately above.
+ */
+function assertEmployeeContextForHandoff(context) {
+  if (context.membership.membershipType === 'client') {
+    throw new Error('WebsiteDevelopmentHandoff is never reachable by a client-membership request');
+  }
+}
+
+function listWebsiteDevelopmentHandoffsForRequester(context, extraWhere = {}) {
+  assertEmployeeContextForHandoff(context);
+  return WebsiteDevelopmentHandoff.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), order: [['createdAt', 'DESC']] }));
+}
+
+function getWebsiteDevelopmentHandoffByIdForRequester(context, handoffId) {
+  assertEmployeeContextForHandoff(context);
+  return WebsiteDevelopmentHandoff.findOne(scoped({ where: tenantWhereForRequester(context, { id: handoffId }) }));
+}
+
+/**
  * WebsiteVersion's visibility is NOT just tenant scoping — a client
  * membership must never see another user's in-progress draft/autosave
  * work (e.g. a designer's unfinished changes), only the currently
@@ -662,6 +682,8 @@ module.exports = {
   findOrCreateWebsiteRepositoryForRequester,
   listWebsiteDeploymentsForRequester,
   getWebsiteDeploymentByIdForRequester,
+  listWebsiteDevelopmentHandoffsForRequester,
+  getWebsiteDevelopmentHandoffByIdForRequester,
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,

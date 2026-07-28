@@ -126,3 +126,13 @@ export interface WebsiteDeployment {
   status: 'pending' | 'building' | 'live' | 'failed';
   createdAt: string;
 }
+
+export interface WebsiteDevelopmentHandoff {
+  id: string;
+  websiteId: string;
+  websiteVersionId: string;
+  branchName: string;
+  technicalHandoffNotes: string | null;
+  status: 'initiated' | 'preview_ready' | 'in_development';
+  createdAt: string;
+}

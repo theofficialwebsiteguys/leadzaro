@@ -12,6 +12,7 @@ const collaborationController = require('./websiteCollaborationController');
 const repositoryController = require('./websiteRepositoryController');
 const codegenController = require('./websiteCodegenController');
 const deploymentController = require('./websiteDeploymentController');
+const developmentHandoffController = require('./websiteDevelopmentHandoffController');
 
 router.use(authenticate, resolveContext());
 
@@ -71,5 +72,8 @@ router.post('/versions/:versionId/generate', requirePermission('builder.develop'
 
 router.get('/deployments', requirePermission('builder.develop'), deploymentController.listDeployments);
 router.post('/versions/:versionId/deploy-preview', requirePermission('builder.develop'), deploymentController.deployPreview);
+
+router.get('/development-handoffs', requirePermission('builder.develop'), developmentHandoffController.list);
+router.post('/versions/:versionId/promote-to-development', requirePermission('builder.develop'), developmentHandoffController.promote);
 
 module.exports = router;

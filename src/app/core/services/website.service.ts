@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
-  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteVersionComparison, WebsiteComment, WebsitePresenceEntry, WebsiteRepository, WebsiteDeployment,
+  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteVersionComparison, WebsiteComment, WebsitePresenceEntry, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
 } from '../models/website.model';
 
 @Injectable({ providedIn: 'root' })
@@ -108,5 +108,13 @@ export class WebsiteService {
 
   deployPreview(projectId: string, versionId: string): Observable<{ data: { deployment: WebsiteDeployment } }> {
     return this.http.post<{ data: { deployment: WebsiteDeployment } }>(`/api/v1/projects/${projectId}/website/versions/${versionId}/deploy-preview`, {});
+  }
+
+  listDevelopmentHandoffs(projectId: string): Observable<{ data: { handoffs: WebsiteDevelopmentHandoff[] } }> {
+    return this.http.get<{ data: { handoffs: WebsiteDevelopmentHandoff[] } }>(`/api/v1/projects/${projectId}/website/development-handoffs`);
+  }
+
+  promoteToDevelopment(projectId: string, versionId: string, technicalHandoffNotes: string): Observable<{ data: { handoff: WebsiteDevelopmentHandoff } }> {
+    return this.http.post<{ data: { handoff: WebsiteDevelopmentHandoff } }>(`/api/v1/projects/${projectId}/website/versions/${versionId}/promote-to-development`, { technicalHandoffNotes });
   }
 }

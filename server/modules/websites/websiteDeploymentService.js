@@ -25,36 +25,39 @@ function previewBranchName(version) {
   return `preview/v${version.versionNumber}`;
 }
 
-async function deployPreview({
-  context, projectId, versionId, actorUserId,
+/**
+ * The shared core: create-or-reuse a branch, generate + commit, enable
+ * Pages, record a WebsiteDeployment. Used directly by deployPreview
+ * below, and by websiteDevelopmentHandoffService (slice 7)'s own
+ * "deploy a preview" step of the promote-to-development checklist —
+ * same primitive, different branch name/environment/handoff linkage,
+ * never a second, subtly different copy of this logic.
+ */
+async function deployToBranch({
+  context, website, version, repository, branchName, environment, developmentHandoffId, actorUserId,
 }) {
-  const website = await getWebsite(context, projectId);
-  const version = await getVersion(context, projectId, versionId);
-  const repository = await requireActiveRepository(context, website);
-  const branchName = previewBranchName(version);
-
   const adapter = getGitHubAdapter();
   try {
     await adapter.createBranch(repository.externalRepoId, repository.defaultBranch, branchName);
   } catch {
-    // Already exists from a prior deploy of this same version — fine,
+    // Already exists from a prior deploy to this same branch — fine,
     // commit onto it as-is.
   }
 
-  let deployment;
   try {
     const files = await buildGeneratedFiles(context, website, version);
     const commit = await commitGeneratedFiles({
-      adapter, repoId: repository.externalRepoId, branch: branchName, files, message: `Preview deploy of v${version.versionNumber}`,
+      adapter, repoId: repository.externalRepoId, branch: branchName, files, message: `Deploy of v${version.versionNumber}`,
     });
     const pages = await adapter.enablePagesForBranch(repository.externalRepoId, branchName);
 
-    deployment = await WebsiteDeployment.create({
+    return await WebsiteDeployment.create({
       websiteId: website.id,
       organizationId: website.organizationId,
       agencyOrganizationId: website.agencyOrganizationId,
       websiteVersionId: version.id,
-      environment: 'preview',
+      developmentHandoffId: developmentHandoffId || null,
+      environment,
       branchName,
       commitSha: commit.sha,
       previewUrl: pages.previewUrl,
@@ -67,15 +70,25 @@ async function deployPreview({
       organizationId: website.organizationId,
       agencyOrganizationId: website.agencyOrganizationId,
       websiteVersionId: version.id,
-      environment: 'preview',
+      developmentHandoffId: developmentHandoffId || null,
+      environment,
       branchName,
       status: 'failed',
       deployedByUserId: actorUserId,
     });
     throw err;
   }
+}
 
-  return deployment;
+async function deployPreview({
+  context, projectId, versionId, actorUserId,
+}) {
+  const website = await getWebsite(context, projectId);
+  const version = await getVersion(context, projectId, versionId);
+  const repository = await requireActiveRepository(context, website);
+  return deployToBranch({
+    context, website, version, repository, branchName: previewBranchName(version), environment: 'preview', actorUserId,
+  });
 }
 
 async function listDeployments(context, projectId) {
@@ -83,4 +96,6 @@ async function listDeployments(context, projectId) {
   return listWebsiteDeploymentsForRequester(context, { websiteId: website.id });
 }
 
-module.exports = { deployPreview, listDeployments, previewBranchName };
+module.exports = {
+  deployPreview, listDeployments, previewBranchName, deployToBranch,
+};

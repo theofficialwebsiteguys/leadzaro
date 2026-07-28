@@ -24,7 +24,7 @@ import { Meeting } from '../../core/models/meeting.model';
 import { ProjectFile, FILE_SCOPES } from '../../core/models/file.model';
 import { CancellationRequest } from '../../core/models/cancellationRequest.model';
 import {
-  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteComment, WebsitePresenceEntry, WebsiteRepository, WebsiteDeployment,
+  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteComment, WebsitePresenceEntry, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
 } from '../../core/models/website.model';
 import { SectionDefinition } from '../../core/models/sectionDefinition.model';
 import { DesignSystemTemplate } from '../../core/models/designSystemTemplate.model';
@@ -127,6 +127,8 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   websiteRepository = signal<WebsiteRepository | null>(null);
   provisioningRepository = signal(false);
   websiteDeployments = signal<WebsiteDeployment[]>([]);
+  websiteDevelopmentHandoffs = signal<WebsiteDevelopmentHandoff[]>([]);
+  newHandoffNotes = '';
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -220,6 +222,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.websitePresence.set([]);
     this.websiteRepository.set(null);
     this.websiteDeployments.set([]);
+    this.websiteDevelopmentHandoffs.set([]);
     this.projectService.getById(id).subscribe((res) => {
       this.selected.set(res.data.project);
       this.stageTarget = res.data.project.stage;
@@ -530,6 +533,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
         if (this.org.hasPermission('builder.develop')) {
           this.loadWebsiteRepository(projectId);
           this.loadWebsiteDeployments(projectId);
+          this.loadWebsiteDevelopmentHandoffs(projectId);
         }
         if (this.org.hasPermission('builder.edit')) {
           this.websiteService.heartbeatPresence(projectId).subscribe(() => this.loadWebsitePresence(projectId));
@@ -716,6 +720,24 @@ export class ProjectsComponent implements OnInit, OnDestroy {
 
   loadWebsiteDeployments(projectId: string) {
     this.websiteService.listDeployments(projectId).subscribe((res) => this.websiteDeployments.set(res.data.deployments));
+  }
+
+  loadWebsiteDevelopmentHandoffs(projectId: string) {
+    this.websiteService.listDevelopmentHandoffs(projectId).subscribe((res) => this.websiteDevelopmentHandoffs.set(res.data.handoffs));
+  }
+
+  promoteToDevelopment(version: WebsiteVersion) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.websiteService.promoteToDevelopment(id, version.id, this.newHandoffNotes).subscribe({
+      next: () => {
+        this.newHandoffNotes = '';
+        this.actionMessage.set('Promoted to development — a preview was deployed, a technical handoff task was created, and the assigned developers were notified.');
+        this.loadWebsiteDevelopmentHandoffs(id);
+        this.loadWebsiteDeployments(id);
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to promote to development'),
+    });
   }
 
   deployPreview(version: WebsiteVersion) {
