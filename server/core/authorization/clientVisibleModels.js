@@ -695,6 +695,28 @@ function getWebsiteSeoAuditByIdForRequester(context, auditId) {
 }
 
 /**
+ * The client-reachable half of the same two-accessor split Phase 7
+ * established for WebsiteAnalyticsEvent (current-phase-plan.md § 2e)
+ * — tenant-scoped, no employee-only assertion, but returns only a
+ * derived error/warning count, never the raw findings array. The
+ * guarantee that a client never sees raw findings lives here, inside
+ * the accessor itself, not in caller discipline.
+ */
+async function getLatestWebsiteSeoAuditSummaryForRequester(context, websiteId) {
+  const audit = await WebsiteSeoAudit.findOne(scoped({
+    where: tenantWhereForRequester(context, { websiteId }), order: [['createdAt', 'DESC']],
+  }));
+  if (!audit) return null;
+  const findings = audit.findings || [];
+  return {
+    id: audit.id,
+    createdAt: audit.createdAt,
+    errorCount: findings.filter((f) => f.severity === 'error').length,
+    warningCount: findings.filter((f) => f.severity === 'warning').length,
+  };
+}
+
+/**
  * SeoTaskCycle (current-phase-plan.md § 2d) — employee-only.
  */
 function assertEmployeeContextForSeoTaskCycle(context) {
@@ -987,6 +1009,7 @@ module.exports = {
   listWebsiteSeoAuditsForRequester,
   getWebsiteSeoAuditByIdForRequester,
   listSeoTaskCyclesForRequester,
+  getLatestWebsiteSeoAuditSummaryForRequester,
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,

@@ -36,6 +36,10 @@ module.exports = (sequelize) => {
     // — Leadzaro never provisions a GA account; this only stores a
     // measurement ID the agency/client already has, employee-settable.
     googleAnalyticsMeasurementId: { type: DataTypes.STRING(50), allowNull: true },
+    // Guided Google Search Console connection (current-phase-plan.md §
+    // 2e) — same "store a value the agency/client already has, never
+    // provision one" precedent as googleAnalyticsMeasurementId above.
+    googleSearchConsolePropertyUrl: { type: DataTypes.STRING(500), allowNull: true },
     createdByUserId: { type: DataTypes.UUID, allowNull: true },
   });
 
