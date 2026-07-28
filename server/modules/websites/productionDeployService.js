@@ -91,10 +91,31 @@ async function deployToProduction({
 
   const cpanelAdapter = getCPanelAdapter();
   const account = cpanelAccountForWebsite(website);
-  const { backupId } = await cpanelAdapter.backupCurrentFolder(account);
-  await cpanelAdapter.uploadBuild(account, files);
   const liveUrl = `https://${domainRecord.domain}/`;
-  const health = await cpanelAdapter.healthCheck(liveUrl);
+
+  // Closing-review fix: the backup/upload/health-check sequence itself
+  // can throw (a real network failure against a Live adapter, for
+  // instance) — the major gate's guarantee ("a failed... production
+  // deployment must restore the prior live build") must hold for that
+  // case exactly as it does when healthCheck merely *resolves*
+  // unhealthy, not only the latter. An uncaught exception here used to
+  // escape with no WebsiteDeployment row, no restore attempt, and no
+  // notification, despite uploadBuild possibly having already mutated
+  // the live folder. Normalizing any such exception to `health: {
+  // healthy: false }` lets it fall through the exact same
+  // restore/notify branching below as a resolved-unhealthy result,
+  // rather than duplicating that logic.
+  let backupId = null;
+  let health;
+  let failureReason = null;
+  try {
+    ({ backupId } = await cpanelAdapter.backupCurrentFolder(account));
+    await cpanelAdapter.uploadBuild(account, files);
+    health = await cpanelAdapter.healthCheck(liveUrl);
+  } catch (deployErr) {
+    failureReason = deployErr.message;
+    health = { healthy: false };
+  }
 
   const baseFields = {
     websiteId: website.id,
@@ -117,8 +138,27 @@ async function deployToProduction({
     return { deployment, rolledBack: false };
   }
 
-  // Unhealthy — attempt to restore the backup taken immediately before
-  // the upload above.
+  if (!backupId) {
+    // backupCurrentFolder itself never succeeded, so uploadBuild never
+    // ran — the live folder was never touched. Nothing to restore and
+    // no live-site risk; recorded as a plain failed attempt rather than
+    // a rollback (which would imply something needed reverting).
+    const deployment = await WebsiteDeployment.create({ ...baseFields, status: 'failed' });
+    await notifyResponsibleRoles({
+      context,
+      projectId,
+      website,
+      type: 'website_production_deploy_failed',
+      title: `Production deploy of v${version.versionNumber} failed before any live change was made`,
+      body: `The deploy failed while preparing the upload${failureReason ? `: ${failureReason}` : ' (no backup could be taken)'}. The live site was not touched.`,
+      data: { websiteId: website.id, deploymentId: deployment.id, projectId },
+      priority: 'normal',
+    });
+    return { deployment, rolledBack: false, deployFailed: true };
+  }
+
+  // Unhealthy (or threw after a backup existed) — attempt to restore
+  // the backup taken immediately before the upload above.
   try {
     await cpanelAdapter.restoreFromBackup(account, backupId);
     const deployment = await WebsiteDeployment.create({ ...baseFields, status: 'rolled_back' });
@@ -132,7 +172,9 @@ async function deployToProduction({
       website,
       type: 'website_production_deploy_rolled_back',
       title: `Production deploy of v${version.versionNumber} failed health check and was rolled back`,
-      body: `The deploy failed a post-deploy health check at ${liveUrl} and was automatically rolled back to the prior live build.`,
+      body: failureReason
+        ? `The deploy failed while uploading or checking health: ${failureReason}. It was automatically rolled back to the prior live build.`
+        : `The deploy failed a post-deploy health check at ${liveUrl} and was automatically rolled back to the prior live build.`,
       data: { websiteId: website.id, deploymentId: deployment.id, projectId },
       priority: 'normal',
     });
@@ -145,7 +187,7 @@ async function deployToProduction({
       website,
       type: 'website_production_rollback_failed',
       title: `URGENT: production deploy of v${version.versionNumber} failed AND the automatic rollback also failed`,
-      body: `The deploy failed a post-deploy health check at ${liveUrl}, and restoring the prior build from backup also failed: ${restoreErr.message}. The live site's actual state is not known — investigate immediately.`,
+      body: `The deploy failed${failureReason ? ` (${failureReason})` : ` a post-deploy health check at ${liveUrl}`}, and restoring the prior build from backup also failed: ${restoreErr.message}. The live site's actual state is not known — investigate immediately.`,
       data: { websiteId: website.id, deploymentId: deployment.id, projectId },
       priority: 'urgent',
     });

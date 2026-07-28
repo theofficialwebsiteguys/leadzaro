@@ -172,6 +172,69 @@ describe('POST /api/v1/projects/:projectId/website/versions/:versionId/deploy-pr
     }
   });
 
+  test(
+    'closing-review fix: uploadBuild throwing after a backup was taken is treated exactly like an unhealthy result — rolled back, notified, live pointer untouched',
+    async () => {
+      const {
+        project, developer, pmAuth, versionId,
+      } = await setupProjectReadyForProductionDeploy('throw-after-backup.com');
+
+      const first = await pmAuth(request(app).post(`/api/v1/projects/${project.id}/website/versions/${versionId}/deploy-production`));
+      expect(first.body.data.deployment.status).toBe('live');
+
+      const cpanelAdapter = getCPanelAdapter();
+      const originalUploadBuild = cpanelAdapter.uploadBuild.bind(cpanelAdapter);
+      cpanelAdapter.uploadBuild = async () => {
+        throw new Error('simulated network failure mid-upload');
+      };
+
+      try {
+        const second = await pmAuth(request(app).post(`/api/v1/projects/${project.id}/website/versions/${versionId}/deploy-production`));
+        expect(second.status).toBe(200);
+        expect(second.body.data.deployment.status).toBe('rolled_back');
+        expect(second.body.data.deployment.backupRef).toBeTruthy();
+
+        const website = await Website.findOne({ where: { projectId: project.id }, __visibilityScoped: true });
+        expect(website.currentLiveProductionDeploymentId).toBe(first.body.data.deployment.id);
+
+        const notifications = await Notification.findAll({ where: { userId: developer.id, type: 'website_production_deploy_rolled_back' } });
+        expect(notifications.length).toBe(1);
+      } finally {
+        cpanelAdapter.uploadBuild = originalUploadBuild;
+      }
+    }
+  );
+
+  test(
+    'closing-review fix: backupCurrentFolder throwing before any upload leaves the live site untouched — recorded as failed, not rolled_back',
+    async () => {
+      const {
+        project, developer, pmAuth, versionId,
+      } = await setupProjectReadyForProductionDeploy('throw-before-backup.com');
+
+      const cpanelAdapter = getCPanelAdapter();
+      const originalBackup = cpanelAdapter.backupCurrentFolder.bind(cpanelAdapter);
+      cpanelAdapter.backupCurrentFolder = async () => {
+        throw new Error('simulated failure taking a backup');
+      };
+
+      try {
+        const res = await pmAuth(request(app).post(`/api/v1/projects/${project.id}/website/versions/${versionId}/deploy-production`));
+        expect(res.status).toBe(200);
+        expect(res.body.data.deployment.status).toBe('failed');
+        expect(res.body.data.deployment.backupRef).toBeNull();
+
+        const website = await Website.findOne({ where: { projectId: project.id }, __visibilityScoped: true });
+        expect(website.currentLiveProductionDeploymentId).toBeNull();
+
+        const notifications = await Notification.findAll({ where: { userId: developer.id, type: 'website_production_deploy_failed' } });
+        expect(notifications.length).toBe(1);
+      } finally {
+        cpanelAdapter.backupCurrentFolder = originalBackup;
+      }
+    }
+  );
+
   test('every deploy attempt creates exactly one new WebsiteDeployment row, never updating a prior one', async () => {
     const { project, pmAuth, versionId } = await setupProjectReadyForProductionDeploy('invariant-check.com');
     const first = await pmAuth(request(app).post(`/api/v1/projects/${project.id}/website/versions/${versionId}/deploy-production`));
