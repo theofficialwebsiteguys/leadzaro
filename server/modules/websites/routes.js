@@ -17,6 +17,7 @@ const mergeBackController = require('./websiteMergeBackController');
 const domainController = require('./websiteDomainController');
 const productionDeployController = require('./productionDeployController');
 const publicFormTriageController = require('./websitePublicFormTriageController');
+const analyticsController = require('./websiteAnalyticsController');
 
 router.use(authenticate, resolveContext());
 
@@ -112,5 +113,11 @@ router.post('/public-form-submissions/:submissionId/convert', requirePermission(
 router.post('/public-form-submissions/:submissionId/status', requirePermission('builder.manage'), [
   body('status').isIn(['discarded', 'spam']),
 ], validate, publicFormTriageController.discard);
+
+router.get('/analytics/events', requirePermission('builder.manage'), analyticsController.listEvents);
+router.get('/analytics/summary', requirePermission('projects.view'), analyticsController.getSummary);
+router.post('/analytics/google-analytics', requirePermission('builder.manage'), [
+  body('measurementId').optional({ values: 'falsy' }).isLength({ max: 50 }),
+], validate, analyticsController.setGoogleAnalyticsMeasurementId);
 
 module.exports = router;

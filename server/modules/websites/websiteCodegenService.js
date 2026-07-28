@@ -45,6 +45,7 @@ async function buildGeneratedFiles(context, website, version) {
     websiteId: website.id,
     websiteVersionId: version.id,
     generatedAt: new Date().toISOString(),
+    googleAnalyticsMeasurementId: website.googleAnalyticsMeasurementId,
   });
 }
 

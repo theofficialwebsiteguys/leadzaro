@@ -61,6 +61,20 @@ const publicWebsiteFormLimiter = rateLimit({
   message: { success: false, message: 'Too many submissions, please try again later.' },
 });
 
+// Materially higher budget than publicWebsiteFormLimiter (review
+// finding #3) — normal browsing generates many events per session (a
+// page view plus several scroll/click events per page, across several
+// pages), and a form-submission-sized budget would silently break
+// analytics for real, non-abusive visitors from day one.
+const publicAnalyticsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `${req.ip}:${req.params.websiteId}`,
+  message: { success: false, message: 'Too many events, please try again later.' },
+});
+
 module.exports = {
-  rateLimiter, authLimiter, searchLimiter, publicFormLimiter, publicWebsiteFormLimiter,
+  rateLimiter, authLimiter, searchLimiter, publicFormLimiter, publicWebsiteFormLimiter, publicAnalyticsLimiter,
 };

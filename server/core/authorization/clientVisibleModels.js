@@ -12,12 +12,14 @@
  * A raw `Project.findAll()` anywhere else in the codebase throws.
  */
 
-const { Op } = require('sequelize');
+const {
+  Op, fn, col, literal,
+} = require('sequelize');
 const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
   DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
   WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
-  WebsiteDomain, WebsitePublicFormSubmission,
+  WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsEvent,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -550,6 +552,46 @@ function getWebsitePublicFormSubmissionByIdForRequester(context, submissionId) {
 }
 
 /**
+ * WebsiteAnalyticsEvent (current-phase-plan.md § 2d, review finding
+ * #7) — raw, session-level rows stay employee-only (an internal/spam-
+ * review concern); getWebsiteAnalyticsSummaryForRequester immediately
+ * below is the separate, tenant-scoped aggregate accessor reachable by
+ * both employees and clients, satisfying architecture § 19's "client
+ * dashboards show business-focused summaries" without ever exposing a
+ * raw sessionId/metadata row to a client. Two accessors over the same
+ * table, not two visibility rules on one — this codebase's established
+ * pattern for deciding visibility per accessor.
+ */
+function assertEmployeeContextForAnalytics(context) {
+  if (context.membership.membershipType === 'client') {
+    throw new Error('Raw WebsiteAnalyticsEvent rows are never reachable by a client-membership request — see getWebsiteAnalyticsSummaryForRequester for the client-visible aggregate');
+  }
+}
+
+function listWebsiteAnalyticsEventsForRequester(context, extraWhere = {}) {
+  assertEmployeeContextForAnalytics(context);
+  return WebsiteAnalyticsEvent.findAll(scoped({
+    where: tenantWhereForRequester(context, extraWhere), order: [['createdAt', 'DESC']], limit: 500,
+  }));
+}
+
+async function getWebsiteAnalyticsSummaryForRequester(context, websiteId, { rangeDays = 30 } = {}) {
+  const since = new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000);
+  const rows = await WebsiteAnalyticsEvent.findAll(scoped({
+    where: tenantWhereForRequester(context, { websiteId, createdAt: { [Op.gte]: since } }),
+    attributes: [
+      [fn('date_trunc', 'day', col('createdAt')), 'day'],
+      'eventType',
+      [fn('COUNT', col('id')), 'count'],
+    ],
+    group: ['day', 'eventType'],
+    order: [[literal('day'), 'ASC']],
+    raw: true,
+  }));
+  return rows.map((row) => ({ day: row.day, eventType: row.eventType, count: Number(row.count) }));
+}
+
+/**
  * WebsiteVersion's visibility is NOT just tenant scoping — a client
  * membership must never see another user's in-progress draft/autosave
  * work (e.g. a designer's unfinished changes), only the currently
@@ -799,6 +841,8 @@ module.exports = {
   getLiveWebsiteVersionForPublicSubmission,
   listWebsitePublicFormSubmissionsForRequester,
   getWebsitePublicFormSubmissionByIdForRequester,
+  listWebsiteAnalyticsEventsForRequester,
+  getWebsiteAnalyticsSummaryForRequester,
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,

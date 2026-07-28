@@ -32,6 +32,10 @@ module.exports = (sequelize) => {
     // deploy and is never touched on a failed/rolled-back attempt, so
     // it always agrees with whatever build is genuinely live.
     currentLiveProductionDeploymentId: { type: DataTypes.UUID, allowNull: true },
+    // Guided Google Analytics connection (current-phase-plan.md § 2d)
+    // — Leadzaro never provisions a GA account; this only stores a
+    // measurement ID the agency/client already has, employee-settable.
+    googleAnalyticsMeasurementId: { type: DataTypes.STRING(50), allowNull: true },
     createdByUserId: { type: DataTypes.UUID, allowNull: true },
   });
 

@@ -250,8 +250,12 @@ function generateSiteSchemaFile(schema) {
   return { path: 'site.schema.json', content: `${JSON.stringify(schema, null, 2)}\n` };
 }
 
-function generateConfigFile({ websiteId, websiteVersionId, generatedAt }) {
-  const content = `${JSON.stringify({ websiteId, websiteVersionId, generatedAt }, null, 2)}\n`;
+function generateConfigFile({
+  websiteId, websiteVersionId, generatedAt, googleAnalyticsMeasurementId,
+}) {
+  const content = `${JSON.stringify({
+    websiteId, websiteVersionId, generatedAt, googleAnalyticsMeasurementId: googleAnalyticsMeasurementId || null,
+  }, null, 2)}\n`;
   return { path: 'leadzaro.config.json', content };
 }
 
@@ -261,7 +265,7 @@ function generateConfigFile({ websiteId, websiteVersionId, generatedAt }) {
  * module's own top-of-file documentation.
  */
 function generateWebsiteFiles({
-  schema, sectionDefinitionsByKey, designTokens, websiteId, websiteVersionId, generatedAt,
+  schema, sectionDefinitionsByKey, designTokens, websiteId, websiteVersionId, generatedAt, googleAnalyticsMeasurementId,
 }) {
   const pages = schema?.pages || [];
   const pageFiles = pages.map((page) => generatePageComponentFile(page, sectionDefinitionsByKey));
@@ -286,7 +290,9 @@ function generateWebsiteFiles({
     generateDesignTokensFile(designTokens),
     generateGlobalStylesFile(),
     generateSiteSchemaFile(schema),
-    generateConfigFile({ websiteId, websiteVersionId, generatedAt }),
+    generateConfigFile({
+      websiteId, websiteVersionId, generatedAt, googleAnalyticsMeasurementId,
+    }),
   ];
 }
 

@@ -3,10 +3,11 @@
 const router = require('express').Router();
 const { body, param } = require('express-validator');
 const { validate } = require('../../middleware/validate');
-const { publicFormLimiter, publicWebsiteFormLimiter } = require('../../middleware/rateLimiter');
+const { publicFormLimiter, publicWebsiteFormLimiter, publicAnalyticsLimiter } = require('../../middleware/rateLimiter');
 const { CAMPAIGN_SLUGS } = require('../../core/crm/inboundCampaigns');
 const controller = require('./inboundLeadController');
 const websitePublicFormController = require('./websitePublicFormController');
+const websitePublicAnalyticsController = require('./websitePublicAnalyticsController');
 
 // Entirely public, no authentication — this is the whole point (a
 // marketing-page visitor submitting an inbound lead form).
@@ -41,5 +42,18 @@ router.post('/websites/:websiteId/submit-form', publicWebsiteFormLimiter, [
   // Honeypot — intentionally not documented to real users; must stay empty.
   body('website').optional({ values: 'falsy' }).isLength({ max: 200 }),
 ], validate, websitePublicFormController.submit);
+
+// Entirely public, no authentication — Leadzaro's own hybrid analytics
+// beacon (current-phase-plan.md § 2d, architecture § 19).
+// publicAnalyticsLimiter is a materially higher budget than
+// publicWebsiteFormLimiter above — normal browsing fires many events
+// per session (review finding #3).
+router.post('/websites/:websiteId/analytics-event', publicAnalyticsLimiter, [
+  param('websiteId').isUUID(),
+  body('eventType').notEmpty().isLength({ max: 30 }),
+  body('path').optional({ values: 'falsy' }).isLength({ max: 500 }),
+  body('sessionId').notEmpty().isLength({ max: 100 }),
+  body('metadata').optional().isObject(),
+], validate, websitePublicAnalyticsController.record);
 
 module.exports = router;
