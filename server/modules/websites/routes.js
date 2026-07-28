@@ -3,7 +3,7 @@
 const router = require('express').Router({ mergeParams: true });
 const { body, query } = require('express-validator');
 const { authenticate } = require('../../middleware/auth');
-const { resolveContext, requirePermission } = require('../../core/authorization/context');
+const { resolveContext, requirePermission, requireAnyPermission } = require('../../core/authorization/context');
 const { validate } = require('../../middleware/validate');
 const controller = require('./websiteController');
 const editorAssignmentController = require('./websiteEditorAssignmentController');
@@ -19,6 +19,7 @@ const productionDeployController = require('./productionDeployController');
 const publicFormTriageController = require('./websitePublicFormTriageController');
 const analyticsController = require('./websiteAnalyticsController');
 const exportController = require('./websiteExportController');
+const seoPageSettingsController = require('./seoPageSettingsController');
 
 router.use(authenticate, resolveContext());
 
@@ -124,5 +125,16 @@ router.post('/analytics/google-analytics', requirePermission('builder.manage'), 
 ], validate, analyticsController.setGoogleAnalyticsMeasurementId);
 
 router.get('/versions/:versionId/export', requirePermission('builder.manage'), exportController.exportWebsite);
+
+router.get('/seo/pages', requirePermission('projects.view'), seoPageSettingsController.list);
+router.get('/seo/pages/:pageId', requirePermission('projects.view'), seoPageSettingsController.get);
+router.put('/seo/pages/:pageId', requireAnyPermission(['builder.edit', 'builder.manage']), [
+  body('metaTitle').optional({ values: 'falsy' }).isLength({ max: 255 }),
+  body('metaDescription').optional({ values: 'falsy' }).isLength({ max: 500 }),
+  body('canonicalUrl').optional({ values: 'falsy' }).isLength({ max: 500 }),
+  body('robotsDirective').optional({ values: 'falsy' }).isLength({ max: 20 }),
+], validate, seoPageSettingsController.upsert);
+router.get('/seo/sitemap.xml', requirePermission('builder.manage'), seoPageSettingsController.sitemap);
+router.get('/seo/robots.txt', requirePermission('builder.manage'), seoPageSettingsController.robots);
 
 module.exports = router;

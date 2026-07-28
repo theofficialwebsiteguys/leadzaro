@@ -19,7 +19,7 @@ const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
   DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
   WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
-  WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsEvent, SeoEntitlementGrant,
+  WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsEvent, SeoEntitlementGrant, WebsitePageSeoSettings,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -622,6 +622,37 @@ function hasActiveSeoEntitlementGrantSystemLevel(organizationId) {
   })).then((grant) => !!grant);
 }
 
+/**
+ * WebsitePageSeoSettings (current-phase-plan.md § 2b) — plain tenant
+ * scoping, client-reachable (unlike every other Phase 7/8 model so
+ * far): a client with builder.edit legitimately edits their own paid
+ * SEO add-on's page metadata. Entitlement itself (assertSeoEntitlement)
+ * is checked separately, in seoPageSettingsService — this accessor
+ * only handles visibility/tenant-isolation, not entitlement.
+ */
+function listWebsitePageSeoSettingsForRequester(context, extraWhere = {}) {
+  return WebsitePageSeoSettings.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere) }));
+}
+
+function getWebsitePageSeoSettingsForRequester(context, websiteId, pageId) {
+  return WebsitePageSeoSettings.findOne(scoped({ where: tenantWhereForRequester(context, { websiteId, pageId }) }));
+}
+
+async function upsertWebsitePageSeoSettingsForRequester(context, website, pageId, fields) {
+  const existing = await getWebsitePageSeoSettingsForRequester(context, website.id, pageId);
+  if (existing) {
+    await existing.update(fields);
+    return existing;
+  }
+  return WebsitePageSeoSettings.create({
+    websiteId: website.id,
+    organizationId: website.organizationId,
+    agencyOrganizationId: website.agencyOrganizationId,
+    pageId,
+    ...fields,
+  });
+}
+
 async function getWebsiteAnalyticsSummaryForRequester(context, websiteId, { rangeDays = 30 } = {}) {
   const since = new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000);
   const rows = await WebsiteAnalyticsEvent.findAll(scoped({
@@ -893,6 +924,9 @@ module.exports = {
   listSeoEntitlementGrantsForRequester,
   getSeoEntitlementGrantByIdForRequester,
   hasActiveSeoEntitlementGrantSystemLevel,
+  listWebsitePageSeoSettingsForRequester,
+  getWebsitePageSeoSettingsForRequester,
+  upsertWebsitePageSeoSettingsForRequester,
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,

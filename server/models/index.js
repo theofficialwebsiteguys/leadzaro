@@ -65,6 +65,7 @@ const WebsiteDomain = require('./WebsiteDomain')(sequelize);
 const WebsitePublicFormSubmission = require('./WebsitePublicFormSubmission')(sequelize);
 const WebsiteAnalyticsEvent = require('./WebsiteAnalyticsEvent')(sequelize);
 const SeoEntitlementGrant = require('./SeoEntitlementGrant')(sequelize);
+const WebsitePageSeoSettings = require('./WebsitePageSeoSettings')(sequelize);
 
 const models = {
   User,
@@ -127,6 +128,7 @@ const models = {
   WebsitePublicFormSubmission,
   WebsiteAnalyticsEvent,
   SeoEntitlementGrant,
+  WebsitePageSeoSettings,
 };
 
 // Run associations
