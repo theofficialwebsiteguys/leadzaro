@@ -19,7 +19,7 @@ const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
   DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
   WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
-  WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsEvent, SeoEntitlementGrant, WebsitePageSeoSettings, WebsiteRedirect,
+  WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsEvent, SeoEntitlementGrant, WebsitePageSeoSettings, WebsiteRedirect, WebsiteSeoAudit,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -674,6 +674,26 @@ function getWebsiteRedirectByIdForRequester(context, redirectId) {
   return WebsiteRedirect.findOne(scoped({ where: tenantWhereForRequester(context, { id: redirectId }) }));
 }
 
+/**
+ * WebsiteSeoAudit (current-phase-plan.md § 2c) — employee-only, an
+ * audit-trail model matching WebsiteDeployment's precedent.
+ */
+function assertEmployeeContextForSeoAudit(context) {
+  if (context.membership.membershipType === 'client') {
+    throw new Error('WebsiteSeoAudit is never reachable by a client-membership request');
+  }
+}
+
+function listWebsiteSeoAuditsForRequester(context, extraWhere = {}) {
+  assertEmployeeContextForSeoAudit(context);
+  return WebsiteSeoAudit.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), order: [['createdAt', 'DESC']] }));
+}
+
+function getWebsiteSeoAuditByIdForRequester(context, auditId) {
+  assertEmployeeContextForSeoAudit(context);
+  return WebsiteSeoAudit.findOne(scoped({ where: tenantWhereForRequester(context, { id: auditId }) }));
+}
+
 async function getWebsiteAnalyticsSummaryForRequester(context, websiteId, { rangeDays = 30 } = {}) {
   const since = new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000);
   const rows = await WebsiteAnalyticsEvent.findAll(scoped({
@@ -950,6 +970,8 @@ module.exports = {
   upsertWebsitePageSeoSettingsForRequester,
   listWebsiteRedirectsForRequester,
   getWebsiteRedirectByIdForRequester,
+  listWebsiteSeoAuditsForRequester,
+  getWebsiteSeoAuditByIdForRequester,
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,

@@ -97,6 +97,7 @@ function validateEnv() {
   checkLiveProviderCredentials(errors, { providerEnvVar: 'GITHUB_PROVIDER', defaultProvider, requiredVars: ['GITHUB_APP_CREDENTIALS_JSON', 'GITHUB_ORG'] });
   checkLiveProviderCredentials(errors, { providerEnvVar: 'NAMECHEAP_PROVIDER', defaultProvider, requiredVars: ['NAMECHEAP_API_CREDENTIALS_JSON'] });
   checkLiveProviderCredentials(errors, { providerEnvVar: 'CPANEL_PROVIDER', defaultProvider, requiredVars: ['CPANEL_API_CREDENTIALS_JSON'] });
+  checkLiveProviderCredentials(errors, { providerEnvVar: 'SEO_AUDIT_PROVIDER', defaultProvider, requiredVars: ['SEO_AUDIT_API_CREDENTIALS_JSON'] });
 
   if (warnings.length) {
     for (const w of warnings) {
@@ -198,6 +199,14 @@ const env = {
   // a real cPanel account from this codebase (CLAUDE.md rule 8).
   CPANEL_PROVIDER: process.env.CPANEL_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
   CPANEL_API_CREDENTIALS_JSON: process.env.CPANEL_API_CREDENTIALS_JSON || '',
+
+  // No real SEO audit provider (broken-link/performance checking)
+  // exists yet (Phase 8 — heading/alt-text checks run structurally
+  // against the schema directly, no adapter needed; this covers only
+  // the two checks that genuinely require external capability). Same
+  // reasoning as every other provider above.
+  SEO_AUDIT_PROVIDER: process.env.SEO_AUDIT_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
+  SEO_AUDIT_API_CREDENTIALS_JSON: process.env.SEO_AUDIT_API_CREDENTIALS_JSON || '',
 };
 
 module.exports = { env, validateEnv };

@@ -21,6 +21,7 @@ const analyticsController = require('./websiteAnalyticsController');
 const exportController = require('./websiteExportController');
 const seoPageSettingsController = require('./seoPageSettingsController');
 const seoRedirectController = require('./seoRedirectController');
+const seoAuditController = require('./seoAuditController');
 
 router.use(authenticate, resolveContext());
 
@@ -145,5 +146,11 @@ router.post('/seo/redirects', requirePermission('builder.manage'), [
   body('statusCode').optional().isInt(),
 ], validate, seoRedirectController.create);
 router.delete('/seo/redirects/:redirectId', requirePermission('builder.manage'), seoRedirectController.remove);
+
+router.post('/seo/audits', requirePermission('builder.manage'), [
+  body('versionId').notEmpty(),
+], validate, seoAuditController.run);
+router.get('/seo/audits', requirePermission('builder.manage'), seoAuditController.list);
+router.get('/seo/audits/:auditId', requirePermission('builder.manage'), seoAuditController.get);
 
 module.exports = router;
