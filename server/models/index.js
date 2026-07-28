@@ -59,6 +59,7 @@ const WebsiteComment = require('./WebsiteComment')(sequelize);
 const WebsiteEditLock = require('./WebsiteEditLock')(sequelize);
 const WebsitePresence = require('./WebsitePresence')(sequelize);
 const WebsiteRepository = require('./WebsiteRepository')(sequelize);
+const WebsiteDeployment = require('./WebsiteDeployment')(sequelize);
 
 const models = {
   User,
@@ -115,6 +116,7 @@ const models = {
   WebsiteEditLock,
   WebsitePresence,
   WebsiteRepository,
+  WebsiteDeployment,
 };
 
 // Run associations

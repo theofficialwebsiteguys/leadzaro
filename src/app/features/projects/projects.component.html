@@ -570,6 +570,7 @@
                                 <button class="btn btn-sm" *hasPermission="'builder.publish'" (click)="publishVersion(v)">Publish</button>
                               }
                               <button class="btn btn-sm" *hasPermission="'builder.develop'" (click)="generateWebsite(v)">Generate</button>
+                              <button class="btn btn-sm" *hasPermission="'builder.develop'" (click)="deployPreview(v)">Deploy Preview</button>
                             </td>
                           </tr>
                         }
@@ -639,6 +640,34 @@
                     <button class="btn btn-sm" [disabled]="provisioningRepository()" (click)="provisionWebsiteRepository()">
                       {{ provisioningRepository() ? 'Provisioning…' : 'Provision Repository' }}
                     </button>
+                  }
+                </div>
+
+                <div *hasPermission="'builder.develop'" class="mt-2">
+                  <label class="field-label">Deployments</label>
+                  @if (websiteDeployments().length > 0) {
+                    <div class="table-wrap">
+                      <table>
+                        <thead><tr><th>Env</th><th>Branch</th><th>Status</th><th>Preview URL</th><th>When</th></tr></thead>
+                        <tbody>
+                          @for (d of websiteDeployments(); track d.id) {
+                            <tr>
+                              <td>{{ d.environment }}</td>
+                              <td>{{ d.branchName }}</td>
+                              <td>{{ d.status }}</td>
+                              <td>
+                                @if (d.previewUrl) {
+                                  <a [href]="d.previewUrl" target="_blank" rel="noopener">{{ d.previewUrl }}</a>
+                                }
+                              </td>
+                              <td>{{ d.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  } @else {
+                    <p class="text-sm text-muted mb-0">No preview deployments yet — use "Deploy Preview" on a version above.</p>
                   }
                 </div>
 

@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
-  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteVersionComparison, WebsiteComment, WebsitePresenceEntry, WebsiteRepository,
+  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteVersionComparison, WebsiteComment, WebsitePresenceEntry, WebsiteRepository, WebsiteDeployment,
 } from '../models/website.model';
 
 @Injectable({ providedIn: 'root' })
@@ -100,5 +100,13 @@ export class WebsiteService {
 
   generateWebsite(projectId: string, versionId: string): Observable<{ data: { fileCount: number; branch: string } }> {
     return this.http.post<{ data: { fileCount: number; branch: string } }>(`/api/v1/projects/${projectId}/website/versions/${versionId}/generate`, {});
+  }
+
+  listDeployments(projectId: string): Observable<{ data: { deployments: WebsiteDeployment[] } }> {
+    return this.http.get<{ data: { deployments: WebsiteDeployment[] } }>(`/api/v1/projects/${projectId}/website/deployments`);
+  }
+
+  deployPreview(projectId: string, versionId: string): Observable<{ data: { deployment: WebsiteDeployment } }> {
+    return this.http.post<{ data: { deployment: WebsiteDeployment } }>(`/api/v1/projects/${projectId}/website/versions/${versionId}/deploy-preview`, {});
   }
 }

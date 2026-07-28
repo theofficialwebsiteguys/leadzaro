@@ -114,3 +114,15 @@ export interface WebsiteRepository {
   defaultBranch: string;
   status: 'provisioning' | 'active' | 'error';
 }
+
+export interface WebsiteDeployment {
+  id: string;
+  websiteId: string;
+  websiteVersionId: string;
+  environment: 'preview' | 'production';
+  branchName: string;
+  commitSha: string | null;
+  previewUrl: string | null;
+  status: 'pending' | 'building' | 'live' | 'failed';
+  createdAt: string;
+}

@@ -16,7 +16,7 @@ const { Op } = require('sequelize');
 const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
   DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
-  WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository,
+  WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository, WebsiteDeployment,
 } = require('../../models');
 
 // User is unguarded, so including it here is safe — same reasoning as
@@ -398,6 +398,30 @@ async function findOrCreateWebsiteRepositoryForRequester(context, website) {
 }
 
 /**
+ * WebsiteDeployment (current-phase-plan.md § 2e) — employee-only,
+ * mirroring ProjectFinancials' assertEmployeeContext exactly: neither
+ * carries anything a client needs to see directly (branch names,
+ * commit SHAs, internal repo state), an explicit decision made up
+ * front during the pre-implementation review rather than left
+ * undecided by omission the way the original draft left it.
+ */
+function assertEmployeeContextForDeployment(context) {
+  if (context.membership.membershipType === 'client') {
+    throw new Error('WebsiteDeployment is never reachable by a client-membership request');
+  }
+}
+
+function listWebsiteDeploymentsForRequester(context, extraWhere = {}) {
+  assertEmployeeContextForDeployment(context);
+  return WebsiteDeployment.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), order: [['createdAt', 'DESC']] }));
+}
+
+function getWebsiteDeploymentByIdForRequester(context, deploymentId) {
+  assertEmployeeContextForDeployment(context);
+  return WebsiteDeployment.findOne(scoped({ where: tenantWhereForRequester(context, { id: deploymentId }) }));
+}
+
+/**
  * WebsiteVersion's visibility is NOT just tenant scoping — a client
  * membership must never see another user's in-progress draft/autosave
  * work (e.g. a designer's unfinished changes), only the currently
@@ -636,6 +660,8 @@ module.exports = {
   getWebsiteByProjectIdForRequester,
   getWebsiteRepositoryForRequester,
   findOrCreateWebsiteRepositoryForRequester,
+  listWebsiteDeploymentsForRequester,
+  getWebsiteDeploymentByIdForRequester,
   listWebsiteVersionsForRequester,
   getWebsiteVersionByIdForRequester,
   getNextVersionNumberForWebsite,

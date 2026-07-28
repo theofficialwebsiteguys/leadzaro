@@ -24,7 +24,7 @@ import { Meeting } from '../../core/models/meeting.model';
 import { ProjectFile, FILE_SCOPES } from '../../core/models/file.model';
 import { CancellationRequest } from '../../core/models/cancellationRequest.model';
 import {
-  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteComment, WebsitePresenceEntry, WebsiteRepository,
+  Website, WebsiteVersion, WebsiteEditorAssignment, WebsiteComment, WebsitePresenceEntry, WebsiteRepository, WebsiteDeployment,
 } from '../../core/models/website.model';
 import { SectionDefinition } from '../../core/models/sectionDefinition.model';
 import { DesignSystemTemplate } from '../../core/models/designSystemTemplate.model';
@@ -126,6 +126,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   private presenceIntervalId: ReturnType<typeof setInterval> | null = null;
   websiteRepository = signal<WebsiteRepository | null>(null);
   provisioningRepository = signal(false);
+  websiteDeployments = signal<WebsiteDeployment[]>([]);
 
   projects = signal<Project[]>([]);
   loading = signal(true);
@@ -218,6 +219,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.websiteComments.set([]);
     this.websitePresence.set([]);
     this.websiteRepository.set(null);
+    this.websiteDeployments.set([]);
     this.projectService.getById(id).subscribe((res) => {
       this.selected.set(res.data.project);
       this.stageTarget = res.data.project.stage;
@@ -527,6 +529,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
         this.loadWebsitePresence(projectId);
         if (this.org.hasPermission('builder.develop')) {
           this.loadWebsiteRepository(projectId);
+          this.loadWebsiteDeployments(projectId);
         }
         if (this.org.hasPermission('builder.edit')) {
           this.websiteService.heartbeatPresence(projectId).subscribe(() => this.loadWebsitePresence(projectId));
@@ -708,6 +711,22 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.websiteService.generateWebsite(id, version.id).subscribe({
       next: (res) => this.actionMessage.set(`Generated ${res.data.fileCount} file(s) to branch "${res.data.branch}"`),
       error: (err) => this.actionMessage.set(err.error?.message || 'Failed to generate'),
+    });
+  }
+
+  loadWebsiteDeployments(projectId: string) {
+    this.websiteService.listDeployments(projectId).subscribe((res) => this.websiteDeployments.set(res.data.deployments));
+  }
+
+  deployPreview(version: WebsiteVersion) {
+    const id = this.selectedId();
+    if (!id) return;
+    this.websiteService.deployPreview(id, version.id).subscribe({
+      next: (res) => {
+        this.actionMessage.set(`Preview deployed: ${res.data.deployment.previewUrl}`);
+        this.loadWebsiteDeployments(id);
+      },
+      error: (err) => this.actionMessage.set(err.error?.message || 'Failed to deploy preview'),
     });
   }
 
