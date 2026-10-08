@@ -1,0 +1,63 @@
+<div class="page">
+  <p class="tab-subtitle">What clients have asked us for — pick one up by converting it to a task.</p>
+
+  @if (actionMessage()) {
+    <div class="alert alert-info mb-4">{{ actionMessage() }}</div>
+  }
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>Client Requests</strong></div>
+
+    @if (clientRequests().length === 0) {
+      <app-empty-state icon="mail" title="No requests yet" description="Log what a client asked for on a call or email so nothing falls through the cracks." />
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Category</th><th>Description</th><th>Status</th><th>Logged</th><th></th></tr></thead>
+          <tbody>
+            @for (r of clientRequests(); track r.id) {
+              <tr>
+                <td><span class="category-chip">{{ r.category | label }}</span></td>
+                <td>{{ r.description }}</td>
+                <td>
+                  @if (org.hasPermission('requests.manage')) {
+                    <select [ngModel]="r.status" (ngModelChange)="updateRequestStatus(r, $event)" class="form-select">
+                      <option value="queued">Queued</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="waiting_on_client">Waiting on Client</option>
+                      <option value="completed">Completed</option>
+                      <option value="declined">Declined</option>
+                    </select>
+                  } @else {
+                    <span>{{ r.status | label }}</span>
+                  }
+                </td>
+                <td>{{ r.createdAt | date:'MMM d' }}</td>
+                <td>
+                  @if (r.convertedToTaskId) {
+                    <span class="text-sm text-muted">Converted to task</span>
+                  } @else {
+                    <button class="btn btn-sm btn-outline" *hasPermission="'requests.manage'" (click)="convertToTask(r)">Convert to Task</button>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <div class="card-body" *hasPermission="'requests.create'">
+      <div class="assign-form">
+        <select [(ngModel)]="newRequestCategory" class="form-select">
+          <option value="">Select category…</option>
+          @for (cat of requestCategories; track cat) {
+            <option [value]="cat">{{ cat | label }}</option>
+          }
+        </select>
+        <input class="form-control" placeholder="Describe what the client needs" [(ngModel)]="newRequestDescription" (keyup.enter)="submitRequest()" />
+        <button class="btn btn-outline" (click)="submitRequest()">Log Request</button>
+      </div>
+    </div>
+  </div>
+</div>

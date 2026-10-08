@@ -59,6 +59,10 @@ module.exports = (sequelize) => {
       type: DataTypes.DATE,
       allowNull: true,
     },
+    // The phone Leadzaro rings first for click-to-call (ADR 0011).
+    phone: { type: DataTypes.STRING(50), allowNull: true },
+    // Personal sales preferences (ADR 0012): signature, search radius, follow-up days.
+    preferences: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
   });
 
   User.associate = (models) => {

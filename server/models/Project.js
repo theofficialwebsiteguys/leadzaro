@@ -3,6 +3,7 @@ const { STAGES } = require('../core/projects/projectCatalog');
 const { installVisibilityGuard } = require('../core/authorization/visibilityGuard');
 
 const HEALTH_STATUSES = ['on_track', 'at_risk', 'off_track'];
+const PROJECT_TYPES = ['website', 'web_app', 'mobile_app', 'seo', 'branding', 'hosting', 'other'];
 
 module.exports = (sequelize) => {
   const Project = sequelize.define('Project', {
@@ -61,10 +62,24 @@ module.exports = (sequelize) => {
       type: DataTypes.UUID,
       allowNull: true,
     },
+    // Descriptive fields (ADR 0008 — a client can own several projects).
+    // `name` is nullable: projects that predate multi-project clients
+    // have none, and the UI falls back to the client's own name.
+    name: { type: DataTypes.STRING(150), allowNull: true },
+    projectType: { type: DataTypes.STRING(30), allowNull: true, validate: { isIn: [PROJECT_TYPES] } },
+    description: { type: DataTypes.TEXT, allowNull: true },
+    liveUrl: { type: DataTypes.STRING(500), allowNull: true },
+    previewUrl: { type: DataTypes.STRING(500), allowNull: true },
+    previewFileId: { type: DataTypes.UUID, allowNull: true },
+    // [{ id, label, done }] — the lightweight "still needed" list shown on
+    // the client hub. Deliberately not Tasks: these are outstanding
+    // inputs (logo files, menu PDF, login access), not team work items.
+    outstandingNeeds: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
   });
 
   Project.STAGES = STAGES;
   Project.HEALTH_STATUSES = HEALTH_STATUSES;
+  Project.PROJECT_TYPES = PROJECT_TYPES;
 
   Project.associate = (models) => {
     Project.belongsTo(models.Organization, { foreignKey: 'organizationId', as: 'organization' });

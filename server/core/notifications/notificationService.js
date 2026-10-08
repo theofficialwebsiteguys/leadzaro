@@ -14,16 +14,16 @@ const { getEmailAdapter } = require('./emailAdapter');
 async function notify({
   userId, organizationId = null, type, title, body = null, data = null,
 }) {
-  const notification = await Notification.create({
+  const preferences = await NotificationPreference.findAll({ where: { userId, category: type } });
+  const muted = (channel) => preferences.some((p) => p.channel === channel && p.frequency === 'muted');
+
+  // Settings → Notifications (ADR 0012): a muted in-app category is not
+  // stored at all; a muted email category is not emailed.
+  const notification = muted('in_app') ? null : await Notification.create({
     userId, organizationId, type, title, body, data,
   });
 
-  const preference = await NotificationPreference.findOne({
-    where: { userId, category: type, channel: 'email' },
-  });
-  const frequency = preference?.frequency || 'immediate';
-
-  if (frequency === 'immediate') {
+  if (!muted('email')) {
     const user = await User.findByPk(userId, { attributes: ['email', 'name'] });
     if (user) {
       const adapter = getEmailAdapter();

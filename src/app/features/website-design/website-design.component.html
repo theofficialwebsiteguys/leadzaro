@@ -1,0 +1,581 @@
+<div class="page">
+  <h1>Website Design</h1>
+
+  @if (!projectId) {
+    <p class="text-muted mb-4">Pick a project to design its website.</p>
+    <app-project-picker basePath="/app/website-design" />
+  } @else {
+    <p class="text-muted mb-4">{{ selected()?.organization?.name }}</p>
+
+    @if (actionMessage()) {
+      <div class="alert alert-info mb-4">{{ actionMessage() }}</div>
+    }
+
+    <div class="card mb-4">
+      <div class="card-header"><strong>Website</strong></div>
+      <div class="card-body">
+        @if (!websiteLoaded()) {
+          <p class="text-sm text-muted">Loading…</p>
+        } @else if (!website()) {
+          <div *hasPermission="'builder.edit'">
+            <p class="text-sm text-muted mb-2">This project has no website yet.</p>
+            <input class="form-control mb-2" placeholder="Website name" [(ngModel)]="newWebsiteName" />
+            <label class="form-label">Starting mode</label>
+            <select class="form-select mb-2" [(ngModel)]="newWebsiteStartingMode">
+              <option value="blank">Blank</option>
+              <option value="page_kit">Page kit (a single starter page)</option>
+              <option value="guided">Guided (pick your own sections)</option>
+              @if (org.membership()?.membershipType === 'employee') {
+                <option value="template">Complete template</option>
+              }
+            </select>
+
+            @if (newWebsiteStartingMode === 'template') {
+              <label class="form-label">Design system template</label>
+              <select class="form-select mb-2" [(ngModel)]="newWebsiteDesignSystemTemplateId">
+                <option value="">Choose…</option>
+                @for (t of designSystemTemplates(); track t.id) {
+                  <option [value]="t.id">{{ t.name }}</option>
+                }
+              </select>
+            }
+
+            @if (newWebsiteStartingMode === 'guided') {
+              <label class="form-label">Sections (in the order you'd like them)</label>
+              <div class="section-chip-list mb-2">
+                @for (s of sectionDefinitions(); track s.componentKey) {
+                  <button type="button" class="section-chip" [class.selected]="newWebsiteGuidedComponentKeys.has(s.componentKey)" (click)="toggleGuidedComponentKey(s.componentKey)">
+                    {{ s.name }}
+                  </button>
+                }
+              </div>
+            }
+
+            <button class="btn btn-outline" (click)="createWebsite()">Create Website</button>
+          </div>
+        } @else {
+          <div class="detail-row"><span class="label">Name</span><span>{{ website()!.name }}</span></div>
+          <div class="detail-row"><span class="label">Starting mode</span><span>{{ website()!.startingMode }}</span></div>
+
+          <button class="btn btn-sm mt-2" (click)="showPreview.set(!showPreview())">{{ showPreview() ? 'Hide Preview' : 'Show Preview' }}</button>
+          @if (showPreview()) {
+            <div class="mt-2">
+              <app-website-preview [schema]="website()!.draftSchema" [sectionDefinitions]="sectionDefinitions()" />
+            </div>
+          }
+
+          <div *hasPermission="'builder.edit'">
+            <h4 class="section-title">Website Assets</h4>
+            @if (websiteAssets().length > 0) {
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Name</th><th>Size</th><th></th></tr></thead>
+                  <tbody>
+                    @for (a of websiteAssets(); track a.id) {
+                      <tr>
+                        <td>{{ a.originalName }}</td>
+                        <td>{{ a.sizeBytes }} bytes</td>
+                        <td>
+                          <button class="btn btn-sm" (click)="openWebsiteAsset(a, a.variants['thumbnail'] ? 'thumbnail' : undefined)">Open</button>
+                          <button class="btn btn-sm" (click)="deleteFile(a)">Delete</button>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+            <div class="assign-form">
+              <input class="form-control file-input" type="file" (change)="onWebsiteAssetSelected($event)" />
+              <button class="btn btn-sm" (click)="uploadWebsiteAsset()">Upload Asset</button>
+            </div>
+          </div>
+
+          <div class="form-group mt-2">
+            <label class="form-label">Draft schema (JSON)</label>
+            <textarea class="form-control" rows="8" [(ngModel)]="draftSchemaText"></textarea>
+          </div>
+          @if (draftSchemaError) {
+            <div class="alert alert-warning mb-2">{{ draftSchemaError }}</div>
+          }
+          <div *hasPermission="'builder.edit'">
+            <div class="assign-form">
+              <button class="btn btn-outline" (click)="saveDraftSchema()">Save Draft</button>
+              <input class="form-control" placeholder="Checkpoint label (optional)" [(ngModel)]="newCheckpointLabel" />
+              <button class="btn btn-sm" (click)="createCheckpoint()">Create Checkpoint</button>
+            </div>
+          </div>
+
+          <div *hasPermission="'builder.develop'" class="mt-2">
+            <input class="form-control" placeholder="Technical handoff notes (used by Promote to Development, below)" [(ngModel)]="newHandoffNotes" />
+          </div>
+
+          @if (websiteVersions().length > 0) {
+            <div class="table-wrap mt-2">
+              <table>
+                <thead><tr><th>#</th><th>Label</th><th>Status</th><th>Created</th><th></th></tr></thead>
+                <tbody>
+                  @for (v of websiteVersions(); track v.id) {
+                    <tr>
+                      <td>{{ v.versionNumber }}</td>
+                      <td>{{ v.label || '—' }}</td>
+                      <td>{{ v.status }}</td>
+                      <td>{{ v.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                      <td>
+                        <button class="btn btn-sm" *hasPermission="'builder.edit'" (click)="restoreVersion(v)">Restore</button>
+                        @if (v.status !== 'published') {
+                          <button class="btn btn-sm" *hasPermission="'builder.publish'" (click)="publishVersion(v)">Publish</button>
+                        }
+                        <button class="btn btn-sm" *hasPermission="'builder.develop'" (click)="generateWebsite(v)">Generate</button>
+                        <button class="btn btn-sm" *hasPermission="'builder.develop'" (click)="deployPreview(v)">Deploy Preview</button>
+                        <button class="btn btn-sm" *hasPermission="'builder.develop'" (click)="promoteToDevelopment(v)">Promote to Development</button>
+                        <button class="btn btn-sm" *hasPermission="'builder.manage'" [disabled]="deployingToProduction()" (click)="deployToProduction(v)">
+                          {{ deployingToProduction() ? 'Deploying…' : 'Deploy to Production' }}
+                        </button>
+                        <button class="btn btn-sm" *hasPermission="'builder.manage'" [disabled]="exportingWebsite()" (click)="exportWebsite(v)">Export</button>
+                        @if (seoDashboard()?.entitled) {
+                          <button class="btn btn-sm" *hasPermission="'builder.manage'" [disabled]="runningSeoAudit()" (click)="runSeoAudit(v)">Run SEO Audit</button>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+
+          @if (websiteVersions().length > 1) {
+            <div class="mt-2">
+              <h4 class="section-title">Compare Versions</h4>
+              <div class="assign-form">
+                <select [(ngModel)]="compareFromVersionId" class="form-select">
+                  <option value="">From…</option>
+                  @for (v of websiteVersions(); track v.id) {
+                    <option [value]="v.id">v{{ v.versionNumber }} ({{ v.label || v.status }})</option>
+                  }
+                </select>
+                <select [(ngModel)]="compareToVersionId" class="form-select">
+                  <option value="">To…</option>
+                  @for (v of websiteVersions(); track v.id) {
+                    <option [value]="v.id">v{{ v.versionNumber }} ({{ v.label || v.status }})</option>
+                  }
+                </select>
+                <button class="btn btn-sm" (click)="compareVersions()">Compare</button>
+              </div>
+              @if (compareResult(); as cmp) {
+                <div class="alert alert-info mt-2">
+                  <div>Structural change: {{ cmp.structuralChange ? 'Yes' : 'No' }}</div>
+                  @if (cmp.changes.length === 0) {
+                    <p class="text-sm text-muted mb-0">No property changes.</p>
+                  } @else {
+                    <ul class="mb-0">
+                      @for (c of cmp.changes; track c.key) {
+                        <li>{{ c.key }} <span class="text-muted">({{ c.editingLevel }}{{ c.requiresReview ? ', requires review' : '' }})</span></li>
+                      }
+                    </ul>
+                  }
+                </div>
+              }
+            </div>
+          }
+
+          <div class="mt-2" *hasPermission="'builder.edit'">
+            <h4 class="section-title">Test Submit a Form Section</h4>
+            <p class="text-sm text-muted mb-2">Simulates a visitor filling out a 'form' section — creates a real Client Request. Real public submissions arrive once the site is actually hosted.</p>
+            <div class="assign-form">
+              <input class="form-control" placeholder="Page ID" [(ngModel)]="testFormPageId" />
+              <input class="form-control" placeholder="Section ID" [(ngModel)]="testFormSectionId" />
+            </div>
+            <textarea class="form-control mb-2 mt-2" rows="2" placeholder='{"email": "test@example.com"}' [(ngModel)]="testFormValuesText"></textarea>
+            <button class="btn btn-sm" (click)="submitTestForm()">Test Submit</button>
+            @if (testFormResult()) {
+              <div class="alert alert-info mt-2">{{ testFormResult() }}</div>
+            }
+          </div>
+
+          <div *hasPermission="'builder.develop'" class="mt-2">
+            <h4 class="section-title">Repository</h4>
+            @if (websiteRepository(); as repo) {
+              <div class="detail-row"><span class="label">Status</span><span>{{ repo.status }}</span></div>
+              @if (repo.fullName) {
+                <div class="detail-row"><span class="label">Repository</span><span>{{ repo.fullName }} ({{ repo.defaultBranch }})</span></div>
+              }
+            } @else {
+              <p class="text-sm text-muted mb-2">No repository has been provisioned yet.</p>
+              <button class="btn btn-sm" [disabled]="provisioningRepository()" (click)="provisionWebsiteRepository()">
+                {{ provisioningRepository() ? 'Provisioning…' : 'Provision Repository' }}
+              </button>
+            }
+          </div>
+
+          <div *hasPermission="'builder.develop'" class="mt-2">
+            <h4 class="section-title">Deployments</h4>
+            @if (websiteDeployments().length > 0) {
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Env</th><th>Branch</th><th>Status</th><th>Preview URL</th><th>When</th></tr></thead>
+                  <tbody>
+                    @for (d of websiteDeployments(); track d.id) {
+                      <tr>
+                        <td>{{ d.environment }}</td>
+                        <td>{{ d.branchName }}</td>
+                        <td>{{ d.status }}</td>
+                        <td>
+                          @if (d.previewUrl) {
+                            <a [href]="d.previewUrl" target="_blank" rel="noopener">{{ d.previewUrl }}</a>
+                          }
+                        </td>
+                        <td>{{ d.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else {
+              <p class="text-sm text-muted mb-0">No preview deployments yet — use "Deploy Preview" on a version above.</p>
+            }
+          </div>
+
+          <div *hasPermission="'builder.develop'" class="mt-2">
+            <h4 class="section-title">Development Handoffs</h4>
+            @if (websiteDevelopmentHandoffs().length > 0) {
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Branch</th><th>Status</th><th>Notes</th><th>When</th></tr></thead>
+                  <tbody>
+                    @for (h of websiteDevelopmentHandoffs(); track h.id) {
+                      <tr>
+                        <td>{{ h.branchName }}</td>
+                        <td>{{ h.status }}</td>
+                        <td>{{ h.technicalHandoffNotes || '—' }}</td>
+                        <td>{{ h.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else {
+              <p class="text-sm text-muted mb-0">No development handoffs yet — use "Promote to Development" on a version above.</p>
+            }
+          </div>
+
+          <div *hasPermission="'builder.develop'" class="mt-2">
+            <h4 class="section-title">Merge Back</h4>
+            <p class="text-sm text-muted mb-2">Merge a developer's custom-code branch (e.g. a development handoff branch above) back into the repository's default branch.</p>
+            <div class="assign-form">
+              <input class="form-control" placeholder="Branch name" [(ngModel)]="mergeBackBranchName" />
+              <input class="form-control" placeholder="Title (optional)" [(ngModel)]="mergeBackTitle" />
+              <button class="btn btn-sm" (click)="mergeBack()">Merge Back</button>
+            </div>
+          </div>
+
+          <div *hasPermission="'builder.manage'" class="mt-2">
+            <h4 class="section-title">Editor Access</h4>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>User</th><th>Level</th><th></th></tr></thead>
+                <tbody>
+                  @for (e of websiteEditors(); track e.id) {
+                    <tr>
+                      <td>{{ e.user?.name || e.userId }}</td>
+                      <td>{{ e.editingLevel }}</td>
+                      <td><button class="btn btn-sm" (click)="removeWebsiteEditor(e)">Remove</button></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <div class="assign-form">
+              <input class="form-control" placeholder="User ID" [(ngModel)]="newEditorUserId" />
+              <select [(ngModel)]="newEditorLevel" class="form-select">
+                <option value="basic">basic</option>
+                <option value="professional">professional</option>
+                <option value="advanced">advanced</option>
+              </select>
+              <button class="btn btn-sm" (click)="addWebsiteEditor()">Assign</button>
+            </div>
+          </div>
+
+          <div *hasPermission="'builder.manage'" class="mt-2">
+            <h4 class="section-title">Domain</h4>
+            @if (websiteDomain(); as domain) {
+              <div class="detail-row"><span class="label">Domain</span><span>{{ domain.domain }}</span></div>
+              <div class="detail-row"><span class="label">Status</span><span>{{ domain.status }}</span></div>
+              @if (domain.expiresAt) {
+                <div class="detail-row"><span class="label">Expires</span><span>{{ domain.expiresAt | date:'MMM d, y' }}</span></div>
+              }
+              @if (domain.documentRootPath) {
+                <div class="detail-row"><span class="label">Document Root</span><span>{{ domain.cpanelAccount }}: {{ domain.documentRootPath }}</span></div>
+              }
+              <div class="assign-form mt-2">
+                <input class="form-control" placeholder="Document root path" [(ngModel)]="newDocumentRootPath" />
+                <button class="btn btn-sm" (click)="mapDocumentRoot()">Map Document Root</button>
+              </div>
+              <div class="mt-2">
+                <button class="btn btn-sm" (click)="checkDomainRenewal()">Check Renewal</button>
+                @if (domain.status === 'active') {
+                  <button class="btn btn-sm" (click)="initiateDomainTransfer()">Initiate Transfer</button>
+                }
+              </div>
+            } @else {
+              <p class="text-sm text-muted mb-2">No domain has been registered yet.</p>
+              <div class="assign-form">
+                <input class="form-control" placeholder="example.com" [(ngModel)]="newDomainName" />
+                <input class="form-control" type="number" min="1" placeholder="Years" [(ngModel)]="newDomainYears" />
+                <button class="btn btn-sm" (click)="checkDomainAvailability()">Check Availability</button>
+                <button class="btn btn-sm" (click)="registerDomain()">Register</button>
+              </div>
+              @if (domainAvailability(); as avail) {
+                <p class="text-sm mt-2">{{ avail.domain }}: {{ avail.available ? 'available' : 'not available' }}</p>
+              }
+            }
+          </div>
+
+          <div *hasPermission="'builder.manage'" class="mt-2">
+            <h4 class="section-title">Production Deployments</h4>
+            @if (currentLiveDeployment(); as live) {
+              <div class="alert alert-info mb-2">Currently live: v{{ live.websiteVersionId }} deployed {{ live.createdAt | date:'MMM d, y, h:mm a' }} ({{ live.status }})</div>
+            }
+            @if (productionDeployments().length > 0) {
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Status</th><th>Branch</th><th>Backup Ref</th><th>When</th></tr></thead>
+                  <tbody>
+                    @for (d of productionDeployments(); track d.id) {
+                      <tr>
+                        <td>{{ d.status }}</td>
+                        <td>{{ d.branchName }}</td>
+                        <td>{{ d.backupRef || '—' }}</td>
+                        <td>{{ d.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else {
+              <p class="text-sm text-muted mb-0">No production deployments yet — use "Deploy to Production" on a version above.</p>
+            }
+          </div>
+
+          <div *hasPermission="'builder.manage'" class="mt-2">
+            <h4 class="section-title">Public Form Submissions (pending review)</h4>
+            @if (publicFormSubmissions().length > 0) {
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Page/Section</th><th>Values</th><th>When</th><th></th></tr></thead>
+                  <tbody>
+                    @for (s of publicFormSubmissions(); track s.id) {
+                      <tr>
+                        <td>{{ s.pageId }} / {{ s.sectionId }}</td>
+                        <td>{{ s.values | json }}</td>
+                        <td>{{ s.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                        <td>
+                          <button class="btn btn-sm" (click)="convertPublicFormSubmission(s)">Convert to Request</button>
+                          <button class="btn btn-sm" (click)="updatePublicFormSubmissionStatus(s, 'discarded')">Discard</button>
+                          <button class="btn btn-sm" (click)="updatePublicFormSubmissionStatus(s, 'spam')">Mark Spam</button>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else {
+              <p class="text-sm text-muted mb-0">No pending public form submissions.</p>
+            }
+          </div>
+
+          <div *hasPermission="'builder.manage'" class="mt-2">
+            <h4 class="section-title">Analytics &amp; Google Analytics Connection</h4>
+            @if (analyticsSummary().length > 0) {
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Day</th><th>Event</th><th>Count</th></tr></thead>
+                  <tbody>
+                    @for (row of analyticsSummary(); track row.day + row.eventType) {
+                      <tr>
+                        <td>{{ row.day | date:'MMM d, y' }}</td>
+                        <td>{{ row.eventType }}</td>
+                        <td>{{ row.count }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else {
+              <p class="text-sm text-muted mb-2">No analytics events recorded yet.</p>
+            }
+            <div class="detail-row"><span class="label">Google Analytics</span><span>{{ website()?.googleAnalyticsMeasurementId || 'Not connected' }}</span></div>
+            <div class="assign-form mt-2">
+              <input class="form-control" placeholder="G-XXXXXXXXXX" [(ngModel)]="newGoogleAnalyticsMeasurementId" />
+              <button class="btn btn-sm" (click)="setGoogleAnalyticsMeasurementId()">Connect</button>
+            </div>
+          </div>
+
+          @if (exportedBundle(); as bundle) {
+            <div class="mt-2">
+              <h4 class="section-title">Export Ready</h4>
+              <p class="text-sm text-muted mb-2">{{ bundle.files.length }} file(s) exported at {{ bundle.exportedAt | date:'MMM d, y, h:mm a' }}.</p>
+              <button class="btn btn-sm" (click)="downloadExportedBundle()">Download JSON</button>
+            </div>
+          }
+
+          @if (seoDashboard(); as dashboard) {
+            <div class="mt-2" *hasPermission="'projects.view'">
+              <h4 class="section-title">SEO</h4>
+              @if (!dashboard.entitled) {
+                <p class="text-sm text-muted mb-2">This client does not have an active SEO entitlement.</p>
+                <div class="assign-form" *hasPermission="'seo.manage_entitlements'">
+                  <input class="form-control" placeholder="Reason (e.g. promotional trial)" [(ngModel)]="seoEntitlementReason" />
+                  <button class="btn btn-sm" (click)="grantSeoEntitlement()">Grant SEO Entitlement</button>
+                </div>
+              } @else {
+                <div class="detail-row"><span class="label">Redirects</span><span>{{ dashboard.redirectCount }}</span></div>
+                <div class="detail-row"><span class="label">Pages with SEO settings</span><span>{{ dashboard.pageSettingsConfiguredCount }}</span></div>
+                <div class="detail-row"><span class="label">SEO task cycles run</span><span>{{ dashboard.taskCycleCount }}</span></div>
+                @if (dashboard.latestAudit; as latest) {
+                  <div class="detail-row"><span class="label">Latest audit</span><span>{{ latest.errorCount }} error(s), {{ latest.warningCount }} warning(s) — {{ latest.createdAt | date:'MMM d, y, h:mm a' }}</span></div>
+                } @else {
+                  <p class="text-sm text-muted mb-2">No audit has been run yet.</p>
+                }
+                <div class="detail-row"><span class="label">Google Search Console</span><span>{{ dashboard.googleSearchConsolePropertyUrl || 'Not connected' }}</span></div>
+
+                <div *hasPermission="'builder.manage'" class="mt-2">
+                  <h4 class="section-title">Page Metadata</h4>
+                  <div class="table-wrap">
+                    <table>
+                      <thead><tr><th>Page</th><th>Meta Title</th><th>Meta Description</th><th>Robots</th><th></th></tr></thead>
+                      <tbody>
+                        @for (page of seoPages(); track page.pageId) {
+                          <tr>
+                            <td>{{ page.title }}</td>
+                            <td><input class="form-control" [(ngModel)]="seoPageEdits[page.pageId].metaTitle" /></td>
+                            <td><input class="form-control" [(ngModel)]="seoPageEdits[page.pageId].metaDescription" /></td>
+                            <td>
+                              <select class="form-select" [(ngModel)]="seoPageEdits[page.pageId].robotsDirective">
+                                <option value="index,follow">index,follow</option>
+                                <option value="noindex,follow">noindex,follow</option>
+                                <option value="index,nofollow">index,nofollow</option>
+                                <option value="noindex,nofollow">noindex,nofollow</option>
+                              </select>
+                            </td>
+                            <td><button class="btn btn-sm" (click)="saveSeoPageSettings(page.pageId)">Save</button></td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <h4 class="section-title">Redirects</h4>
+                  <div class="table-wrap">
+                    <table>
+                      <thead><tr><th>From</th><th>To</th><th>Status</th><th></th></tr></thead>
+                      <tbody>
+                        @for (redirect of seoRedirects(); track redirect.id) {
+                          <tr>
+                            <td>{{ redirect.fromPath }}</td>
+                            <td>{{ redirect.toPath }}</td>
+                            <td>{{ redirect.statusCode }}</td>
+                            <td><button class="btn btn-sm" (click)="deleteSeoRedirect(redirect)">Delete</button></td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="assign-form">
+                    <input class="form-control" placeholder="/old-path" [(ngModel)]="newRedirectFromPath" />
+                    <input class="form-control" placeholder="/new-path" [(ngModel)]="newRedirectToPath" />
+                    <button class="btn btn-sm" (click)="createSeoRedirect()">Add Redirect</button>
+                  </div>
+
+                  <h4 class="section-title">Audits</h4>
+                  <div class="table-wrap">
+                    <table>
+                      <thead><tr><th>When</th><th>Errors</th><th>Warnings</th></tr></thead>
+                      <tbody>
+                        @for (audit of seoAudits(); track audit.id) {
+                          <tr>
+                            <td>{{ audit.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                            <td>{{ countSeoFindings(audit, 'error') }}</td>
+                            <td>{{ countSeoFindings(audit, 'warning') }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                  <p class="text-sm text-muted mb-2">Run a new audit against a version above using "Run SEO Audit".</p>
+
+                  <h4 class="section-title">Recurring SEO Tasks</h4>
+                  @if (seoTaskCycles().length > 0) {
+                    <div class="table-wrap">
+                      <table>
+                        <thead><tr><th>Period</th><th>Generated</th></tr></thead>
+                        <tbody>
+                          @for (cycle of seoTaskCycles(); track cycle.id) {
+                            <tr><td>{{ cycle.cyclePeriod }}</td><td>{{ cycle.createdAt | date:'MMM d, y' }}</td></tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  }
+                  <button class="btn btn-sm mt-2" (click)="generateSeoTaskCycle()">Generate This Month's SEO Tasks</button>
+
+                  <h4 class="section-title">Google Search Console</h4>
+                  <div class="assign-form">
+                    <input class="form-control" placeholder="https://example.com/ or sc-domain:example.com" [(ngModel)]="newSearchConsolePropertyUrl" />
+                    <button class="btn btn-sm" (click)="connectSearchConsole()">Connect</button>
+                  </div>
+                </div>
+              }
+            </div>
+          }
+
+          @if (websitePresence().length > 0) {
+            <div class="mt-2">
+              <h4 class="section-title">Currently Viewing</h4>
+              <p class="text-sm text-muted mb-0">
+                @for (p of websitePresence(); track p.id) {
+                  <span class="badge">{{ p.user?.name || p.userId }}@if (p.sectionKey) { &nbsp;({{ p.sectionKey }}) }</span>
+                }
+              </p>
+            </div>
+          }
+
+          <div class="mt-2">
+            <h4 class="section-title">Comments</h4>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Anchor</th><th>Comment</th><th>By</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                  @for (c of websiteComments(); track c.id) {
+                    <tr>
+                      <td>{{ c.anchorKey }}</td>
+                      <td>{{ c.body }}@if (c.isInternal) { <span class="text-muted">(internal)</span> }</td>
+                      <td>{{ c.author?.name || c.authorUserId }}</td>
+                      <td>{{ c.resolvedAt ? 'Resolved' : 'Open' }}</td>
+                      <td>
+                        @if (!c.resolvedAt) {
+                          <button class="btn btn-sm" *hasPermission="'builder.edit'" (click)="resolveWebsiteComment(c)">Resolve</button>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <div class="assign-form" *hasPermission="'builder.edit'">
+              <input class="form-control" placeholder="Anchor key (e.g. page_home/hero1)" [(ngModel)]="newCommentAnchorKey" />
+              <input class="form-control" placeholder="Comment" [(ngModel)]="newCommentBody" />
+              @if (org.membership()?.membershipType === 'employee') {
+                <label class="checkbox-row">
+                  <input type="checkbox" [(ngModel)]="newCommentIsInternal" />
+                  Internal only
+                </label>
+              }
+              <button class="btn btn-sm" (click)="addWebsiteComment()">Add Comment</button>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  }
+</div>

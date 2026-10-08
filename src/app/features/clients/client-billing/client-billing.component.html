@@ -1,0 +1,198 @@
+<div class="page">
+  <div class="tab-head">
+    <p class="tab-subtitle">What this client pays us, kept separate from what it costs us to serve them.</p>
+    @if (canEdit() && !editing()) {
+      <button class="btn btn-outline btn-sm" (click)="startEdit()">{{ clientPaysSet() || costSet() ? 'Edit billing' : 'Set billing' }}</button>
+    }
+  </div>
+
+  @if (editing()) {
+    <form class="card edit-card" (ngSubmit)="save()">
+      <div class="edit-columns">
+        <fieldset>
+          <legend>What the client pays</legend>
+          <div class="form-group">
+            <label class="form-label" for="setup-price">Setup / build price ($)</label>
+            <input id="setup-price" class="form-control" name="setupPrice" inputmode="decimal" [(ngModel)]="form.setupPrice" placeholder="e.g. 1500" />
+          </div>
+          <div class="price-row">
+            <div class="form-group">
+              <label class="form-label" for="recurring-price">Recurring price ($)</label>
+              <input id="recurring-price" class="form-control" name="recurringPrice" inputmode="decimal" [(ngModel)]="form.recurringPrice" placeholder="e.g. 99" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="frequency">Billed</label>
+              <select id="frequency" class="form-select" name="billingFrequency" [(ngModel)]="form.billingFrequency">
+                <option value="">Not set</option>
+                @for (frequency of frequencies; track frequency) { <option [value]="frequency">{{ frequencyLabels[frequency] }}</option> }
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="payment-status">Payment status</label>
+            <select id="payment-status" class="form-select" name="paymentStatus" [(ngModel)]="form.paymentStatus">
+              <option value="">Not set</option>
+              @for (status of paymentStatuses; track status) { <option [value]="status">{{ status | label }}</option> }
+            </select>
+          </div>
+          <div class="form-group">
+            <span class="form-label">Billing record links</span>
+            <p class="form-hint">Stripe customer page, invoices, QuickBooks — wherever the real billing record lives.</p>
+            <app-link-list-editor [(links)]="links" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="billing-notes">Billing notes</label>
+            <textarea id="billing-notes" class="form-control" name="billingNotes" rows="2" [(ngModel)]="form.billingNotes" placeholder="e.g. Pays by check on the 1st"></textarea>
+            <p class="form-hint">Never card or bank numbers — link to the billing record instead.</p>
+          </div>
+        </fieldset>
+
+        <fieldset class="cost-side">
+          <legend>What it costs us <span class="text-muted">(internal)</span></legend>
+          <div class="form-group">
+            <label class="form-label" for="internal-cost">Our monthly cost ($)</label>
+            <input id="internal-cost" class="form-control" name="internalMonthlyCost" inputmode="decimal" [(ngModel)]="form.internalMonthlyCost" placeholder="e.g. 18" />
+            <p class="form-hint">Hosting, domain, plugins, contractor time — averaged per month.</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="cost-notes">Cost notes</label>
+            <textarea id="cost-notes" class="form-control" name="internalCostNotes" rows="4" [(ngModel)]="form.internalCostNotes" placeholder="e.g. Hosting $12/mo, domain $18/yr, forms plugin $5/mo"></textarea>
+          </div>
+        </fieldset>
+      </div>
+
+      @if (error()) {
+        <div class="alert alert-error">{{ error() }}</div>
+      }
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" (click)="editing.set(false)">Cancel</button>
+        <button type="submit" class="btn btn-primary" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save billing' }}</button>
+      </div>
+    </form>
+  } @else {
+    <div class="billing-grid">
+      <section class="card pays-card">
+        <h2>What the client pays</h2>
+        @if (clientPaysSet()) {
+          <div class="money-row">
+            @if (profile().recurringPriceCents !== null) {
+              <div>
+                <span class="money">{{ profile().recurringPriceCents | cents:frequencySuffix(profile().billingFrequency) }}</span>
+                <span class="money-label">{{ profile().billingFrequency ? frequencyLabels[profile().billingFrequency!] : 'Recurring' }}</span>
+              </div>
+            }
+            @if (profile().setupPriceCents !== null) {
+              <div>
+                <span class="money small">{{ profile().setupPriceCents | cents }}</span>
+                <span class="money-label">Setup / build</span>
+              </div>
+            }
+          </div>
+          @if (profile().paymentStatus) {
+            <p><span class="pay-status" [class]="'pay-' + profile().paymentStatus">{{ profile().paymentStatus | label }}</span></p>
+          }
+          @if (profile().billingLinks.length) {
+            <ul class="link-list">
+              @for (link of profile().billingLinks; track link.url) {
+                <li><a [href]="link.url" target="_blank" rel="noopener">{{ link.label || (link.url | host) }} ↗</a></li>
+              }
+            </ul>
+          }
+          @if (profile().billingNotes) { <p class="notes">{{ profile().billingNotes }}</p> }
+        } @else {
+          <p class="text-sm text-muted">Not recorded yet.</p>
+        }
+      </section>
+
+      @if (showInternals()) {
+        <section class="card cost-card">
+          <h2>What it costs us <span class="internal-tag">Internal</span></h2>
+          @if (costSet()) {
+            @if (profile().internalMonthlyCostCents != null) {
+              <div class="money-row">
+                <div>
+                  <span class="money">{{ profile().internalMonthlyCostCents | cents:'/mo' }}</span>
+                  <span class="money-label">Our cost</span>
+                </div>
+                @if (monthlyMargin() !== null) {
+                  <div>
+                    <span class="money" [class.negative]="monthlyMargin()! < 0">{{ monthlyMargin() | cents:'/mo' }}</span>
+                    <span class="money-label">Margin</span>
+                  </div>
+                }
+              </div>
+            }
+            @if (profile().internalCostNotes) { <p class="notes">{{ profile().internalCostNotes }}</p> }
+          } @else {
+            <p class="text-sm text-muted">Not recorded yet.</p>
+          }
+        </section>
+      }
+    </div>
+
+    <section class="card stripe-card">
+      <h2>Stripe</h2>
+      <app-client-stripe-link [clientId]="store.clientId" (changed)="store.refresh(); loadSalesBilling(false)" />
+      @if (stripe(); as s) {
+        @if (s.subscriptions.length) {
+          <ul class="subscriptions">
+            @for (sub of s.subscriptions; track sub.id) {
+              <li>
+                <strong>{{ sub.servicePlan?.name || 'Subscription' }}</strong>
+                @if (sub.servicePlan) { <span>{{ sub.servicePlan.amountCents | cents:(sub.servicePlan.billingInterval ? '/' + sub.servicePlan.billingInterval : '') }}</span> }
+                <span class="pay-status">{{ sub.status | label }}</span>
+                @if (sub.currentPeriodEnd) { <span class="text-sm text-muted">renews {{ sub.currentPeriodEnd | date:'MMM d, y' }}</span> }
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="text-sm text-muted">A billing account exists but has no subscriptions.</p>
+        }
+        @if (s.stripeCustomerId && org.hasPermission('crm.manage_pipeline')) {
+          <button class="btn btn-outline btn-sm" [disabled]="openingPortal()" (click)="openStripePortal()">{{ openingPortal() ? 'Opening…' : 'Open Stripe billing portal' }}</button>
+        }
+        @if (portalError()) { <p class="text-sm form-error">{{ portalError() }}</p> }
+      } @else {
+        <p class="text-sm text-muted">No Stripe subscriptions recorded for this client yet.</p>
+      }
+
+      <div class="sales-billing">
+        <div class="sales-billing-head">
+          <strong>Payments &amp; invoices</strong>
+          <span>
+            <button class="btn btn-ghost btn-sm" (click)="loadSalesBilling(false)" [disabled]="salesBillingBusy()">Show payments</button>
+            <button class="btn btn-ghost btn-sm" (click)="loadSalesBilling(true)" [disabled]="salesBillingBusy()">{{ salesBillingBusy() ? 'Loading…' : 'Refresh from Stripe' }}</button>
+          </span>
+        </div>
+        @if (salesBillingError()) { <p class="text-sm form-error">{{ salesBillingError() }}</p> }
+        @if (salesBilling(); as b) {
+          @if (b.liveError) { <p class="text-sm form-error">{{ b.liveError }}</p> }
+          @if (b.customer.link; as link) { <p class="text-sm text-muted">Stripe customer {{ link.name || link.email || link.stripeCustomerId }} ({{ b.customer.mode }} mode)</p> }
+          <ul class="subscriptions">
+            @for (p of b.payments; track p.id) {
+              <li>
+                <strong>{{ p.amountCents | money: p.currency }}</strong>
+                <span>{{ p.kind === 'initial' ? 'Sale' : p.kind === 'renewal' ? 'Renewal' : 'Payment' }} · {{ p.source === 'stripe' ? 'confirmed by Stripe' : 'recorded manually' }}@if (p.stripeMode && p.stripeMode !== 'live') { · {{ p.stripeMode }} }</span>
+                <span class="text-sm text-muted">{{ p.paidAt | date:'MMM d, y' }}</span>
+                @if (p.invoiceUrl) { <a [href]="p.invoiceUrl" target="_blank" rel="noopener" class="text-sm">Invoice</a> }
+                @if (p.receiptUrl) { <a [href]="p.receiptUrl" target="_blank" rel="noopener" class="text-sm">Receipt</a> }
+              </li>
+            } @empty { <li class="text-sm text-muted">No payments recorded in Leadzaro yet.</li> }
+          </ul>
+          @if (b.invoices) {
+            <ul class="subscriptions">
+              @for (inv of b.invoices; track inv.id) {
+                <li>
+                  <strong>{{ inv.number || inv.id }}</strong>
+                  <span>{{ inv.amountPaid | money: inv.currency }} paid of {{ inv.amountDue | money: inv.currency }} · {{ inv.status }}</span>
+                  <span class="text-sm text-muted">{{ inv.created | date:'MMM d, y' }}</span>
+                  @if (inv.hostedInvoiceUrl) { <a [href]="inv.hostedInvoiceUrl" target="_blank" rel="noopener" class="text-sm">View</a> }
+                </li>
+              } @empty { <li class="text-sm text-muted">No invoices in Stripe.</li> }
+            </ul>
+          }
+        }
+      </div>
+    </section>
+  }
+</div>

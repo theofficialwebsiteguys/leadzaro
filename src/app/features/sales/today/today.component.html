@@ -1,0 +1,162 @@
+<div class="page today">
+  <header class="today-head">
+    <div>
+      <p class="eyebrow">{{ today | date: 'EEEE, MMMM d' }}</p>
+      <h1>{{ greeting() }}</h1>
+      @if (data(); as hd) {
+        <p class="sub">
+          @if (totalAttention() === 0) { Nothing needs you right now. }
+          @else { {{ hd.queueSize }} lead{{ hd.queueSize === 1 ? '' : 's' }} in your queue{{ hd.scope === 'team' ? ' across the team' : '' }}. }
+        </p>
+      }
+    </div>
+    <div class="head-actions">
+      @if (canSeeTeam()) {
+        <div class="seg" role="group" aria-label="Whose work">
+          <button type="button" [class.active]="scope() === 'mine'" (click)="setScope('mine')">Mine</button>
+          <button type="button" [class.active]="scope() === 'team'" (click)="setScope('team')">Team</button>
+        </div>
+      }
+      @if (queue.active() && queue.remaining() > 0) {
+        <button class="btn btn-outline" (click)="resumeQueue()">Resume queue · {{ queue.index() + 1 }} of {{ queue.items().length }}</button>
+      }
+      <button class="btn btn-primary btn-lg" (click)="openQueueDialog()" [disabled]="!data() || data()!.queueSize === 0">
+        <lz-icon name="play" [size]="15" /> Work next lead
+      </button>
+    </div>
+  </header>
+
+  @let d = data();
+  @if (loading() && !d) {
+    <div class="loading-state"><div class="spinner"></div><span>Loading your day…</span></div>
+  } @else if (error()) {
+    <div class="alert alert-error">{{ error() }} <button class="btn btn-ghost btn-sm" (click)="load()">Try again</button></div>
+  } @else if (d) {
+    <div class="today-grid">
+      <div class="today-main">
+        @if (totalAttention() === 0) {
+          <div class="card caught-up">
+            <lz-icon name="check-circle" [size]="28" />
+            <div>
+              <h3>You’re all caught up</h3>
+              <p>No replies, follow-ups or payments are waiting. Find new businesses to contact.</p>
+            </div>
+            <a routerLink="/app/search" class="btn btn-primary">Find leads</a>
+          </div>
+        }
+        @for (section of sections; track section.key) {
+          @if (items(section).length) {
+            <section class="card attention" [attr.data-tone]="section.tone">
+              <header class="attention-head">
+                <span class="attention-icon"><lz-icon [name]="section.icon" [size]="16" /></span>
+                <div>
+                  <h3>{{ section.title }} <span class="count">{{ section.key === 'newLeads' ? d.newLeadsTotal : items(section).length }}</span></h3>
+                  <p>{{ section.hint }}</p>
+                </div>
+              </header>
+              <ul class="lead-rows">
+                @for (item of items(section).slice(0, 8); track item.opportunityId) {
+                  <li>
+                    <a [routerLink]="['/app/leads', item.opportunityId]" class="lead-row">
+                      <div class="lead-main">
+                        <strong>{{ item.businessName }}</strong>
+                        <span class="lead-meta">
+                          @switch (section.key) {
+                            @case ('replies') { Replied {{ item.replyNeededSince | relativeDay }} · {{ item.lastInteractionSummary }} }
+                            @case ('payments') { {{ item.paymentLabel }} · {{ item.amountCents | money: (item.currency || 'usd') }} }
+                            @case ('handoffs') {
+                              @if (item.handoffStatus === 'failed') { Client setup failed — retry needed }
+                              @else if (item.missingEssential) { {{ item.missingEssential }} essential item{{ item.missingEssential === 1 ? '' : 's' }} missing }
+                              @else { Ready to review and complete }
+                            }
+                            @case ('newLeads') { {{ item.hasPhone ? 'Has phone' : item.hasEmail ? 'Has email' : 'No contact info yet' }} }
+                            @case ('stalled') { {{ item.stall?.label }}@if (item.lastInteractionSummary) { · last: {{ item.lastInteractionSummary }} } }
+                            @default {
+                              {{ nextActionLabel(item.nextActionType) }}
+                              @if (item.nextActionAt) { · <span [class.overdue]="isOverdue(item.nextActionAt)">{{ item.nextActionAt | relativeDay }}</span> }
+                              @if (item.nextActionNote) { · {{ item.nextActionNote }} }
+                            }
+                          }
+                        </span>
+                      </div>
+                      <div class="lead-side">
+                        <span class="stage-chip" [class]="'stage-chip stage-' + item.stage">{{ item.stageLabel }}</span>
+                        @if (d.scope === 'team' && item.assignedTo) { <span class="owner">{{ item.assignedTo.name }}</span> }
+                      </div>
+                    </a>
+                  </li>
+                }
+              </ul>
+              @if (items(section).length > 8 || (section.key === 'newLeads' && d.newLeadsTotal > 8) || (section.key === 'stalled' && d.stalledTotal > 8)) {
+                <footer class="attention-foot">
+                  @if (section.key === 'newLeads') { <a routerLink="/app/leads" [queryParams]="{ stage: 'new', owner: 'me' }">See all {{ d.newLeadsTotal }} new leads →</a> }
+                  @else if (section.key === 'stalled') { <a routerLink="/app/leads" [queryParams]="{ due: 'stalled', owner: d.scope === 'team' ? 'all' : 'me', stage: 'open' }">See all {{ d.stalledTotal }} stalled deals →</a> }
+                  @else { <span class="text-muted text-sm">+ {{ items(section).length - 8 }} more in your queue</span> }
+                </footer>
+              }
+            </section>
+          }
+        }
+      </div>
+
+      <aside class="today-side">
+        <section class="card side-card">
+          <header class="side-head">
+            <h3>This week</h3>
+            <a routerLink="/app/settings/sales" class="text-sm">Set goals</a>
+          </header>
+          @for (goal of d.goals; track goal.metric) {
+            <div class="goal">
+              <div class="goal-top">
+                <span>{{ goal.label }}</span>
+                <strong>{{ goal.actual }}@if (goal.target !== null) { <span class="text-muted"> / {{ goal.target }}</span> }</strong>
+              </div>
+              @if (goal.target !== null) {
+                <div class="bar" role="progressbar" [attr.aria-valuenow]="goal.actual" [attr.aria-valuemax]="goal.target" [attr.aria-label]="goal.label">
+                  <span [style.width.%]="goalPercent(goal.actual, goal.target)" [class.met]="goal.actual >= goal.target"></span>
+                </div>
+              }
+            </div>
+          }
+          <p class="side-note">Counts recorded outreach since Monday. Paid sales count only when money is received.</p>
+        </section>
+
+        <section class="card side-card">
+          <h3>Quick links</h3>
+          <nav class="quick">
+            <a routerLink="/app/search"><lz-icon name="search" [size]="15" /> Find leads</a>
+            <a routerLink="/app/leads" [queryParams]="{ owner: 'unassigned', stage: 'new' }">
+              <lz-icon name="users" [size]="15" /> Unclaimed leads
+              @if (d.unclaimed) { <span class="tag tag-primary">{{ d.unclaimed }}</span> }
+            </a>
+            <a routerLink="/app/outreach"><lz-icon name="message" [size]="15" /> Conversations</a>
+            <a routerLink="/app/sales/reports"><lz-icon name="chart-bar" [size]="15" /> My numbers</a>
+          </nav>
+        </section>
+      </aside>
+    </div>
+  }
+</div>
+
+<app-dialog [open]="showQueueDialog()" title="Work next lead" (closed)="showQueueDialog.set(false)">
+  <p class="text-sm text-muted">Leads open one at a time, most urgent first: replies, overdue follow-ups, due today, payments, then new leads. After each one, log what happened and move to the next.</p>
+  <div class="reason-grid" role="group" aria-label="Include">
+    @for (r of reasons; track r.key) {
+      <label class="reason" [class.on]="selectedReasons.has(r.key)">
+        <input type="checkbox" [checked]="selectedReasons.has(r.key)" (change)="toggleReason(r.key)" /> {{ r.label }}
+      </label>
+    }
+  </div>
+  <div class="form-group mt-4">
+    <label class="form-label" for="queue-stage">Only this stage (optional)</label>
+    <select id="queue-stage" class="form-select" [(ngModel)]="queueStage">
+      <option value="">Any stage</option>
+      @for (s of stageOptions; track s.key) { <option [value]="s.key">{{ s.label }}</option> }
+    </select>
+  </div>
+  @if (queueError()) { <div class="alert alert-warning mt-4">{{ queueError() }}</div> }
+  <div dialog-actions>
+    <button class="btn btn-ghost" (click)="showQueueDialog.set(false)">Cancel</button>
+    <button class="btn btn-primary" (click)="startQueue()" [disabled]="starting()">{{ starting() ? 'Building…' : 'Start' }}</button>
+  </div>
+</app-dialog>

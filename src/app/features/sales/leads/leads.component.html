@@ -1,0 +1,269 @@
+<div class="page leads">
+  <header class="page-header">
+    <div>
+      <h1>Leads</h1>
+      <p>Every business you’re working, from first contact to paid client.</p>
+    </div>
+    <div class="head-actions">
+      @if (canMerge()) { <button class="btn btn-ghost btn-sm" (click)="openDupes()">Review duplicates</button> }
+      <a routerLink="/app/search" class="btn btn-outline"><lz-icon name="search" [size]="15" /> Find leads</a>
+      <button class="btn btn-primary" (click)="openAdd()"><lz-icon name="plus" [size]="15" /> Add lead</button>
+    </div>
+  </header>
+
+  <div class="stage-strip" role="tablist" aria-label="Filter by stage">
+    <button type="button" [class.active]="filters.stage === 'open'" (click)="apply({ stage: 'open' })" [disabled]="filters.layout === 'board'">
+      <span class="label">All open</span>
+    </button>
+    @for (stage of stages; track stage) {
+      <button type="button" [class.active]="filters.stage === stage" (click)="apply({ stage, layout: 'list' })">
+        <span class="label">{{ stageLabels[stage] }}</span>
+        <span class="num">{{ countFor(stage) }}</span>
+      </button>
+    }
+  </div>
+
+  <div class="toolbar">
+    <label class="search">
+      <lz-icon name="search" [size]="15" />
+      <input type="search" placeholder="Search name, city, phone or email" [(ngModel)]="filters.q" (keyup.enter)="apply({})" aria-label="Search leads" />
+    </label>
+    <select class="form-select" [(ngModel)]="filters.owner" (ngModelChange)="apply({})" aria-label="Owner">
+      <option value="me">My leads</option>
+      <option value="all">Everyone’s leads</option>
+      <option value="unassigned">Unclaimed</option>
+      @for (m of members(); track m.id) { <option [value]="m.id">{{ m.name }}</option> }
+    </select>
+    <select class="form-select" [(ngModel)]="filters.due" (ngModelChange)="apply({})" aria-label="Next action">
+      <option value="">Any next step</option>
+      <option value="reply">Reply needed</option>
+      <option value="overdue">Overdue</option>
+      <option value="today">Due today</option>
+      <option value="none">No next step</option>
+      <option value="stalled">Stalled (no recent activity)</option>
+    </select>
+    <select class="form-select" [(ngModel)]="filters.view" (ngModelChange)="apply({})" aria-label="Show">
+      <option value="active">Active</option>
+      <option value="dnc">Do not contact</option>
+      <option value="archived">Archived</option>
+    </select>
+    @if (filters.layout === 'list') {
+      <select class="form-select" [(ngModel)]="filters.sort" (ngModelChange)="apply({})" aria-label="Sort">
+        <option value="next">Next step first</option>
+        <option value="last">Last contacted</option>
+        <option value="recent">Recently updated</option>
+        <option value="value">Deal value</option>
+        <option value="name">Name</option>
+      </select>
+    }
+    <div class="seg" role="group" aria-label="Layout">
+      <button type="button" [class.active]="filters.layout === 'list'" (click)="apply({ layout: 'list', stage: filters.stage || 'open' })"><lz-icon name="list" [size]="14" /> List</button>
+      <button type="button" [class.active]="filters.layout === 'board'" (click)="apply({ layout: 'board', stage: '' })"><lz-icon name="columns" [size]="14" /> Pipeline</button>
+    </div>
+  </div>
+
+  @if (message()) { <div class="alert alert-info mb-4" role="status">{{ message() }}</div> }
+
+  @if (loading() && !rows().length) {
+    <div class="loading-state"><div class="spinner"></div><span>Loading leads…</span></div>
+  } @else if (error()) {
+    <div class="alert alert-error">{{ error() }} <button class="btn btn-ghost btn-sm" (click)="load()">Try again</button></div>
+  } @else if (!rows().length) {
+    <div class="card empty-state">
+      <div class="empty-icon"><lz-icon name="leads" [size]="20" /></div>
+      <h3>No leads match</h3>
+      <p>Try “Everyone’s leads” or a different stage — or find new businesses to contact.</p>
+      <div class="flex gap-2 mt-2">
+        <a routerLink="/app/search" class="btn btn-primary btn-sm">Find leads</a>
+        <button class="btn btn-ghost btn-sm" (click)="apply({ q: '', stage: 'open', owner: 'all', due: '', view: 'active' })">Clear filters</button>
+      </div>
+    </div>
+  } @else if (filters.layout === 'list') {
+    <div class="card table-card">
+      <div class="table-wrap">
+        <table class="lead-table">
+          <thead>
+            <tr>
+              <th>Business</th>
+              <th>Stage</th>
+              <th>Owner</th>
+              <th class="num">Value</th>
+              <th>Last contact</th>
+              <th>Next step</th>
+              <th><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of rows(); track row.opportunityId) {
+              <tr (click)="open(row)" tabindex="0" (keydown.enter)="open(row)" [class.reply]="row.replyNeededSince">
+                <td>
+                  <div class="biz">
+                    <strong>{{ row.businessName }}</strong>
+                    <span class="biz-sub">
+                      @if (row.title) { {{ row.title }} · }
+                      {{ row.city || row.category || '—' }}
+                      @if (row.isClient) { <span class="tag tag-success">Client</span> }
+                      @if (row.isTest) { <span class="tag tag-muted">Demo</span> }
+                      @if (row.doNotContact) { <span class="tag tag-danger">Do not contact</span> }
+                    </span>
+                    <span class="methods" aria-label="Contact details on file">
+                      <span [class.on]="row.hasPhone" title="Phone"><lz-icon name="phone" [size]="12" /></span>
+                      <span [class.on]="row.hasEmail" title="Email"><lz-icon name="mail" [size]="12" /></span>
+                      <span [class.on]="!!row.website" title="Website"><lz-icon name="globe" [size]="12" /></span>
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  <span [class]="'stage-chip stage-' + row.stage">{{ row.stageLabel }}</span>
+                  @if (row.stall) { <div class="stall-note" [title]="'Deals in this stage stall after ' + row.stall.limit + ' days without activity'">{{ row.stall.label }}</div> }
+                  @if (row.paymentStatus === 'sent' || row.paymentStatus === 'created') { <div class="pay-note">Link {{ row.paymentStatus === 'sent' ? 'sent' : 'not sent' }}</div> }
+                </td>
+                <td class="owner">{{ row.assignedTo?.name || 'Unclaimed' }}</td>
+                <td class="num">{{ row.valueCents ? (row.valueCents | money: row.currency) : '—' }}</td>
+                <td class="last">
+                  @if (row.lastInteractionAt) {
+                    <span>{{ row.lastInteractionAt | relativeDay }}</span>
+                    <small>{{ row.lastInteractionSummary }}</small>
+                  } @else { <span class="text-muted">Never</span> }
+                </td>
+                <td class="next">
+                  @if (row.replyNeededSince) { <span class="tag tag-danger">Reply needed</span> }
+                  @else if (row.nextActionAt) {
+                    <span [class.overdue]="isOverdue(row.nextActionAt)">{{ nextActionLabel(row.nextActionType) }} · {{ row.nextActionAt | relativeDay }}</span>
+                    @if (row.nextActionNote) { <small>{{ row.nextActionNote }}</small> }
+                  } @else if (row.stage !== 'won' && row.stage !== 'lost') { <span class="tag tag-warning">No next step</span> }
+                  @else { <span class="text-muted">—</span> }
+                </td>
+                <td class="actions" (click)="$event.stopPropagation()">
+                  <div class="menu-wrap">
+                    <button class="icon-btn" (click)="toggleMenu($event, row.opportunityId)" [attr.aria-expanded]="menuFor() === row.opportunityId" aria-label="More actions"><lz-icon name="more" [size]="16" /></button>
+                    @if (menuFor() === row.opportunityId) {
+                      <div class="menu" role="menu">
+                        @if (row.assignedTo?.id !== auth.currentUser()?.id && (!row.assignedTo || canAssign())) {
+                          <button role="menuitem" (click)="assign(row, auth.currentUser()!.id, $event)">Assign to me</button>
+                        }
+                        @if (canAssign()) {
+                          @for (m of members(); track m.id) {
+                            @if (m.id !== row.assignedTo?.id && m.id !== auth.currentUser()?.id) { <button role="menuitem" (click)="assign(row, m.id, $event)">Assign to {{ m.name }}</button> }
+                          }
+                        }
+                        <hr />
+                        <button role="menuitem" (click)="archive(row, $event)">{{ row.archivedAt ? 'Restore' : 'Archive' }}</button>
+                      </div>
+                    }
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <footer class="table-foot">
+        <span class="text-sm text-muted">{{ total() }} lead{{ total() === 1 ? '' : 's' }}</span>
+        @if (totalPages() > 1) {
+          <div class="pager">
+            <button class="btn btn-ghost btn-sm" [disabled]="filters.page <= 1" (click)="apply({ page: filters.page - 1 })">Previous</button>
+            <span class="text-sm">Page {{ filters.page }} of {{ totalPages() }}</span>
+            <button class="btn btn-ghost btn-sm" [disabled]="filters.page >= totalPages()" (click)="apply({ page: filters.page + 1 })">Next</button>
+          </div>
+        }
+      </footer>
+    </div>
+  } @else {
+    <div class="board" role="list">
+      @for (col of boardColumns(); track col.stage) {
+        <section class="column" role="listitem" [attr.aria-label]="col.label">
+          <header><span [class]="'stage-chip stage-' + col.stage">{{ col.label }}</span><span class="col-count">{{ col.items.length }}</span></header>
+          @for (row of col.items; track row.opportunityId) {
+            <a class="board-card" [routerLink]="['/app/leads', row.opportunityId]" [class.reply]="row.replyNeededSince">
+              <strong>{{ row.businessName }}</strong>
+              @if (row.valueCents) { <span class="value">{{ row.valueCents | money: row.currency }}</span> }
+              <span class="card-next" [class.overdue]="isOverdue(row.nextActionAt)">
+                @if (row.replyNeededSince) { Reply needed }
+                @else if (row.nextActionAt) { {{ nextActionLabel(row.nextActionType) }} · {{ row.nextActionAt | relativeDay }} }
+                @else if (col.stage !== 'won') { No next step }
+              </span>
+              @if (row.stall) { <span class="stall-note">{{ row.stall.label }}</span> }
+              <span class="card-owner">{{ row.assignedTo?.name || 'Unclaimed' }}</span>
+            </a>
+          } @empty {
+            <p class="col-empty">Nothing here</p>
+          }
+        </section>
+      }
+    </div>
+    <p class="board-note">Open a lead to change its stage. Lost and nurture leads are in the list view.</p>
+  }
+</div>
+
+<app-dialog [open]="showAdd()" title="Add a lead" [wide]="true" (closed)="showAdd.set(false)">
+  <form class="add-form" (ngSubmit)="submitAdd()" id="add-lead-form">
+    <p class="text-sm text-muted">Enter only what you know — leave anything you haven’t confirmed blank.</p>
+    <div class="grid2">
+      <div class="form-group span2">
+        <label class="form-label" for="al-name">Business name *</label>
+        <input id="al-name" class="form-control" name="name" [(ngModel)]="draft.name" required autocomplete="off" />
+      </div>
+      <div class="form-group"><label class="form-label" for="al-phone">Business phone</label><input id="al-phone" class="form-control" name="phone" [(ngModel)]="draft.phone" lzPhone placeholder="(555) 123-4567" /></div>
+      <div class="form-group"><label class="form-label" for="al-email">Business email</label><input id="al-email" class="form-control" name="email" type="email" [(ngModel)]="draft.email" /></div>
+      <div class="form-group"><label class="form-label" for="al-web">Website</label><input id="al-web" class="form-control" name="website" [(ngModel)]="draft.website" placeholder="example.com" /></div>
+      <div class="form-group"><label class="form-label" for="al-cat">Type of business</label><input id="al-cat" class="form-control" name="category" [(ngModel)]="draft.category" /></div>
+      <div class="form-group"><label class="form-label" for="al-city">City</label><input id="al-city" class="form-control" name="city" [(ngModel)]="draft.city" /></div>
+      <div class="form-group"><label class="form-label" for="al-state">State</label><input id="al-state" class="form-control" name="state" [(ngModel)]="draft.state" /></div>
+    </div>
+    <p class="eyebrow mt-4">Contact person (optional)</p>
+    <div class="grid2">
+      <div class="form-group"><label class="form-label" for="al-cn">Name</label><input id="al-cn" class="form-control" name="contactName" [(ngModel)]="draft.contactName" /></div>
+      <div class="form-group"><label class="form-label" for="al-ct">Role</label><input id="al-ct" class="form-control" name="contactTitle" [(ngModel)]="draft.contactTitle" placeholder="Owner, manager…" /></div>
+      <div class="form-group"><label class="form-label" for="al-ce">Email</label><input id="al-ce" class="form-control" name="contactEmail" type="email" [(ngModel)]="draft.contactEmail" /></div>
+      <div class="form-group"><label class="form-label" for="al-cp">Phone</label><input id="al-cp" class="form-control" name="contactPhone" [(ngModel)]="draft.contactPhone" lzPhone placeholder="(555) 123-4567" /></div>
+    </div>
+  </form>
+
+  @if (addError()) { <div class="alert alert-warning mt-4">{{ addError() }}</div> }
+  @if (existingId()) { <a class="btn btn-outline btn-sm mt-2" [routerLink]="['/app/leads', existingId()]" (click)="showAdd.set(false)">Open the existing lead</a> }
+  @if (duplicates().length) {
+    <div class="dupes">
+      @for (dup of duplicates(); track dup.organizationId) {
+        <div class="dupe">
+          <div>
+            <strong>{{ dup.name }}</strong>
+            @if (dup.isClient) { <span class="tag tag-success">Client</span> }
+            <div class="text-sm text-muted">Matches on {{ dup.reasons.join(', ') }}@if (dup.stageLabel) { · {{ dup.stageLabel }} }@if (dup.assignedTo) { · {{ dup.assignedTo.name }} }</div>
+          </div>
+          <div class="dupe-actions">
+            @if (dup.opportunityId) { <a class="btn btn-ghost btn-sm" [routerLink]="['/app/leads', dup.opportunityId]" (click)="showAdd.set(false)">Open</a> }
+            <button class="btn btn-outline btn-sm" (click)="submitAdd({ existingOrganizationId: dup.organizationId })" [disabled]="adding()">New deal for this business</button>
+          </div>
+        </div>
+      }
+      <button class="btn btn-ghost btn-sm" (click)="submitAdd({ confirmNew: true })" [disabled]="adding()">It’s a different business — add it anyway</button>
+    </div>
+  }
+  <div dialog-actions>
+    <button class="btn btn-ghost" type="button" (click)="showAdd.set(false)">Cancel</button>
+    <button class="btn btn-primary" type="submit" form="add-lead-form" [disabled]="adding()">{{ adding() ? 'Adding…' : 'Add lead' }}</button>
+  </div>
+</app-dialog>
+
+<app-dialog [open]="showDupes()" title="Possible duplicate leads" [wide]="true" (closed)="showDupes.set(false)">
+  <p class="text-sm text-muted">Leads with the same name. Merging keeps the oldest record, moves contacts across and archives the other — it can be undone. Only merge when you’re sure it’s the same business.</p>
+  @if (dupesLoading()) { <div class="loading-state"><div class="spinner"></div></div> }
+  @else if (!dupeGroups().length) { <p class="muted-box">No possible duplicates found.</p> }
+  @else {
+    @for (group of dupeGroups(); track group.name) {
+      <div class="dupe-group">
+        <strong>{{ group.name }}</strong>
+        @for (opp of group.opportunities; track opp.id; let first = $first) {
+          <div class="dupe">
+            <span class="text-sm">{{ first ? 'Keep' : 'Duplicate' }} · created {{ opp.createdAt | relativeDay }} · {{ stageLabel(opp.stage) }}</span>
+            <div class="dupe-actions">
+              <a class="btn btn-ghost btn-sm" [routerLink]="['/app/leads', opp.id]" (click)="showDupes.set(false)">Open</a>
+              @if (!first) { <button class="btn btn-outline btn-sm" (click)="merge(group, opp.id)">Merge into first</button> }
+            </div>
+          </div>
+        }
+      </div>
+    }
+  }
+</app-dialog>

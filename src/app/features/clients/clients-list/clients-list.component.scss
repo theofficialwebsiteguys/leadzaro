@@ -1,0 +1,209 @@
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 280px;
+  max-width: 440px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--text-muted);
+
+  &:focus-within { border-color: var(--primary); }
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: none;
+  padding: 10px 0;
+  font-size: .9rem;
+  color: var(--text-primary);
+}
+
+.client-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 18px;
+}
+
+.client-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: box-shadow var(--transition), border-color var(--transition), transform var(--transition);
+
+  &:hover {
+    border-color: var(--primary-light);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+  }
+}
+
+.client-cover {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--border-light);
+
+  // Absolutely positioned so an image's own proportions can't stretch the card.
+  > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top;
+    display: block;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+}
+
+.cover-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(135deg, rgba(129, 140, 248, .14), rgba(192, 132, 252, .14)),
+    var(--border-light);
+  color: var(--text-muted);
+  font-size: .85rem;
+}
+
+.client-logo {
+  position: absolute;
+  left: 16px;
+  bottom: -22px;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  border: 3px solid var(--card);
+  background: var(--brand-gradient);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: .9rem;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #fff;
+  }
+}
+
+.client-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 30px 16px 16px;
+}
+
+.client-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--text-primary);
+  text-decoration: none !important;
+}
+
+// The whole card is clickable via the name link; inner links sit above it.
+.stretched-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.client-site {
+  position: relative;
+  z-index: 2;
+  align-self: flex-start;
+  font-size: .85rem;
+  color: var(--primary-dark);
+}
+
+.client-contact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .85rem;
+  color: var(--text-secondary);
+}
+
+.project-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.project-chip {
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  background: var(--border-light);
+  font-size: .75rem;
+  color: var(--text-secondary);
+}
+
+
+.header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+// Client views (ADR 0013): one chip per view that has clients in it.
+.views { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 12px; }
+.view-chip {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  border: 1px solid var(--border); background: var(--card); color: var(--text-secondary);
+  border-radius: var(--radius-full); padding: 5px 12px; font-size: .8125rem; font-weight: 500; cursor: pointer;
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+  .count { font-size: .7rem; background: var(--bg-2); border-radius: var(--radius-full); padding: 1px 7px; color: var(--text-secondary); }
+  &:hover { border-color: var(--primary-light); color: var(--text-primary); }
+  &.warn .count { background: var(--warning-bg); color: var(--warning-text); }
+  &.active { background: var(--primary-50); border-color: var(--primary); color: var(--primary-dark); .count { background: var(--card); } }
+  &:focus-visible { outline: 2px solid var(--primary-light); outline-offset: 1px; }
+}
+
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.compact { width: auto; min-width: 150px; padding-top: 8px; padding-bottom: 8px; font-size: .85rem; }
+.notice { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+
+.bulk {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--primary-50); border: 1px solid var(--primary-light); border-radius: var(--radius);
+  padding: 8px 12px; margin-bottom: 10px; font-size: .85rem;
+}
+
+.table-card { padding: 0; overflow: hidden; }
+.dim { opacity: .6; transition: opacity var(--transition); }
+table { td { vertical-align: top; } }
+th.check, td.check { width: 36px; padding-right: 0; }
+tr.selected td { background: var(--primary-50); }
+.client-cell { display: flex; gap: 10px; align-items: flex-start; min-width: 220px; }
+.mini-logo {
+  flex: none; width: 30px; height: 30px; border-radius: var(--radius); background: var(--brand-gradient); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; font-size: .7rem; font-weight: 700;
+}
+.min0 { min-width: 0; }
+.name { font-weight: 600; color: var(--text-primary); text-decoration: none; &:hover { color: var(--primary-dark); text-decoration: underline; } }
+.sub { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: .75rem; color: var(--text-muted); margin-top: 2px; }
+.svc { background: var(--bg-2); border-radius: var(--radius-full); padding: 0 8px; color: var(--text-secondary); }
+.status-cell { min-width: 180px; max-width: 280px; .tag { margin: 0 4px 4px 0; } }
+.reason { font-size: .75rem; color: var(--text-secondary); line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ok { color: var(--success-text); }
+.overdue { color: var(--danger-text); font-weight: 600; }
+.clip { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.empty-filter { padding: 28px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; p { margin: 0; color: var(--text-muted); } }
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.count-line { text-align: right; margin-top: 10px; }

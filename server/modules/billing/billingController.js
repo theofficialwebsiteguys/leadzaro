@@ -1,6 +1,8 @@
 'use strict';
 
 const paymentLinkService = require('./paymentLinkService');
+const paymentRequestService = require('../sales/paymentRequestService');
+const { context: salesContext } = require('../sales/salesCommon');
 const conversionService = require('./conversionService');
 const webhookService = require('./webhookService');
 const { triggerClientInvitationIfNew } = require('./clientInvitationService');
@@ -74,12 +76,11 @@ async function updateServicePlanStripeMapping(req, res, next) {
 async function createPaymentLink(req, res, next) {
   try {
     const orgId = req.context.organization.id;
-    const paymentLinkRequest = await paymentLinkService.createPaymentLink({
-      opportunityId: req.params.id,
-      agencyOrganizationId: orgId,
+    // Pre-ADR-0011 endpoint: a service plan is resolved to its Stripe price
+    // and goes through the same payment request path as the lead workspace.
+    const paymentLinkRequest = await paymentRequestService.createFromServicePlan(salesContext(req), req.params.id, {
       servicePlanId: req.body.servicePlanId,
       addOnServicePlanIds: req.body.addOnServicePlanIds || [],
-      actorUserId: req.user.id,
     });
 
     await recordAudit({
@@ -95,7 +96,7 @@ async function createPaymentLink(req, res, next) {
 async function listPaymentLinks(req, res, next) {
   try {
     const orgId = req.context.organization.id;
-    const paymentLinkRequests = await paymentLinkService.listForOpportunity(req.params.id, orgId);
+    const paymentLinkRequests = await paymentRequestService.listForOpportunity(salesContext(req), req.params.id);
     return success(res, { paymentLinkRequests });
   } catch (err) {
     next(err);
@@ -258,7 +259,7 @@ async function getCustomerPortalLink(req, res, next) {
     const adapter = getStripeAdapter();
     const session = await adapter.createCustomerPortalSession({
       stripeCustomerId: billingAccount.stripeCustomerId,
-      returnUrl: `${req.headers.origin || ''}/app/pipeline`,
+      returnUrl: `${req.headers.origin || ''}/app/clients/${clientOrganization.id}/billing`,
     });
     return success(res, { url: session.url });
   } catch (err) {

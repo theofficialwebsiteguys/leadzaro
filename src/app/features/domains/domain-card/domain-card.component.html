@@ -1,0 +1,104 @@
+<article class="card domain-card" [class.needs-review]="headline()?.state === 'conflict' || headline()?.state === 'review'">
+  <a class="dc-manage" [routerLink]="['/app/domains', domain().id]">Open domain →</a>
+  <header class="dc-head">
+    <div class="dc-title">
+      <h3>{{ domain().displayName }}</h3>
+      @if (primaryLink()?.isPrimary) { <span class="dc-chip">Primary</span> }
+    </div>
+    @if (headline(); as h) { <span class="dc-state" [class]="'dc-state state-' + h.state">{{ h.stateLabel }}</span> }
+  </header>
+
+  <p class="dc-used">
+    Used by:
+    @for (link of domain().links; track link.id; let last = $last) {
+      <span>{{ link.projectName || 'the client as a whole' }}@if (link.hostname !== domain().domainName) { <span class="text-muted"> ({{ link.hostname }})</span> }</span>@if (!last) {<span>, </span>}
+    }
+  </p>
+
+  @for (link of domain().links; track link.id) {
+    @if (link.state === 'conflict') {
+      <div class="dc-alert warn">
+        Also claimed by {{ otherClientNames(link) }}. Choose which client this domain belongs to.
+        @if (canEdit()) {
+          <span class="dc-alert-actions">
+            <button class="btn btn-outline btn-xs" (click)="decide(link, 'confirm')" [disabled]="busy()">It’s this client’s</button>
+            <button class="btn btn-ghost btn-xs" (click)="decide(link, 'reject')" [disabled]="busy()">Not this client’s</button>
+          </span>
+        }
+      </div>
+    } @else if (link.state === 'review') {
+      <div class="dc-alert warn">
+        {{ link.hostname }} is a subdomain of {{ domain().domainName }}. Confirm the domain belongs to this client.
+        @if (canEdit()) {
+          <span class="dc-alert-actions">
+            <button class="btn btn-outline btn-xs" (click)="decide(link, 'confirm')" [disabled]="busy()">Confirm</button>
+            <button class="btn btn-ghost btn-xs" (click)="decide(link, 'reject')" [disabled]="busy()">Keep separate</button>
+          </span>
+        }
+      </div>
+    }
+  }
+  @if (domain().providerPreview; as p) {
+    <p class="dc-preview">Namecheap reports: expires {{ p.expiresOn | date:'MMM d, y' }} · auto-renew {{ onOff(p.autoRenew).toLowerCase() }}.</p>
+  }
+
+  @if (!domain().restricted) {
+    <dl class="dc-facts">
+      <dt>Expires</dt>
+      <dd [class]="'expiry-' + expiryTone()">
+        @if (domain().expiresOn.value) { {{ domain().expiresOn.value | date:'MMM d, y' }} <span class="dc-days">{{ daysLabel(domain().daysUntilExpiry) }}</span> <app-source-tag [source]="domain().expiresOn.source" /> }
+        @else { <span class="text-muted">Unknown</span> }
+      </dd>
+      <dt>Auto-renew</dt><dd>{{ onOff(domain().autoRenew.value) }} <app-source-tag [source]="domain().autoRenew.source" /></dd>
+      <dt>Registrar</dt>
+      <dd>@if (domain().registrar.value) { {{ domain().registrar.value }} } @else { <span class="text-muted">Not recorded</span> }@if (domain().registeredOn.value) { <span class="text-muted"> · registered {{ domain().registeredOn.value | date:'MMM y' }}</span> }</dd>
+      @if (matched() && domain().providerStatus; as status) {
+        <dt>Status</dt><dd>{{ status.isExpired ? 'Expired' : 'Active' }}@if (status.isLocked !== null) { · transfer lock {{ status.isLocked ? 'on' : 'off' }} }</dd>
+      }
+      <dt>Nameservers</dt>
+      <dd>@if (domain().dns.provider.value) { {{ domain().dns.provider.value }} }@if (domain().dns.nameservers?.length) { <span class="dc-ns">@if (domain().dns.provider.value) { · } {{ domain().dns.nameservers!.join(', ') }}</span> } @else if (!domain().dns.provider.value) { <span class="text-muted">Not loaded yet</span> }</dd>
+    </dl>
+  }
+
+  <footer class="dc-foot">
+    <span class="dc-sync">
+      @if (!domain().restricted && domain().sync.lastSeenAt && matched()) { Synced {{ domain().sync.lastSeenAt | date:'MMM d, h:mm a' }}@if (domain().sync.stale) { <span class="dc-stale"> · may be out of date</span> } }
+      @else if (!domain().restricted && domain().sync.checkedAt) { Checked {{ domain().sync.checkedAt | date:'MMM d, h:mm a' }} }
+    </span>
+    @if (canEdit()) {
+      <span class="dc-actions">
+        @if (connection()?.configured && !matched() && !domain().restricted) { <button class="btn btn-ghost btn-xs" (click)="checkAgain()" [disabled]="busy()">Check again</button> }
+        <button class="btn btn-ghost btn-xs" (click)="showLinks.set(!showLinks())">Links</button>
+      </span>
+    }
+  </footer>
+
+  @if (notice()) { <p class="dc-notice" role="status">{{ notice() }}</p> }
+  @if (error()) { <div class="alert alert-error">{{ error() }}</div> }
+
+  @if (showLinks()) {
+    <div class="dc-links">
+      @for (link of domain().links; track link.id) {
+        <div class="dc-link">
+          <div>
+            <strong>{{ link.projectName || 'Whole client' }} · {{ link.hostname }}</strong>
+            <span class="text-muted text-xs"> · {{ sourceNames[link.source] }} · {{ link.stateLabel }}</span>
+          </div>
+          <div class="dc-link-actions">
+            @if (!link.isPrimary) { <button class="btn btn-ghost btn-xs" (click)="makePrimary(link)" [disabled]="busy()">Make primary</button> }
+            @if (link.override !== 'rejected') { <button class="btn btn-ghost btn-xs" (click)="decide(link, 'reject')" [disabled]="busy()">Unlink</button> }
+            @if (link.override) { <button class="btn btn-ghost btn-xs" (click)="decide(link, 'automatic')" [disabled]="busy()">Use automatic matching</button> }
+            @if (projects().length) {
+              <select class="form-select dc-move" [ngModel]="link.projectId ?? ''" (ngModelChange)="moveLink(link, $event)" [disabled]="busy()" aria-label="Move to a project">
+                <option value="">Whole client</option>
+                @for (project of projects(); track project.id) { <option [value]="project.id">{{ project.name }}</option> }
+              </select>
+            }
+            @if (link.source === 'manual' || link.source === 'namecheap_link') { <button class="btn btn-ghost btn-xs dc-remove" (click)="removeLink(link)" [disabled]="busy()">Remove</button> }
+          </div>
+        </div>
+      }
+      <p class="form-hint">Linking only changes Leadzaro. Domains that come from a website address follow that address.</p>
+    </div>
+  }
+</article>

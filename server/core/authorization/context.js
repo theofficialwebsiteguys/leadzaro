@@ -105,9 +105,25 @@ function requireAnyPermission(permissionKeys) {
   };
 }
 
+/**
+ * For agency-internal surfaces a client membership must never reach even
+ * when it holds the same permission key (e.g. client roles hold
+ * projects.view for their own project, but the client hub carries our
+ * internal costs and access notes). Permission checks still apply on top.
+ */
+function requireEmployeeMembership() {
+  return (req, res, next) => {
+    if (req.context?.membership?.membershipType !== 'employee') {
+      return forbidden(res, 'This area is only available to agency team members');
+    }
+    next();
+  };
+}
+
 module.exports = {
   loadActiveMemberships,
   resolveContext,
   requirePermission,
   requireAnyPermission,
+  requireEmployeeMembership,
 };

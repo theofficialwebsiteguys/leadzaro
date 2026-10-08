@@ -26,6 +26,37 @@ export interface Lead {
   createdAt?: string;
   // enriched field from search results
   isSaved?: boolean;
+  // Pipeline status for search results (ADR 0011)
+  pipeline?: {
+    opportunityId: string;
+    stage: string;
+    stageLabel: string;
+    assignedTo: { id: string; name: string } | null;
+    isClient: boolean;
+    contacted: boolean;
+    lastInteractionAt: string | null;
+    doNotContact: boolean;
+    archived: boolean;
+  } | null;
+  possibleMatch?: { organizationId: string; name: string; isClient: boolean; reasons: string[] } | null;
+}
+
+/** A search response: the results plus the searched area (for the map and distances). */
+export type LeadSearchResult = PaginatedResponse<Lead> & {
+  source: string;
+  center?: { lat: number; lng: number } | null;
+  radiusMiles?: number;
+};
+
+export interface PlaceDetails {
+  available: boolean;
+  demo?: boolean;
+  phone: string | null;
+  website?: string | null;
+  hours: string[];
+  businessStatus?: string | null;
+  googleMapsUrl?: string | null;
+  address?: string | null;
 }
 
 export interface SavedLead {

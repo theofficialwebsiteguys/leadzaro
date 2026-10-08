@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
-  ConversionAttempt, ConvertResult, PaymentLinkRequest, ServicePlan, Subscription,
+  ConversionAttempt, ConvertResult, PaymentLinkRequest, ProjectBilling, ServicePlan, Subscription,
 } from '../models/billing.model';
 
 @Injectable({ providedIn: 'root' })
@@ -33,5 +33,13 @@ export class BillingService {
   listSubscriptions(status?: string): Observable<{ data: { subscriptions: Subscription[] } }> {
     const url = status ? `/api/v1/billing/subscriptions?status=${encodeURIComponent(status)}` : '/api/v1/billing/subscriptions';
     return this.http.get<{ data: { subscriptions: Subscription[] } }>(url);
+  }
+
+  getProjectBilling(projectId: string): Observable<{ data: { billing: ProjectBilling | null } }> {
+    return this.http.get<{ data: { billing: ProjectBilling | null } }>(`/api/v1/projects/${projectId}/billing`);
+  }
+
+  getPortalLink(organizationId: string): Observable<{ data: { url: string } }> {
+    return this.http.post<{ data: { url: string } }>(`/api/v1/billing/organizations/${organizationId}/portal-link`, {});
   }
 }

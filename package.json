@@ -18,7 +18,8 @@
     "db:seed": "sequelize-cli db:seed:all",
     "db:seed:undo": "sequelize-cli db:seed:undo:all",
     "db:test:setup": "cross-env NODE_ENV=test node server/scripts/setupTestDb.js",
-    "test:backend": "cross-env NODE_ENV=test jest --config server/tests/jest.config.js --runInBand"
+    "test:backend": "cross-env NODE_ENV=test jest --config server/tests/jest.config.js --runInBand",
+    "jobs:run": "node server/scripts/runScheduledJobs.js"
   },
   "dependencies": {
     "@angular/common": "^19.2.0",
@@ -37,16 +38,20 @@
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
     "express-validator": "^7.2.0",
+    "fast-xml-parser": "^5.11.1",
     "googleapis": "^173.0.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.2.0",
+    "nodemailer": "^7.0.13",
     "pg": "^8.12.0",
     "pg-hstore": "^2.3.4",
     "rxjs": "~7.8.0",
     "sequelize": "^6.37.3",
+    "sequelize-cli": "^6.6.2",
     "sharp": "^0.35.3",
     "stripe": "^22.3.2",
+    "tldts": "^7.4.16",
     "tslib": "^2.3.0",
     "zone.js": "~0.15.0"
   },
@@ -65,8 +70,11 @@
     "karma-jasmine": "~5.1.0",
     "karma-jasmine-html-reporter": "~2.1.0",
     "nodemon": "^3.1.4",
-    "sequelize-cli": "^6.6.2",
     "supertest": "^7.0.0",
     "typescript": "~5.7.2"
+  },
+  "engines": {
+    "node": "22.x",
+    "npm": ">=10"
   }
 }

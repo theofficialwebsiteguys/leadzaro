@@ -2,6 +2,7 @@ const notificationService = require('../../core/notifications/notificationServic
 const { getPagination, formatPaginatedResponse } = require('../../utils/pagination');
 const { success, notFound, error } = require('../../utils/response');
 const { NotificationPreference } = require('../../models');
+const { KNOWN_TYPES } = require('../../core/notifications/catalog');
 
 async function list(req, res, next) {
   try {
@@ -56,6 +57,10 @@ async function setPreference(req, res, next) {
     if (!NotificationPreference.CHANNELS.includes(channel) || !NotificationPreference.FREQUENCIES.includes(frequency)) {
       return error(res, 'Invalid channel or frequency', 422);
     }
+    // Only events Leadzaro actually sends, and only frequencies it acts on
+    // (digests don't exist yet).
+    if (!KNOWN_TYPES.has(category)) return error(res, 'Unknown notification type', 422);
+    if (!['immediate', 'muted'].includes(frequency)) return error(res, 'Only on or off is supported', 422);
     const preference = await notificationService.setPreference(req.user.id, { category, channel, frequency });
     return success(res, { preference }, 'Preference updated');
   } catch (err) {

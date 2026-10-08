@@ -1,4 +1,4 @@
-const { SavedLead, OutreachActivity, Lead } = require('../models');
+const { OutreachActivity, Lead, Opportunity, Organization } = require('../models');
 const { success } = require('../utils/response');
 const { Op } = require('sequelize');
 
@@ -46,7 +46,10 @@ async function getDashboard(req, res, next) {
   try {
     const organizationId = req.context.organization.id;
     const now = new Date();
-    const activeScope = { organizationId, archivedAt: null, deletedAt: null };
+    const activeScope = {
+      agencyOrganizationId: organizationId, archivedAt: null, deletedAt: null, isTest: false,
+    };
+    const open = { [Op.notIn]: ['won', 'lost'] };
 
     const [
       totalSaved,
@@ -57,18 +60,21 @@ async function getDashboard(req, res, next) {
       noWebsiteLeads,
       recentActivity,
     ] = await Promise.all([
-      SavedLead.count({ where: activeScope }),
-      SavedLead.count({ where: { ...activeScope, status: 'Contacted' } }),
-      SavedLead.count({ where: { ...activeScope, nextFollowUpAt: { [Op.lte]: now }, status: { [Op.notIn]: ['Closed', 'Archived'] } } }),
-      SavedLead.count({ where: { ...activeScope, status: 'Interested' } }),
-      SavedLead.count({ where: { ...activeScope, status: 'Closed' } }),
-      SavedLead.count({
-        where: activeScope,
-        include: [{ model: Lead, as: 'lead', where: { hasWebsite: false }, required: true }],
+      Opportunity.count({ where: activeScope }),
+      Opportunity.count({ where: { ...activeScope, stage: 'contacting' } }),
+      Opportunity.count({ where: { ...activeScope, doNotContact: false, nextActionAt: { [Op.lte]: now }, stage: open } }),
+      Opportunity.count({ where: { ...activeScope, stage: ['qualified', 'proposal', 'awaiting_payment'] } }),
+      Opportunity.count({ where: { ...activeScope, stage: 'won' } }),
+      Opportunity.count({
+        where: { ...activeScope, stage: open },
+        include: [{ model: Organization, as: 'organization', where: { website: null }, required: true }],
       }),
       OutreachActivity.findAll({
         where: { organizationId, deletedAt: null },
-        include: [{ model: Lead, as: 'lead', attributes: ['id', 'name', 'city'] }],
+        include: [
+          { model: Lead, as: 'lead', attributes: ['id', 'name', 'city'] },
+          { model: Opportunity, as: 'opportunity', attributes: ['id'], include: [{ model: Organization, as: 'organization', attributes: ['name'] }] },
+        ],
         order: [['createdAt', 'DESC']],
         limit: 5,
       }),

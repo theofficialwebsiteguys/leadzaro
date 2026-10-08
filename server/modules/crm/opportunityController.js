@@ -116,7 +116,7 @@ async function assign(req, res, next) {
       organizationId: orgId, actorUserId: req.user.id, action: 'opportunity.assigned', targetType: 'Opportunity', targetId: opportunity.id, metadata: { assignedToUserId: req.body.userId }, req,
     });
     await notify({
-      userId: req.body.userId, organizationId: orgId, type: 'lead_assignment', title: 'A lead was assigned to you',
+      userId: req.body.userId, organizationId: orgId, type: 'lead_assignment', title: 'A lead was assigned to you', data: { opportunityId: opportunity.id },
     });
 
     return success(res, { opportunity }, 'Opportunity assigned');
@@ -134,7 +134,7 @@ async function roundRobinAssign(req, res, next) {
       organizationId: orgId, actorUserId: req.user.id, action: 'opportunity.round_robin_assigned', targetType: 'Opportunity', targetId: opportunity.id, metadata: { assignedToUserId: opportunity.assignedToUserId }, req,
     });
     await notify({
-      userId: opportunity.assignedToUserId, organizationId: orgId, type: 'lead_assignment', title: 'A lead was assigned to you',
+      userId: opportunity.assignedToUserId, organizationId: orgId, type: 'lead_assignment', title: 'A lead was assigned to you', data: { opportunityId: opportunity.id },
     });
 
     return success(res, { opportunity }, 'Opportunity assigned via round robin');

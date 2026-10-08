@@ -24,6 +24,14 @@ const authLimiter = rateLimit({
   message: { success: false, message: 'Too many authentication attempts, please try again later.' },
 });
 
+const fileContentLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 2000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many file requests, please try again later.' },
+});
+
 const searchLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 30,
@@ -76,5 +84,5 @@ const publicAnalyticsLimiter = rateLimit({
 });
 
 module.exports = {
-  rateLimiter, authLimiter, searchLimiter, publicFormLimiter, publicWebsiteFormLimiter, publicAnalyticsLimiter,
+  rateLimiter, authLimiter, searchLimiter, publicFormLimiter, publicWebsiteFormLimiter, publicAnalyticsLimiter, fileContentLimiter,
 };

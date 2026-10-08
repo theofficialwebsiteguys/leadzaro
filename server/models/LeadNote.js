@@ -17,7 +17,11 @@ module.exports = (sequelize) => {
     },
     leadId: {
       type: DataTypes.UUID,
-      allowNull: false,
+      allowNull: true,
+    },
+    opportunityId: {
+      type: DataTypes.UUID,
+      allowNull: true,
     },
     content: {
       type: DataTypes.TEXT,

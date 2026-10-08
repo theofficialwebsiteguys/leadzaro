@@ -43,6 +43,14 @@ const PLACES_FIELD_MASK = [
 
 // Only fetched on demand when the user clicks "Reveal phone"
 const CONTACT_FIELD_MASK = 'nationalPhoneNumber';
+// Fetched on demand when a result row is expanded — same pricing tier as the phone.
+const DETAILS_FIELD_MASK = [
+  'nationalPhoneNumber', 'websiteUri', 'regularOpeningHours.weekdayDescriptions', 'businessStatus', 'googleMapsUri', 'formattedAddress',
+].join(',');
+const STATIC_MAP_URL = 'https://maps.googleapis.com/maps/api/staticmap';
+const MAP_TTL = 24 * 60 * 60 * 1000;
+const MAP_CACHE_MAX = 60;
+const mapCache = new Map(); // key: center/zoom/size → { buffer, expiresAt }
 
 // ── In-memory caches ───────────────────────────────────────────────────────────
 const GEOCODE_TTL = 24 * 60 * 60 * 1000; // 24 hours
@@ -139,6 +147,81 @@ async function getPlaceDetails(placeId) {
   } catch {
     return { phone: null };
   }
+}
+
+// ── Full details for one place, when a result row is expanded ──────────────────
+// Cached per place for an hour, so opening the same row again costs nothing.
+async function getPlaceFullDetails(placeId) {
+  if (!placeId) return { phone: null, hours: [], available: false };
+  if (String(placeId).startsWith('demo_place_') || !API_KEY) {
+    return { phone: null, hours: [], available: false, demo: String(placeId).startsWith('demo_place_') };
+  }
+  const cacheKey = `full:${placeId}`;
+  const hit = searchCache.get(cacheKey);
+  if (hit && Date.now() < hit.expiresAt) return hit.data;
+
+  const data = await httpRequest(`${PLACES_DETAILS_BASE}${encodeURIComponent(placeId)}`, {
+    headers: { 'X-Goog-Api-Key': API_KEY, 'X-Goog-FieldMask': DETAILS_FIELD_MASK },
+  });
+  const result = {
+    available: true,
+    phone: data.nationalPhoneNumber || null,
+    website: data.websiteUri || null,
+    hours: data.regularOpeningHours?.weekdayDescriptions || [],
+    businessStatus: data.businessStatus || null,
+    googleMapsUrl: data.googleMapsUri || null,
+    address: data.formattedAddress || null,
+  };
+  searchCache.set(cacheKey, { data: result, expiresAt: Date.now() + CONTACT_TTL });
+  // The phone is now known too — the separate reveal reuses it.
+  searchCache.set(`details:${placeId}`, { data: { phone: result.phone }, expiresAt: Date.now() + CONTACT_TTL });
+  return result;
+}
+
+// ── Static map image for the results (the key never leaves the server) ─────────
+function fetchBinary(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, type: res.headers['content-type'] || '', body: Buffer.concat(chunks) }));
+    });
+    req.on('error', reject);
+    req.setTimeout(10000, () => req.destroy(new Error('Request timeout')));
+  });
+}
+
+/**
+ * A Google Static Maps image for a center/zoom/size. Throws an error with
+ * statusCode 404 when no Google key is configured and 503 when Google
+ * refuses (usually because the Maps Static API isn't enabled for the key).
+ */
+async function getStaticMap({ lat, lng, zoom, width, height }) {
+  if (!API_KEY || API_KEY === 'your_google_places_api_key_here') {
+    const err = new Error('Maps need a Google API key on the server (GOOGLE_PLACES_API_KEY).');
+    err.statusCode = 404;
+    throw err;
+  }
+  const key = [lat.toFixed(4), lng.toFixed(4), zoom, width, height].join(':');
+  const hit = mapCache.get(key);
+  if (hit && Date.now() < hit.expiresAt) return hit.buffer;
+
+  const params = new URLSearchParams({
+    center: `${lat},${lng}`, zoom: String(zoom), size: `${width}x${height}`, scale: '2', maptype: 'roadmap', key: API_KEY,
+  });
+  // Hide other businesses' pins so only our result markers stand out.
+  params.append('style', 'feature:poi.business|visibility:off');
+  const res = await fetchBinary(`${STATIC_MAP_URL}?${params.toString()}`);
+  if (res.status !== 200 || !res.type.startsWith('image/')) {
+    const err = new Error(res.status === 403
+      ? 'Google refused the map — enable the “Maps Static API” for your Google key in Google Cloud Console.'
+      : `Google Maps returned an error (${res.status}).`);
+    err.statusCode = 503;
+    throw err;
+  }
+  if (mapCache.size >= MAP_CACHE_MAX) mapCache.delete(mapCache.keys().next().value);
+  mapCache.set(key, { buffer: res.body, expiresAt: Date.now() + MAP_TTL });
+  return res.body;
 }
 
 // ── Map a Google Place object → our Lead schema ────────────────────────────────
@@ -250,6 +333,9 @@ async function searchGoogle({ keyword, location, radius, minRating, minReviews, 
       hasPrev:    false,
     },
     source: 'google',
+    // The searched area, so the map and distances can be shown.
+    center: coords ? { lat: coords.lat, lng: coords.lng } : null,
+    radiusMiles: Number(radius) || 10,
   };
 
   searchCache.set(cacheKey, { data: result, expiresAt: Date.now() + SEARCH_TTL });
@@ -343,6 +429,8 @@ function searchDemo({ keyword, location, minRating, minReviews, page = 1, limit 
       hasPrev:    Number(page) > 1,
     },
     source: 'demo',
+    center: { lat: 25.7617, lng: -80.1918 },
+    radiusMiles: 10,
   };
 }
 
@@ -358,4 +446,6 @@ async function searchLeads(params) {
   return searchDemo(params);
 }
 
-module.exports = { searchLeads, getPlaceDetails };
+module.exports = {
+  searchLeads, getPlaceDetails, getPlaceFullDetails, getStaticMap,
+};

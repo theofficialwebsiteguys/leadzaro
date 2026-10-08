@@ -1,0 +1,159 @@
+<div class="page outreach">
+  <header class="page-header">
+    <div>
+      <h1>Outreach</h1>
+      <p>Conversations with your leads, and the templates you write them with.</p>
+    </div>
+  </header>
+
+  @if (channels(); as ch) {
+    <div class="channels" aria-label="Channel status">
+      <span class="channel" [class.on]="ch.email.connected"><lz-icon name="mail" [size]="14" /> Email {{ ch.email.connected ? 'sends from Leadzaro' : 'not connected — opens your email app' }}</span>
+      <span class="channel" [class.on]="ch.sms.connected"><lz-icon name="message" [size]="14" /> Texts {{ ch.sms.connected ? 'send from Leadzaro' : 'not connected — opens your phone' }}</span>
+      <span class="channel" [class.on]="ch.call.connected"><lz-icon name="phone" [size]="14" /> Calls {{ ch.call.connected ? 'ring through Leadzaro' : ch.call.needsYourPhone ? 'need your phone number (Settings)' : 'use your phone' }}</span>
+      <a routerLink="/app/settings/integrations" class="text-sm">Channel settings</a>
+    </div>
+  }
+
+  <nav class="line-tabs" role="tablist">
+    <button role="tab" [class.active]="tab() === 'conversations'" [attr.aria-selected]="tab() === 'conversations'" (click)="setTab('conversations')">Conversations</button>
+    <button role="tab" [class.active]="tab() === 'templates'" [attr.aria-selected]="tab() === 'templates'" (click)="setTab('templates')">Templates <span class="count">{{ templates().length }}</span></button>
+  </nav>
+
+  @if (message()) { <div class="alert alert-info mt-4" role="status">{{ message() }}</div> }
+
+  @if (tab() === 'conversations') {
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="Filter">
+        <button type="button" [class.active]="filter === 'all'" (click)="filter = 'all'; loadConversations()">All</button>
+        <button type="button" [class.active]="filter === 'needs_reply'" (click)="filter = 'needs_reply'; loadConversations()">Needs reply</button>
+        <button type="button" [class.active]="filter === 'failed'" (click)="filter = 'failed'; loadConversations()">Failed sends</button>
+      </div>
+      @if (canTeam()) {
+        <select class="form-select" [(ngModel)]="scope" (ngModelChange)="loadConversations()" aria-label="Whose conversations">
+          <option value="mine">Mine</option><option value="team">Whole team</option>
+        </select>
+      }
+      <input class="form-control search" type="search" [(ngModel)]="q" (keyup.enter)="loadConversations()" placeholder="Search business" aria-label="Search conversations" />
+    </div>
+
+    @if (loading() && !conversations().length) {
+      <div class="loading-state"><div class="spinner"></div></div>
+    } @else if (error()) {
+      <div class="alert alert-error">{{ error() }}</div>
+    } @else {
+      <div class="card list">
+        @for (c of conversations(); track c.opportunityId) {
+          <a class="convo" [routerLink]="['/app/leads', c.opportunityId]" [class.reply]="c.replyNeededSince">
+            <div class="convo-main">
+              <div class="convo-top">
+                <strong>{{ c.businessName }}</strong>
+                <span [class]="'stage-chip stage-' + c.stage">{{ c.stageLabel }}</span>
+                @if (c.replyNeededSince) { <span class="tag tag-danger">Needs reply</span> }
+                @if (c.doNotContact) { <span class="tag tag-muted">Do not contact</span> }
+                @if (c.last?.status === 'failed' || c.last?.status === 'undelivered') { <span class="tag tag-danger">Not delivered</span> }
+              </div>
+              <div class="convo-last">
+                <span class="who">{{ lastLabel(c) }}:</span>
+                @if (c.last?.subject) { <strong>{{ c.last?.subject }}</strong> — }
+                {{ c.last?.preview || c.last?.outcome || '' }}
+              </div>
+            </div>
+            <div class="convo-side">
+              <span>{{ c.lastInteractionAt | relativeDay }}</span>
+              @if (scope === 'team' && c.assignedTo) { <small>{{ c.assignedTo.name }}</small> }
+            </div>
+          </a>
+        } @empty {
+          <div class="empty-state">
+            <div class="empty-icon"><lz-icon name="message" [size]="20" /></div>
+            <h3>{{ filter === 'needs_reply' ? 'No replies waiting' : 'No conversations yet' }}</h3>
+            <p>Conversations appear here once you call, text or email a lead from its page.</p>
+            <a routerLink="/app/today" class="btn btn-primary btn-sm">Go to Today</a>
+          </div>
+        }
+      </div>
+      @if (total() > conversations().length) { <p class="text-sm text-muted mt-2">Showing the {{ conversations().length }} most recent of {{ total() }}.</p> }
+    }
+  } @else {
+    <div class="toolbar">
+      <select class="form-select" [(ngModel)]="channelFilter" (ngModelChange)="loadTemplates()" aria-label="Channel">
+        <option value="">All channels</option><option value="email">Email</option><option value="sms">Text</option><option value="call">Call scripts</option>
+      </select>
+      <label class="check"><input type="checkbox" [(ngModel)]="showArchived" (ngModelChange)="loadTemplates()" /> Show archived</label>
+      <span class="spacer"></span>
+      <button class="btn btn-primary btn-sm" (click)="startNew()"><lz-icon name="plus" [size]="14" /> New template</button>
+    </div>
+    <p class="text-sm text-muted">Shared templates are managed by sales managers. Anyone can make personal templates or copy a shared one to adjust it.</p>
+    <div class="templates">
+      @for (t of templates(); track t.id) {
+        <article class="card tpl" [class.archived]="t.archivedAt">
+          <header>
+            <div>
+              <strong>{{ t.name }}</strong>
+              <div class="tpl-tags">
+                <span class="tag tag-muted">{{ t.channel === 'call' ? 'Call script' : channelLabels[t.channel] }}</span>
+                <span class="tag tag-muted">{{ categoryLabels[t.category] || t.category }}</span>
+                <span class="tag" [class.tag-primary]="t.scope === 'shared'" [class.tag-muted]="t.scope === 'personal'">{{ t.scope === 'shared' ? 'Shared' : 'Mine' }}</span>
+                @if (t.archivedAt) { <span class="tag tag-warning">Archived</span> }
+              </div>
+            </div>
+          </header>
+          @if (t.subject) { <p class="tpl-subject">{{ t.subject }}</p> }
+          <p class="tpl-body">{{ t.body }}</p>
+          <footer>
+            @if (t.canEdit) {
+              <button class="btn btn-ghost btn-sm" (click)="edit(t)">Edit</button>
+              <button class="btn btn-ghost btn-sm" (click)="archive(t)">{{ t.archivedAt ? 'Restore' : 'Archive' }}</button>
+            }
+            @if (t.scope === 'shared') { <button class="btn btn-ghost btn-sm" (click)="copy(t)">Copy to mine</button> }
+          </footer>
+        </article>
+      } @empty { <p class="muted-box">No templates yet.</p> }
+    </div>
+  }
+</div>
+
+<app-dialog [open]="!!editing()" [title]="editing() === 'new' ? 'New template' : 'Edit template'" [wide]="true" (closed)="editing.set(null)">
+  <div class="tpl-form">
+    <div class="row3">
+      <div class="form-group"><label class="form-label" for="t-name">Name</label><input id="t-name" class="form-control" [(ngModel)]="form.name" /></div>
+      <div class="form-group"><label class="form-label" for="t-ch">Channel</label>
+        <select id="t-ch" class="form-select" [(ngModel)]="form.channel"><option value="email">Email</option><option value="sms">Text</option><option value="call">Call script</option></select></div>
+      <div class="form-group"><label class="form-label" for="t-cat">Used for</label>
+        <select id="t-cat" class="form-select" [(ngModel)]="form.category">@for (c of categories; track c.key) { <option [value]="c.key">{{ c.label }}</option> }</select></div>
+    </div>
+    @if (editing() === 'new' && canShare()) {
+      <div class="seg" role="radiogroup" aria-label="Who can use it">
+        <button type="button" [class.active]="form.scope === 'personal'" (click)="form.scope = 'personal'">Just me</button>
+        <button type="button" [class.active]="form.scope === 'shared'" (click)="form.scope = 'shared'">Shared with the team</button>
+      </div>
+    }
+    @if (form.channel === 'email') {
+      <div class="form-group"><label class="form-label" for="t-subj">Subject</label><input id="t-subj" class="form-control" [(ngModel)]="form.subject" /></div>
+    }
+    <div class="form-group">
+      <label class="form-label" for="t-body">{{ form.channel === 'call' ? 'Script' : 'Message' }}</label>
+      <textarea id="t-body" class="form-control" rows="8" [(ngModel)]="form.body"></textarea>
+    </div>
+    <div class="placeholders">
+      <span class="form-hint">Insert:</span>
+      @for (p of placeholders() | keyvalue; track p.key) { <button type="button" class="tag tag-muted chip" (click)="insert(p.key)" [title]="p.value">{{ ph(p.key) }}</button> }
+    </div>
+    <p class="form-hint">Placeholders are filled only with facts Leadzaro has. Anything unknown (like a meeting time) stays highlighted and must be typed in before sending. Don’t put prices or promises in shared templates unless they’re current.</p>
+    <button type="button" class="btn btn-ghost btn-sm" (click)="runPreview()">Preview</button>
+    @if (preview(); as pv) {
+      <div class="preview">
+        <p class="eyebrow">Preview (with your details; lead details show as placeholders)</p>
+        @if (pv.subject) { <strong>{{ pv.subject }}</strong> }
+        <p class="tpl-body">{{ pv.body }}</p>
+        @if (pv.unresolved.length) { <p class="form-hint">Filled per lead when used: {{ pv.unresolved.join(', ') }}</p> }
+      </div>
+    }
+    @if (templateError()) { <div class="alert alert-error">{{ templateError() }}</div> }
+  </div>
+  <div dialog-actions>
+    <button class="btn btn-ghost" (click)="editing.set(null)">Cancel</button>
+    <button class="btn btn-primary" (click)="save()" [disabled]="saving() || !form.name.trim() || !form.body.trim()">{{ saving() ? 'Saving…' : 'Save template' }}</button>
+  </div>
+</app-dialog>

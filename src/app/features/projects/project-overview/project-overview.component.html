@@ -1,0 +1,163 @@
+<div class="page overview-page">
+  @if (actionMessage()) {
+    <div class="alert alert-info mb-4">{{ actionMessage() }}</div>
+  }
+
+  @if (selected(); as project) {
+    <!-- About this project + quick links: the useful stuff first -->
+    <div class="top-row">
+      <section class="card about-card">
+        <div class="about-head">
+          <div>
+            <span class="field-label">{{ typeLabel(project.projectType) }}</span>
+            <h2>About this project</h2>
+          </div>
+          @if (isEmployee() && org.hasPermission('projects.manage')) {
+            <a class="edit-link" [routerLink]="['/app/clients', project.organizationId, 'projects']">Edit details</a>
+          }
+        </div>
+        @if (project.description) {
+          <p class="about-description">{{ project.description }}</p>
+        } @else {
+          <p class="text-sm text-muted">No description yet.</p>
+        }
+        <div class="quick-links">
+          @if (project.liveUrl) { <a class="btn btn-primary btn-sm" [href]="project.liveUrl" target="_blank" rel="noopener">Live: {{ project.liveUrl | host }} ↗</a> }
+          @if (project.previewUrl) { <a class="btn btn-outline btn-sm" [href]="project.previewUrl" target="_blank" rel="noopener">Preview: {{ project.previewUrl | host }} ↗</a> }
+          @if (isEmployee()) {
+            <a class="btn btn-ghost btn-sm" [routerLink]="['/app/clients', project.organizationId]">{{ project.organization?.name }} profile →</a>
+          }
+        </div>
+      </section>
+
+      <section class="card needs-card">
+        <div class="about-head">
+          <h2>Still needed</h2>
+          @if (isEmployee() && org.hasPermission('projects.manage')) {
+            <a class="edit-link" [routerLink]="['/app/clients', project.organizationId, 'projects']">Manage</a>
+          }
+        </div>
+        @if (openNeeds().length) {
+          <ul class="needs-list">
+            @for (need of openNeeds(); track need.id) { <li><span class="need-dot"></span>{{ need.label }}</li> }
+          </ul>
+        } @else {
+          <p class="text-sm text-muted">Nothing outstanding.</p>
+        }
+      </section>
+    </div>
+
+    @if (isEmployee()) {
+      <div class="mb-4"><app-project-domains-card [projectId]="project.id" [clientId]="project.organizationId" /></div>
+    }
+
+    <!-- Status row -->
+    <div class="card mb-4 status-row">
+      <div class="status-field">
+        <span class="field-label">Stage</span>
+        @if (org.hasPermission('projects.change_stage')) {
+          <select class="form-select" [ngModel]="project.stage" (ngModelChange)="changeStage($event)" aria-label="Project stage">
+            @for (s of stages; track s) { <option [value]="s">{{ s }}</option> }
+          </select>
+        } @else {
+          <span class="static-value">{{ project.stage }}</span>
+        }
+      </div>
+      <div class="status-field">
+        <span class="field-label">Health</span>
+        @if (org.hasPermission('projects.manage')) {
+          <select class="form-select" [ngModel]="project.healthStatus" (ngModelChange)="changeHealth($event)" aria-label="Project health">
+            @for (h of healthOptions; track h.value) { <option [value]="h.value">{{ h.label }}</option> }
+          </select>
+        } @else {
+          <span class="health-badge" [class]="'health-' + project.healthStatus">{{ project.healthStatus | label }}</span>
+        }
+      </div>
+    </div>
+
+    <!-- Notes (team-only) -->
+    @if (isEmployee()) {
+      <div class="card mb-4">
+        <div class="card-header"><strong>Notes</strong> <span class="text-sm text-muted">shared with your team · also on the client’s Notes tab</span></div>
+        <div class="card-body">
+          @if (org.hasPermission('projects.manage')) {
+            <div class="note-compose">
+              <textarea class="form-control" rows="2" placeholder="Log a call, an update, anything the team should know…" [(ngModel)]="newNoteBody" aria-label="New note"></textarea>
+              <button class="btn btn-primary btn-sm" (click)="addNote()">Add Note</button>
+            </div>
+            @if (noteError()) { <div class="alert alert-error mb-4">{{ noteError() }}</div> }
+          }
+
+          @if (notes().length === 0) {
+            <app-empty-state icon="message" title="No notes yet" description="Log client calls and updates here so the whole team has the context." />
+          } @else {
+            <div class="note-feed">
+              @for (n of notes(); track n.id) {
+                <div class="note-item">
+                  <div class="note-meta">
+                    <strong>{{ n.author?.name || 'Someone' }}</strong>
+                    <span class="text-sm text-muted">{{ n.createdAt | date:'MMM d, h:mm a' }}</span>
+                  </div>
+                  <div class="note-body">{{ n.body }}</div>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- Recent activity -->
+    <div class="card mb-4">
+      <div class="card-header"><strong>Recent Activity</strong></div>
+      <div class="card-body">
+        @if (dashboard(); as dash) {
+          <div class="dashboard-grid">
+            <div class="dashboard-column">
+              <span class="label">Tasks</span>
+              @if (dash.recentTasks.length === 0) {
+                <p class="text-sm text-muted">Nothing recent.</p>
+              } @else {
+                <ul class="dashboard-list">
+                  @for (t of dash.recentTasks; track t.id) {
+                    <li>{{ t.title }} <span class="text-sm text-muted">({{ t.status | label }})</span></li>
+                  }
+                </ul>
+              }
+            </div>
+            <div class="dashboard-column">
+              <span class="label">Requests</span>
+              @if (dash.recentRequests.length === 0) {
+                <p class="text-sm text-muted">Nothing recent.</p>
+              } @else {
+                <ul class="dashboard-list">
+                  @for (r of dash.recentRequests; track r.id) {
+                    <li>{{ r.description }} <span class="text-sm text-muted">({{ r.status | label }})</span></li>
+                  }
+                </ul>
+              }
+            </div>
+            <div class="dashboard-column">
+              <span class="label">Upcoming Meetings</span>
+              @if (dash.upcomingMeetings.length === 0) {
+                <p class="text-sm text-muted">Nothing upcoming.</p>
+              } @else {
+                <ul class="dashboard-list">
+                  @for (m of dash.upcomingMeetings; track m.id) {
+                    <li>{{ m.subject }} <span class="text-sm text-muted">({{ m.status | label }})</span></li>
+                  }
+                </ul>
+              }
+            </div>
+          </div>
+        } @else {
+          <p class="text-sm text-muted">Loading…</p>
+        }
+      </div>
+    </div>
+
+    @if (project.launchedAt) {
+      <p class="text-sm text-muted">Launched {{ project.launchedAt | date:'MMM d, y' }}</p>
+    }
+  }
+</div>

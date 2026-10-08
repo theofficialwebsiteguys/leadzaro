@@ -1,0 +1,155 @@
+.top-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+
+  @media (max-width: 900px) { grid-template-columns: 1fr; }
+}
+
+.about-card,
+.needs-card {
+  padding: 16px 20px;
+}
+
+.about-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+
+  h2 { margin: 2px 0 0; font-size: 1rem; }
+}
+
+.edit-link {
+  font-size: .8125rem;
+  font-weight: 500;
+  color: var(--primary-dark);
+}
+
+.about-description {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.quick-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.needs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: .875rem;
+
+  li { display: flex; align-items: center; gap: 8px; }
+}
+
+.need-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+  flex-shrink: 0;
+}
+
+.status-row {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+}
+
+.status-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  .form-select {
+    width: auto;
+    min-width: 160px;
+  }
+}
+
+.field-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.static-value {
+  font-weight: 500;
+}
+
+.health-badge {
+  padding: 2px 10px;
+  border-radius: var(--radius-full, 999px);
+  font-size: 0.82em;
+
+  &.health-on_track { background: var(--success-bg); color: var(--success-text); }
+  &.health-at_risk { background: var(--warning-bg); color: var(--warning-text); }
+  &.health-off_track { background: var(--danger-bg); color: var(--danger-text); }
+}
+
+.note-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+
+  button { align-self: flex-end; }
+}
+
+.note-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.note-item {
+  padding: 10px 12px;
+  background: var(--bg-2, var(--border-light));
+  border-radius: var(--radius);
+}
+
+.note-meta {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.note-body {
+  white-space: pre-wrap;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.dashboard-column {
+  .label {
+    display: block;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+}
+
+.dashboard-list {
+  margin: 0;
+  padding-left: 18px;
+
+  li {
+    margin-bottom: 4px;
+  }
+}

@@ -1,0 +1,85 @@
+.logo-editor {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.logo-preview {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-lg);
+  background: var(--brand-gradient);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.2rem;
+  overflow: hidden;
+  flex-shrink: 0;
+
+  img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+}
+
+.logo-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.logo-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  label { cursor: pointer; }
+}
+
+.logo-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 10px;
+  background: var(--border-light);
+  border-radius: var(--radius);
+}
+
+.logo-choice {
+  aspect-ratio: 1;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  background: #fff;
+  overflow: hidden;
+  cursor: pointer;
+
+  img { width: 100%; height: 100%; object-fit: contain; }
+  &.selected, &:hover { border-color: var(--primary); }
+}
+
+.address {
+  border: none;
+  padding: 0;
+  margin: 0 0 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+
+  legend { margin-bottom: 6px; }
+  .span-2 { grid-column: span 2; }
+
+  @media (max-width: 560px) {
+    grid-template-columns: 1fr;
+    .span-2 { grid-column: auto; }
+  }
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}

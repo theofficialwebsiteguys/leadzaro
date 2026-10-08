@@ -7,26 +7,24 @@ const config = require('./config.js')[process.env.NODE_ENV || 'development'];
 // agree on which database they're talking to — critical for
 // NODE_ENV=test to actually hit the disposable test database rather than
 // silently falling back to the development one.
-const sequelize = new Sequelize(
-  config.database,
-  config.username,
-  config.password,
-  {
-    host: config.host,
-    port: config.port,
-    dialect: config.dialect,
-    logging: process.env.NODE_ENV === 'development' ? console.log : false,
-    pool: {
-      max: 10,
-      min: 0,
-      acquire: 30000,
-      idle: 10000,
-    },
-    define: {
-      underscored: false,
-      timestamps: true,
-    },
-  }
-);
+const options = {
+  dialect: config.dialect,
+  dialectOptions: config.dialectOptions,
+  logging: process.env.NODE_ENV === 'development' ? console.log : false,
+  pool: {
+    max: parseInt(process.env.DB_POOL_MAX, 10) || 10,
+    min: 0,
+    acquire: 30000,
+    idle: 10000,
+  },
+  define: {
+    underscored: false,
+    timestamps: true,
+  },
+};
+
+const sequelize = config.use_env_variable
+  ? new Sequelize(process.env[config.use_env_variable], options)
+  : new Sequelize(config.database, config.username, config.password, { ...options, host: config.host, port: config.port });
 
 module.exports = sequelize;

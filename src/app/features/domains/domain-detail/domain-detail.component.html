@@ -1,0 +1,79 @@
+<div class="page">
+  <a routerLink="/app/domains" class="back">← Domains</a>
+  @if (loadError()) {
+    <div class="alert alert-error">{{ loadError() }}</div>
+  } @else if (!domain()) {
+    <p class="text-muted">Loading…</p>
+  } @else {
+    @let d = domain()!;
+    <div class="head">
+      <div>
+        <h1>{{ d.displayName }}</h1>
+        <p class="sub"><span class="badge" [class]="'badge status-' + d.status.key">{{ d.status.label }}</span></p>
+      </div>
+      <div class="head-actions">
+        <a class="btn btn-ghost btn-sm" [href]="d.websiteUrl" target="_blank" rel="noopener">Open website ↗</a>
+        @if (d.namecheapUrl) { <a class="btn btn-ghost btn-sm" [href]="d.namecheapUrl" target="_blank" rel="noopener">Open in Namecheap ↗</a> }
+        @if (d.inConnectedAccount) { <button class="btn btn-outline btn-sm" (click)="refresh()" [disabled]="refreshing()">{{ refreshing() ? 'Refreshing…' : 'Refresh' }}</button> }
+      </div>
+    </div>
+    @if (message()) { <p class="message" role="status">{{ message() }}</p> }
+
+    <div class="grid">
+      <section class="panel">
+        <h3>Details</h3>
+        <dl class="facts">
+          <dt>Expires</dt><dd>@if (d.expiresOn.value) { {{ d.expiresOn.value | date:'MMM d, y' }} <span class="muted-line">({{ daysLabel(d.daysUntilExpiry) }})</span> <app-source-tag [source]="d.expiresOn.source" /> } @else { Unknown }</dd>
+          <dt>Auto-renew</dt><dd>{{ onOff(d.autoRenew.value) }}</dd>
+          <dt>Registrar</dt><dd>{{ d.registrar.value || 'Not recorded' }}</dd>
+          <dt>Registered</dt><dd>{{ d.registeredOn.value ? (d.registeredOn.value | date:'MMM d, y') : 'Unknown' }}</dd>
+          <dt>Transfer lock</dt><dd>{{ onOff(d.locked) }}</dd>
+          <dt>Privacy</dt><dd>{{ d.providerStatus?.privacy || 'Unknown' }}@if (d.providerStatus?.isPremium) { · premium domain }</dd>
+          <dt>Nameservers</dt><dd class="mono">{{ d.dns.nameservers?.join(', ') || (d.dns.managedAt || 'Not loaded yet') }}</dd>
+          <dt>DNS</dt><dd>{{ d.dns.usesNamecheapDns === true ? 'Namecheap DNS' : d.dns.usesNamecheapDns === false ? 'Another provider (see nameservers)' : 'Unknown' }}</dd>
+          @for (cert of d.sslCertificates; track cert.certificateId) {
+            <dt>SSL</dt><dd>{{ cert.type || 'Certificate' }} for {{ cert.hostName }} — expires {{ cert.expiresOn | date:'MMM d, y' }}</dd>
+          }
+          <dt>Last synced</dt><dd>{{ d.sync.lastSuccessfulSyncAt ? (d.sync.lastSuccessfulSyncAt | date:'MMM d, h:mm a') : 'Not synced yet' }}</dd>
+        </dl>
+        @if (!d.inConnectedAccount) { <p class="muted-line">Not in the connected Namecheap account — details shown are the ones entered by hand.</p> }
+      </section>
+
+      <section class="panel">
+        <h3>Project</h3>
+        @for (l of d.links; track l.id) {
+          <p>
+            <a [routerLink]="['/app/clients', l.clientId, 'domains']">{{ l.clientName }}</a>@if (l.projectName) { · {{ l.projectName }} }
+            <span class="muted-line">· {{ l.stateLabel }}</span>
+            @if (d.canLink) { <button class="link-btn danger" (click)="unlink(l)" [disabled]="busy()">Unlink</button> }
+          </p>
+        } @empty {
+          <p class="muted-line">Not linked to a project.</p>
+        }
+        @if (d.canLink) {
+          @if (!linking()) {
+            <button class="btn btn-outline btn-sm" (click)="startLink()">Link to a project</button>
+          } @else {
+            <div class="form-box">
+              <select class="form-select" [(ngModel)]="linkClientId" (ngModelChange)="linkProjectId = ''" name="client" aria-label="Client">
+                <option value="">Choose a client…</option>
+                @for (c of clients(); track c.id) { <option [value]="c.id">{{ c.name }}</option> }
+              </select>
+              @if (linkClientId && projectsFor(linkClientId).length) {
+                <select class="form-select" [(ngModel)]="linkProjectId" name="project" aria-label="Project">
+                  <option value="">The client as a whole</option>
+                  @for (p of projectsFor(linkClientId); track p.id) { <option [value]="p.id">{{ p.displayName }}</option> }
+                </select>
+              }
+              <div class="actions">
+                <button class="btn btn-ghost btn-sm" (click)="linking.set(false)">Cancel</button>
+                <button class="btn btn-primary btn-sm" (click)="link()" [disabled]="busy() || !linkClientId">Link</button>
+              </div>
+            </div>
+          }
+        }
+        <p class="muted-line">Linking only changes Leadzaro — nothing is changed at Namecheap.</p>
+      </section>
+    </div>
+  }
+</div>

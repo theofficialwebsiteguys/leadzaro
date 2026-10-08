@@ -1,0 +1,206 @@
+.upload-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  transition: border-color var(--transition), background var(--transition);
+
+  &.highlight {
+    border-color: var(--primary);
+    background: var(--primary-100, #eef2ff);
+  }
+}
+
+.upload-copy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-secondary);
+
+  div { display: flex; flex-direction: column; }
+}
+
+.upload-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  .form-select { width: auto; min-width: 180px; }
+  label.btn { cursor: pointer; }
+  label.disabled { opacity: .6; pointer-events: none; }
+}
+
+.attach-label {
+  font-size: .8125rem;
+  color: var(--text-muted);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.filter-chip {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--card);
+  font-size: .8125rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+
+  &.active {
+    border-color: var(--primary);
+    background: var(--primary-100, #eef2ff);
+    color: var(--primary-dark);
+  }
+}
+
+.file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.file-tile {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.file-preview {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--border-light);
+
+  // Absolutely positioned so a square or tall image can't stretch the tile.
+  img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.delete-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, .7);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition), background var(--transition);
+
+  &:hover { background: var(--danger); }
+  &:focus-visible { opacity: 1; }
+}
+
+.file-tile:hover .delete-button { opacity: 1; }
+
+@media (hover: none) {
+  .delete-button { opacity: 1; }
+}
+
+.file-ext {
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  background: var(--card);
+  font-weight: 700;
+  font-size: .8rem;
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-xs);
+}
+
+.role-tags {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.role-tag {
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(15, 23, 42, .75);
+  color: #fff;
+  font-size: .7rem;
+}
+
+.file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px 4px;
+}
+
+.file-name {
+  font-weight: 500;
+  font-size: .875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 6px 12px 12px;
+}
+
+.action {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: .78rem;
+  font-weight: 500;
+  color: var(--primary-dark);
+  cursor: pointer;
+
+  &:hover { text-decoration: underline; }
+}
+
+.compact-empty {
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--border-light);
+  color: var(--text-muted);
+  font-size: .875rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}

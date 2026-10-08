@@ -64,6 +64,35 @@ module.exports = (sequelize) => {
       type: DataTypes.UUID,
       allowNull: true,
     },
+    // Sales workflow (ADR 0011). Next action, archive and do-not-contact are
+    // independent of stage; creditedUserId is fixed when the sale is paid.
+    title: { type: DataTypes.STRING(200), allowNull: true },
+    valueCents: { type: DataTypes.INTEGER, allowNull: true },
+    currency: { type: DataTypes.STRING(3), allowNull: true },
+    nextActionAt: { type: DataTypes.DATE, allowNull: true },
+    nextActionType: { type: DataTypes.STRING(30), allowNull: true },
+    nextActionNote: { type: DataTypes.STRING(500), allowNull: true },
+    lastInteractionAt: { type: DataTypes.DATE, allowNull: true },
+    lastInteractionSummary: { type: DataTypes.STRING(255), allowNull: true },
+    replyNeededSince: { type: DataTypes.DATE, allowNull: true },
+    doNotContact: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    doNotContactAt: { type: DataTypes.DATE, allowNull: true },
+    doNotContactReason: { type: DataTypes.STRING(255), allowNull: true },
+    lostReason: { type: DataTypes.STRING(255), allowNull: true },
+    legacyStage: { type: DataTypes.STRING(40), allowNull: true },
+    stageChangedAt: { type: DataTypes.DATE, allowNull: true },
+    wonAt: { type: DataTypes.DATE, allowNull: true },
+    creditedUserId: { type: DataTypes.UUID, allowNull: true },
+    createdByUserId: { type: DataTypes.UUID, allowNull: true },
+    primaryContactId: { type: DataTypes.UUID, allowNull: true },
+    isTest: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    // Qualification (ADR 0013), collected progressively; only some stages require it.
+    qualNeed: { type: DataTypes.TEXT, allowNull: true },
+    qualService: { type: DataTypes.STRING(200), allowNull: true },
+    qualDecisionMaker: { type: DataTypes.STRING(200), allowNull: true },
+    qualTiming: { type: DataTypes.STRING(200), allowNull: true },
+    qualBudget: { type: DataTypes.STRING(200), allowNull: true },
+    closeReasonCode: { type: DataTypes.STRING(30), allowNull: true },
   }, {
     indexes: [
       {
@@ -85,6 +114,10 @@ module.exports = (sequelize) => {
     Opportunity.hasOne(models.Enrichment, { foreignKey: 'opportunityId', as: 'enrichment' });
     Opportunity.hasMany(models.PaymentLinkRequest, { foreignKey: 'opportunityId', as: 'paymentLinkRequests' });
     Opportunity.hasMany(models.ConversionAttempt, { foreignKey: 'opportunityId', as: 'conversionAttempts' });
+    Opportunity.hasMany(models.OutreachActivity, { foreignKey: 'opportunityId', as: 'activities' });
+    Opportunity.hasMany(models.SalesPayment, { foreignKey: 'opportunityId', as: 'payments' });
+    Opportunity.hasOne(models.SalesHandoff, { foreignKey: 'opportunityId', as: 'handoff' });
+    Opportunity.belongsTo(models.User, { foreignKey: 'creditedUserId', as: 'creditedTo' });
   };
 
   return Opportunity;

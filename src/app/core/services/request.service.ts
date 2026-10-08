@@ -18,4 +18,8 @@ export class RequestService {
   updateStatus(projectId: string, requestId: string, status: string): Observable<{ data: { request: ClientRequest } }> {
     return this.http.patch<{ data: { request: ClientRequest } }>(`/api/v1/projects/${projectId}/requests/${requestId}/status`, { status });
   }
+
+  convertToTask(projectId: string, requestId: string): Observable<{ data: { task: { id: string } } }> {
+    return this.http.post<{ data: { task: { id: string } } }>(`/api/v1/projects/${projectId}/requests/${requestId}/convert-to-task`, {});
+  }
 }

@@ -1,0 +1,81 @@
+<div class="page">
+  <p class="tab-subtitle">Schedule and track client meetings for this project.</p>
+
+  @if (actionMessage()) {
+    <div class="alert alert-danger mb-4">{{ actionMessage() }}</div>
+  }
+
+  <div class="calendar-layout">
+    <div class="card calendar-card">
+      <div class="calendar-toolbar">
+        <div class="calendar-nav">
+          <button class="btn btn-sm" (click)="prevMonth()">‹</button>
+          <strong class="month-label">{{ monthLabel() }}</strong>
+          <button class="btn btn-sm" (click)="nextMonth()">›</button>
+        </div>
+        <div class="calendar-actions">
+          <button class="btn btn-sm btn-outline" (click)="goToToday()">Today</button>
+          <button class="btn btn-sm btn-primary" *hasPermission="'meetings.request'" (click)="startScheduling()">+ Schedule Meeting</button>
+        </div>
+      </div>
+
+      @if (scheduling()) {
+        <div class="schedule-form">
+          <input class="form-control" placeholder="Meeting subject" [(ngModel)]="newMeetingSubject" />
+          <input class="form-control" type="date" [(ngModel)]="newMeetingDate" />
+          <input class="form-control" type="time" [(ngModel)]="newMeetingStartTime" />
+          <span class="to-label">to</span>
+          <input class="form-control" type="time" [(ngModel)]="newMeetingEndTime" />
+          <button class="btn btn-primary btn-sm" (click)="scheduleMeeting()">Save</button>
+          <button class="btn btn-sm" (click)="scheduling.set(false)">Cancel</button>
+        </div>
+      }
+
+      <div class="calendar-grid">
+        @for (label of weekdayLabels; track label) {
+          <div class="calendar-weekday">{{ label }}</div>
+        }
+        @for (day of calendarDays(); track day.date.getTime()) {
+          <button
+            class="calendar-cell"
+            [class.dim]="!day.inCurrentMonth"
+            [class.today]="day.isToday"
+            [class.selected]="isSelected(day)"
+            (click)="selectDay(day)"
+          >
+            <span class="cell-date">{{ day.date.getDate() }}</span>
+            @if (day.meetings.length > 0) {
+              <span class="cell-dot" [attr.title]="day.meetings.length + ' meeting(s)'"></span>
+            }
+          </button>
+        }
+      </div>
+    </div>
+
+    <div class="card day-panel">
+      <div class="card-header"><strong>Meetings</strong></div>
+      <div class="card-body">
+        @if (selectedDayMeetings().length === 0) {
+          <app-empty-state icon="calendar" title="No meetings this day" description="Schedule one from the calendar." />
+        } @else {
+          <div class="meeting-list">
+            @for (m of selectedDayMeetings(); track m.id) {
+              <div class="meeting-item">
+                <div class="meeting-subject">{{ m.subject }}</div>
+                <div class="meeting-time text-sm text-muted">
+                  {{ (m.confirmedSlot || m.proposedSlots[0]).start | date:'h:mm a' }}
+                  –
+                  {{ (m.confirmedSlot || m.proposedSlots[0]).end | date:'h:mm a' }}
+                </div>
+                <div class="meeting-actions">
+                  <button class="btn btn-sm btn-outline" (click)="forwardMeeting(m)">Forward</button>
+                  <button class="btn btn-sm" *hasPermission="'meetings.manage'" (click)="cancelMeeting(m)">Cancel</button>
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,536 @@
+<div class="page ws-page">
+  @if (queueMode() && queue.active()) {
+    <div class="queue-bar" role="region" aria-label="Work queue">
+      <span class="q-pos"><lz-icon name="play" [size]="12" /> Queue · lead {{ queuePosition() + 1 }} of {{ queue.items().length }}</span>
+      @if (queue.current(); as current) { <span class="tag tag-primary">{{ current.label }}</span> }
+      <span class="q-spacer"></span>
+      <button class="btn btn-ghost btn-sm" (click)="nextLead(true)">Skip</button>
+      <button class="btn btn-primary btn-sm" (click)="nextLead()">Next lead →</button>
+      <button class="btn btn-ghost btn-sm" (click)="endQueue()">End queue</button>
+    </div>
+  }
+
+  <a routerLink="/app/leads" class="back-link">← Leads</a>
+
+  @let w = ws();
+  @if (loading() && !w) {
+    <div class="loading-state"><div class="spinner"></div><span>Loading lead…</span></div>
+  } @else if (!w && error()) {
+    <div class="alert alert-error">{{ error() }}</div>
+  } @else if (w) {
+    <!-- Header: always-visible essentials -->
+    <section class="card ws-head">
+      <div class="head-top">
+        <div class="head-id">
+          <div class="title-row">
+            <h1>{{ w.business.name }}</h1>
+            @if (w.business.type === 'client') { <span class="tag tag-success">Client</span> }
+            @if (w.opportunity.doNotContact) { <span class="tag tag-danger">Do not contact</span> }
+            @if (w.opportunity.archivedAt) { <span class="tag tag-muted">Archived</span> }
+            @if (w.opportunity.isTest) { <span class="tag tag-muted">Demo data</span> }
+            @if (w.opportunity.stall) { <span class="tag tag-warning" [title]="'Deals at this stage stall after ' + w.opportunity.stall.limit + ' days without activity'">{{ w.opportunity.stall.label }}</span> }
+          </div>
+          <p class="sub">
+            @if (w.opportunity.title) { <strong>{{ w.opportunity.title }}</strong> · }
+            {{ w.business.category || 'Business' }}@if (w.business.city) { · {{ w.business.city }}@if (w.business.state) {, {{ w.business.state }}} }
+            @if (w.opportunity.valueCents) { · worth <strong>{{ w.opportunity.valueCents | money: w.opportunity.currency }}</strong> }
+          </p>
+        </div>
+        <div class="contact-actions">
+          @if (phone() && canContact()) {
+            @if (w.channels.call.connected && w.permissions.send) {
+              <button class="btn btn-outline btn-sm" (click)="call()"><lz-icon name="phone" [size]="14" /> Call</button>
+            } @else {
+              <a class="btn btn-outline btn-sm" [href]="telHref()" (click)="call()" title="Opens your phone app"><lz-icon name="phone" [size]="14" /> Call <lz-icon name="external" [size]="11" /></a>
+            }
+            <button class="btn btn-outline btn-sm" (click)="compose('sms')"><lz-icon name="message" [size]="14" /> Text</button>
+          }
+          @if (email() && canContact()) { <button class="btn btn-outline btn-sm" (click)="compose('email')"><lz-icon name="mail" [size]="14" /> Email</button> }
+          @if (!phone() && !email()) { <button class="btn btn-outline btn-sm" (click)="setTab('details'); openContact(null)"><lz-icon name="plus" [size]="14" /> Add contact info</button> }
+          <button class="btn btn-ghost btn-sm" (click)="kitOpen.set(true)" title="Pitch, services and prices, portfolio and answers to objections"><lz-icon name="note" [size]="14" /> Sales kit</button>
+          @if (w.permissions.logOutreach && !w.opportunity.archivedAt) { <button class="btn btn-primary btn-sm" (click)="logOutcome()"><lz-icon name="check" [size]="14" /> Log outcome</button> }
+          <div class="menu-wrap">
+            <button class="icon-btn" (click)="$event.stopPropagation(); menuOpen.set(!menuOpen())" [attr.aria-expanded]="menuOpen()" aria-label="More actions"><lz-icon name="more" [size]="16" /></button>
+            @if (menuOpen()) {
+              <div class="menu" role="menu" (click)="$event.stopPropagation()">
+                <button role="menuitem" (click)="menuOpen.set(false); replyDialog.set(true)">Log a reply they sent</button>
+                <button role="menuitem" (click)="menuOpen.set(false); openNext()">Set next step</button>
+                @if (w.permissions.managePipeline) { <button role="menuitem" (click)="menuOpen.set(false); openStage()">Change stage</button> }
+                <button role="menuitem" (click)="menuOpen.set(false); dealDialog.set(true); newDealTitle = ''">New deal for this business</button>
+                <hr />
+                @if (w.opportunity.assignedTo?.id !== auth.currentUser()?.id && (!w.opportunity.assignedTo || w.permissions.assign)) {
+                  <button role="menuitem" (click)="assign(auth.currentUser()!.id)">Assign to me</button>
+                }
+                @if (w.permissions.assign) {
+                  @for (m of members(); track m.id) {
+                    @if (m.id !== w.opportunity.assignedTo?.id && m.id !== auth.currentUser()?.id) { <button role="menuitem" (click)="assign(m.id)">Assign to {{ m.name }}</button> }
+                  }
+                }
+                <hr />
+                <button role="menuitem" [class.danger]="!w.opportunity.doNotContact" (click)="menuOpen.set(false); toggleDnc()">{{ w.opportunity.doNotContact ? 'Allow contact again' : 'Mark do not contact' }}</button>
+                @if (w.permissions.archive) { <button role="menuitem" (click)="menuOpen.set(false); archiveToggle()">{{ w.opportunity.archivedAt ? 'Restore lead' : 'Archive lead' }}</button> }
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+
+      <ol class="progress" aria-label="Deal progress">
+        @for (p of progress(); track p.stage) {
+          <li [class]="'step ' + p.state" [attr.aria-current]="p.state === 'current' ? 'step' : null">
+            @if (w.permissions.managePipeline && p.stage !== 'won' && p.state !== 'current' && w.opportunity.stage !== 'won') {
+              <button type="button" (click)="openStage(p.stage)" [title]="'Move to ' + p.label">{{ p.label }}</button>
+            } @else { <span>{{ p.label }}</span> }
+          </li>
+        }
+      </ol>
+      @if (w.opportunity.stage === 'lost' || w.opportunity.stage === 'nurture') {
+        <p class="closed-line">
+          <span [class]="'stage-chip stage-' + w.opportunity.stage">{{ w.opportunity.stageLabel }}</span>
+          {{ w.opportunity.closeReasonLabel || w.opportunity.lostReason || '' }}@if (w.opportunity.stage === 'lost' && w.opportunity.lostReason && w.opportunity.closeReasonLabel && w.opportunity.lostReason !== w.opportunity.closeReasonLabel) { — {{ w.opportunity.lostReason }} }
+          @if (w.permissions.managePipeline) { <button class="link-btn small" (click)="openStage()">Change</button> }
+        </p>
+      }
+
+      <dl class="head-facts">
+        <div><dt>Contact</dt><dd>
+          @if (w.primaryContact; as c) { <strong>{{ c.name }}</strong>@if (c.title) { <span class="muted"> · {{ c.title }}</span> } }
+          @else { <span class="muted">No contact person</span> }
+          <span class="line">{{ (phone() | phone) || 'No phone' }}</span>
+          <span class="line">{{ email() || 'No email' }}</span>
+        </dd></div>
+        <div><dt>Owner</dt><dd>
+          @if (w.opportunity.assignedTo) { <strong>{{ ownerIsMe() ? 'You' : w.opportunity.assignedTo.name }}</strong> } @else { <span class="muted">Unclaimed — yours on first contact</span> }
+          @if (w.opportunity.assignedTo && !ownerIsMe()) { <span class="line warn">Check with {{ w.opportunity.assignedTo.name }} before contacting</span> }
+          @if (w.opportunity.creditedTo && w.opportunity.creditedTo.id !== w.opportunity.assignedTo?.id) { <span class="line muted">Sale credited to {{ w.opportunity.creditedTo.name }}</span> }
+        </dd></div>
+        <div><dt>Last contact</dt><dd>
+          @if (w.opportunity.lastInteractionAt) { <strong>{{ w.opportunity.lastInteractionAt | relativeDay }}</strong> <span class="line muted">{{ w.opportunity.lastInteractionSummary }}</span> }
+          @else { <span class="muted">Never</span> }
+        </dd></div>
+        <div><dt>Next step</dt><dd>
+          <button class="link-btn" (click)="openNext()">
+            @if (w.opportunity.nextActionAt) {
+              <strong [class.overdue]="isOverdue(w.opportunity.nextActionAt)">{{ nextActionLabel(w.opportunity.nextActionType) }}</strong>
+              <span class="line" [class.overdue]="isOverdue(w.opportunity.nextActionAt)">{{ w.opportunity.nextActionAt | date: 'EEE MMM d, h:mm a' }}</span>
+              @if (w.opportunity.nextActionNote) { <span class="line muted">{{ w.opportunity.nextActionNote }}</span> }
+            } @else if (isClosed()) { <span class="muted">—</span> } @else { <span class="warn">None — set one</span> }
+          </button>
+        </dd></div>
+        <div><dt>Payment</dt><dd>
+          @switch (w.opportunity.paymentStatus) {
+            @case ('paid') { <span class="tag tag-success">Paid</span> }
+            @case ('sent') { <span class="tag tag-info">Link sent</span> }
+            @case ('created') { <span class="tag tag-warning">Link not sent</span> }
+            @case ('processing') { <span class="tag tag-info">Processing</span> }
+            @default { <span class="muted">No payment link</span> }
+          }
+        </dd></div>
+      </dl>
+    </section>
+
+    @if (callOwner(); as o) {
+      <div class="alert alert-warning flash owner-warn" role="alert">
+        <span><strong>{{ o.name }}</strong> owns this lead. Check with them so you don’t both contact the same business.</span>
+        <span><button class="btn btn-ghost btn-sm" (click)="callOwner.set(null)">Cancel</button> <button class="btn btn-outline btn-sm" (click)="callOwner.set(null); call(true)">Call anyway</button></span>
+      </div>
+    }
+
+    @if (notice()) { <div class="alert alert-success flash" role="status">{{ notice() }}</div> }
+    @if (error()) { <div class="alert alert-error flash" role="alert">{{ error() }}</div> }
+
+    <!-- Recommended next step -->
+    <div class="guide-row">
+      <section class="next-step" [attr.data-tone]="w.recommendation.tone">
+        <div class="ns-main">
+          <p class="eyebrow">Recommended next step</p>
+          <h2>{{ w.recommendation.label }}</h2>
+          <p>{{ w.recommendation.detail }}</p>
+          @if (w.recommendation.why.length) {
+            <ul class="why" aria-label="Why this step">@for (line of w.recommendation.why; track line) { <li>{{ line }}</li> }</ul>
+          }
+          @if (w.recommendation.ask.length) { <p class="ask"><strong>Find out:</strong> {{ w.recommendation.ask.join(' · ') }}</p> }
+          @if (w.recommendation.tip) { <p class="tip">{{ w.recommendation.tip }}</p> }
+        </div>
+        <div class="next-actions">
+          @if (w.opportunity.replyNeededSince) { <button class="btn btn-ghost btn-sm" (click)="replyHandled()">Mark handled</button> }
+          @if (recButton(); as label) { <button class="btn btn-primary" (click)="runRecommendation()">{{ label }}</button> }
+        </div>
+      </section>
+
+      <section class="qual card" aria-label="Qualification">
+        <div class="qual-head">
+          <h3>What we know <span class="count">{{ qualFilled() }}/5</span></h3>
+          @if (w.permissions.editBusiness && !qualEditing()) { <button class="btn btn-ghost btn-sm" (click)="openQual()">{{ qualFilled() ? 'Edit' : 'Add' }}</button> }
+        </div>
+        @if (!qualEditing()) {
+          <dl class="qual-grid">
+            @for (f of w.pipeline.qualificationFields; track f.key) {
+              <div [class.wide]="f.key === 'qualNeed'"><dt>{{ f.label }}</dt>
+                <dd>@if (w.opportunity.qualification[f.key]) { {{ w.opportunity.qualification[f.key] }} } @else { <span class="muted">Not known yet</span> }</dd></div>
+            }
+          </dl>
+          @let guide = guideFor(w.opportunity.stage);
+          @if (guide) {
+            <p class="stage-meaning"><strong>{{ w.opportunity.stageLabel }}</strong> means: {{ guide.meaning }}@if (guide.exit) { <span> Next: {{ guide.exit }}</span> }</p>
+          }
+        } @else {
+          <form class="qual-form" (ngSubmit)="saveQual()">
+            @for (f of w.pipeline.qualificationFields; track f.key) {
+              <div class="form-group" [class.wide]="f.key === 'qualNeed'">
+                <label class="form-label" [for]="'q-' + f.key">{{ f.label }}</label>
+                @if (f.key === 'qualNeed') {
+                  <textarea [id]="'q-' + f.key" class="form-control" rows="2" [name]="f.key" [(ngModel)]="qualForm[f.key]" maxlength="2000"></textarea>
+                } @else {
+                  <input [id]="'q-' + f.key" class="form-control" [name]="f.key" [(ngModel)]="qualForm[f.key]" maxlength="200" />
+                }
+              </div>
+            }
+            <div class="form-actions wide">
+              <button type="button" class="btn btn-ghost btn-sm" (click)="qualEditing.set(false)">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm" [disabled]="busy()">Save</button>
+            </div>
+          </form>
+        }
+      </section>
+    </div>
+
+    <!-- Sections -->
+    <nav class="line-tabs" role="tablist" aria-label="Lead sections">
+      <button role="tab" [class.active]="tab() === 'activity'" [attr.aria-selected]="tab() === 'activity'" (click)="setTab('activity')">Conversations &amp; notes <span class="count">{{ timeline().length }}</span></button>
+      <button role="tab" [class.active]="tab() === 'details'" [attr.aria-selected]="tab() === 'details'" (click)="setTab('details')">Details</button>
+      <button role="tab" [class.active]="tab() === 'offers'" [attr.aria-selected]="tab() === 'offers'" (click)="setTab('offers')">Offers &amp; payments @if (w.paymentRequests.length) { <span class="count">{{ w.paymentRequests.length }}</span> }</button>
+      <button role="tab" [class.active]="tab() === 'handoff'" [attr.aria-selected]="tab() === 'handoff'" (click)="setTab('handoff')">Handoff @if (w.handoff && w.handoff.status !== 'complete') { <span class="count">!</span> }</button>
+      <button role="tab" [class.active]="tab() === 'files'" [attr.aria-selected]="tab() === 'files'" (click)="setTab('files')">Files</button>
+    </nav>
+
+    <div class="tab-body">
+      @switch (tab()) {
+        @case ('activity') {
+          <div class="note-box">
+            <textarea class="form-control" rows="2" [(ngModel)]="noteText" placeholder="Add a note for the team — never passwords or card numbers" aria-label="New note"></textarea>
+            <div class="note-actions">
+              <button class="btn btn-ghost btn-sm" (click)="replyDialog.set(true)">Log a reply they sent</button>
+              <button class="btn btn-primary btn-sm" (click)="addNote()" [disabled]="savingNote() || !noteText.trim()">{{ savingNote() ? 'Saving…' : 'Add note' }}</button>
+            </div>
+          </div>
+          <ol class="timeline">
+            @for (entry of timeline(); track $index) {
+              @if (entry.note; as note) {
+                <li class="t-item note">
+                  <span class="t-icon"><lz-icon name="note" [size]="14" /></span>
+                  <div class="t-body">
+                    <div class="t-meta"><strong>Note</strong> · {{ note.user?.name || 'Someone' }} · {{ entry.at | date: 'MMM d, h:mm a' }}</div>
+                    <p class="t-text">{{ note.content }}</p>
+                  </div>
+                </li>
+              } @else {
+                @if (entry.activity; as a) {
+                <li class="t-item" [class.inbound]="a.direction === 'inbound'" [class.failed]="a.status === 'failed' || a.status === 'undelivered'">
+                  <span class="t-icon"><lz-icon [name]="channelIcon(a.channel)" [size]="14" /></span>
+                  <div class="t-body">
+                    <div class="t-meta">
+                      <strong>{{ a.direction === 'inbound' ? 'From them' : (channelLabels[a.channel] || a.channel) }}</strong>
+                      @if (a.outcomeLabel && a.outcome !== 'sent') { · {{ a.outcomeLabel }} }
+                      · <span class="tag tag-muted">{{ originLabel(a) }}</span>
+                      @if (a.status && a.origin === 'platform') { <span class="tag" [class]="'tag ' + statusTone(a.status)">{{ a.status }}</span> }
+                      · {{ a.user?.name || '' }} · {{ entry.at | date: 'MMM d, h:mm a' }}
+                    </div>
+                    @if (a.subject) { <div class="t-subject">{{ a.subject }}</div> }
+                    @if (a.body || a.note) { <p class="t-text">{{ a.body || a.note }}</p> }
+                    @if (a.errorMessage) { <p class="t-error">{{ a.errorMessage }}</p> }
+                    @if (a.contact) { <div class="t-meta">with {{ a.contact.name }}</div> }
+                  </div>
+                </li>
+                }
+              }
+            } @empty {
+              <li class="muted-box">No conversations yet. Use Call, Text or Email above — then log how it went.</li>
+            }
+          </ol>
+          @if (w.opportunity.legacyStage) { <p class="form-hint">Imported from the previous pipeline stage “{{ w.opportunity.legacyStage }}”.</p> }
+        }
+
+        @case ('details') {
+          <div class="details-grid">
+            <section class="panel">
+              <header class="panel-head"><h3>Business</h3>
+                @if (w.permissions.editBusiness && !editingBusiness()) { <button class="btn btn-ghost btn-sm" (click)="startEditBusiness()">Edit</button> }</header>
+              @if (!editingBusiness()) {
+                <dl class="kv">
+                  <dt>Phone</dt><dd>{{ (w.business.phone | phone) || '—' }}@if (w.business.phone) { <span class="source-note">{{ sourceLabel(w.business.detailsSource['phone']) }}</span>@if (w.business.detailsSource['phone'] !== 'verified' && w.permissions.editBusiness) { <button class="link-btn small" (click)="markVerified('phone')">Mark verified</button> } }</dd>
+                  <dt>Email</dt><dd>{{ w.business.email || 'Not known' }}@if (w.business.email) { <span class="source-note">{{ sourceLabel(w.business.detailsSource['email']) }}</span>@if (w.business.detailsSource['email'] !== 'verified' && w.permissions.editBusiness) { <button class="link-btn small" (click)="markVerified('email')">Mark verified</button> } }</dd>
+                  <dt>Website</dt><dd>@if (w.business.website) { <a [href]="w.business.website" target="_blank" rel="noopener">{{ w.business.website }}</a><span class="source-note">{{ sourceLabel(w.business.detailsSource['website']) }}</span> } @else { No website on record }</dd>
+                  <dt>Address</dt><dd>{{ w.business.addressLine1 || '—' }}@if (w.business.city) {, {{ w.business.city }} } {{ w.business.state }} {{ w.business.postalCode }}</dd>
+                  <dt>Type</dt><dd>{{ w.business.category || '—' }}</dd>
+                  @if (w.business.rating) { <dt>Google rating</dt><dd>{{ w.business.rating }} ★ ({{ w.business.reviewCount }} reviews)@if (w.business.googleMapsUrl) { · <a [href]="w.business.googleMapsUrl" target="_blank" rel="noopener">Map listing</a> }</dd> }
+                  @if (w.opportunity.inboundSubmission) { <dt>Came from</dt><dd>Website enquiry — {{ w.opportunity.inboundSubmission.requestedService }}</dd> }
+                </dl>
+                <p class="form-hint">Details from a Google listing aren’t confirmed. Mark them verified once you’ve checked.</p>
+              } @else {
+                <form class="edit-grid" (ngSubmit)="saveBusiness()">
+                  <div class="form-group span2"><label class="form-label" for="b-name">Business name</label><input id="b-name" class="form-control" name="name" [(ngModel)]="business['name']" required /></div>
+                  <div class="form-group"><label class="form-label" for="b-phone">Phone</label><input id="b-phone" class="form-control" name="phone" [(ngModel)]="business['phone']" lzPhone /></div>
+                  <div class="form-group"><label class="form-label" for="b-email">Email</label><input id="b-email" class="form-control" name="email" type="email" [(ngModel)]="business['email']" /></div>
+                  <div class="form-group span2"><label class="form-label" for="b-web">Website</label><input id="b-web" class="form-control" name="website" [(ngModel)]="business['website']" /></div>
+                  <div class="form-group span2"><label class="form-label" for="b-addr">Street address</label><input id="b-addr" class="form-control" name="addressLine1" [(ngModel)]="business['addressLine1']" /></div>
+                  <div class="form-group"><label class="form-label" for="b-city">City</label><input id="b-city" class="form-control" name="city" [(ngModel)]="business['city']" /></div>
+                  <div class="form-group"><label class="form-label" for="b-state">State</label><input id="b-state" class="form-control" name="state" [(ngModel)]="business['state']" /></div>
+                  <div class="form-group"><label class="form-label" for="b-zip">ZIP</label><input id="b-zip" class="form-control" name="postalCode" [(ngModel)]="business['postalCode']" lzZip /></div>
+                  <div class="form-group"><label class="form-label" for="b-cat">Type of business</label><input id="b-cat" class="form-control" name="category" [(ngModel)]="business['category']" /></div>
+                  <div class="form-actions span2">
+                    <button type="button" class="btn btn-ghost" (click)="editingBusiness.set(false)">Cancel</button>
+                    <button type="submit" class="btn btn-primary" [disabled]="busy()">Save</button>
+                  </div>
+                </form>
+              }
+            </section>
+
+            <section class="panel">
+              <header class="panel-head"><h3>Contacts</h3>
+                @if (w.permissions.editBusiness) { <button class="btn btn-ghost btn-sm" (click)="openContact(null)">Add contact</button> }</header>
+              @if (contactForm(); as cf) {
+                <form class="edit-grid contact-form" (ngSubmit)="saveContact()">
+                  <div class="form-group"><label class="form-label" for="c-name">Name *</label><input id="c-name" class="form-control" name="cname" [(ngModel)]="contact.name" required /></div>
+                  <div class="form-group"><label class="form-label" for="c-title">Role</label><input id="c-title" class="form-control" name="ctitle" [(ngModel)]="contact.title" /></div>
+                  <div class="form-group"><label class="form-label" for="c-email">Email</label><input id="c-email" class="form-control" name="cemail" type="email" [(ngModel)]="contact.email" /></div>
+                  <div class="form-group"><label class="form-label" for="c-phone">Phone</label><input id="c-phone" class="form-control" name="cphone" [(ngModel)]="contact.phone" lzPhone /></div>
+                  <div class="form-actions span2">
+                    <button type="button" class="btn btn-ghost" (click)="contactForm.set(null)">Cancel</button>
+                    <button type="submit" class="btn btn-primary" [disabled]="busy()">{{ cf.id ? 'Save contact' : 'Add contact' }}</button>
+                  </div>
+                </form>
+              }
+              @for (c of w.contacts; track c.id) {
+                <div class="contact">
+                  <div>
+                    <strong>{{ c.name }}</strong>
+                    @if (c.isPrimary) { <span class="tag tag-primary">Primary</span> }
+                    @if (c.verifiedAt) { <span class="tag tag-success">Verified</span> }
+                    @if (c.doNotContact) { <span class="tag tag-danger">Do not contact</span> }
+                    <div class="text-sm text-muted">{{ c.title || '' }}@if (c.title) { · } {{ c.email || 'no email' }} · {{ (c.phone | phone) || 'no phone' }}</div>
+                  </div>
+                  @if (w.permissions.editBusiness) {
+                    <div class="contact-actions-mini">
+                      <button class="link-btn small" (click)="openContact(c)">Edit</button>
+                      @if (!c.isPrimary) { <button class="link-btn small" (click)="contactAction(c, { isPrimary: true }, 'Primary contact updated.')">Make primary</button> }
+                      @if (!c.verifiedAt) { <button class="link-btn small" (click)="contactAction(c, { verified: true }, 'Marked verified.')">Verified</button> }
+                      <button class="link-btn small" (click)="contactAction(c, { doNotContact: !c.doNotContact }, c.doNotContact ? 'They can be contacted again.' : 'Won’t be contacted.')">{{ c.doNotContact ? 'Allow contact' : 'Do not contact' }}</button>
+                      <button class="link-btn small danger" (click)="contactAction(c, { archived: true }, 'Contact removed.')">Remove</button>
+                    </div>
+                  }
+                </div>
+              } @empty { @if (!contactForm()) { <p class="muted-box">No contact person yet. Add the owner or decision maker when you find out who it is.</p> } }
+            </section>
+
+            <section class="panel">
+              <header class="panel-head"><h3>Deal</h3>
+                @if (w.permissions.managePipeline && !editingDeal()) { <button class="btn btn-ghost btn-sm" (click)="startEditDeal()">Edit</button> }</header>
+              @if (!editingDeal()) {
+                <dl class="kv">
+                  <dt>Name</dt><dd>{{ w.opportunity.title || '—' }}</dd>
+                  <dt>Value</dt><dd>{{ w.opportunity.valueCents ? (w.opportunity.valueCents | money: w.opportunity.currency) : 'Not set' }}</dd>
+                  <dt>Stage</dt><dd>{{ w.opportunity.stageLabel }}@if (w.opportunity.lostReason) { — {{ w.opportunity.lostReason }} }</dd>
+                  <dt>Created</dt><dd>{{ w.opportunity.createdAt | date: 'MMM d, y' }}</dd>
+                  @if (w.opportunity.wonAt) { <dt>Won</dt><dd>{{ w.opportunity.wonAt | date: 'MMM d, y' }}</dd> }
+                </dl>
+              } @else {
+                <div class="edit-grid">
+                  <div class="form-group span2"><label class="form-label" for="d-title">Deal name</label><input id="d-title" class="form-control" [(ngModel)]="deal.title" placeholder="e.g. New website + care plan" /></div>
+                  <div class="form-group"><label class="form-label" for="d-value">Expected value ($)</label><input id="d-value" class="form-control" type="number" min="0" step="1" [(ngModel)]="deal.value" /></div>
+                  <div class="form-actions span2">
+                    <button class="btn btn-ghost" (click)="editingDeal.set(false)">Cancel</button>
+                    <button class="btn btn-primary" (click)="saveDeal()" [disabled]="busy()">Save</button>
+                  </div>
+                </div>
+              }
+              @if (w.otherOpportunities.length) {
+                <p class="eyebrow mt-4">Other deals with this business</p>
+                @for (o of w.otherOpportunities; track o.id) {
+                  <a class="other-deal" [routerLink]="['/app/leads', o.id]">{{ o.title || 'Deal' }} · <span [class]="'stage-chip stage-' + o.stage">{{ stageLabels[o.stage] }}</span> · {{ o.createdAt | date: 'MMM y' }}</a>
+                }
+              }
+            </section>
+
+            <section class="panel">
+              <header class="panel-head"><h3>Research</h3></header>
+              <p class="text-sm text-muted">Only runs when you ask. Results are clearly labeled and never change the lead’s details automatically.</p>
+              <div class="flex gap-2 mt-2">
+                <button class="btn btn-outline btn-sm" (click)="runAudit()" [disabled]="!w.business.website || researchBusy() === 'audit' || !w.permissions.managePipeline">{{ researchBusy() === 'audit' ? 'Checking…' : 'Check their website' }}</button>
+                <button class="btn btn-ghost btn-sm" (click)="runEnrichment()" [disabled]="researchBusy() === 'enrich' || !w.permissions.managePipeline">{{ researchBusy() === 'enrich' ? 'Looking up…' : 'Look up business info' }}</button>
+              </div>
+              @if (audit(); as au) {
+                <div class="research">
+                  <strong>Website score {{ au.score }}/100</strong><p class="text-sm">{{ au.summary }}</p>
+                  <ul>@for (c of au.checks; track c.key) { <li [class.fail]="!c.passed">{{ c.passed ? '✓' : '✕' }} {{ c.label }}</li> }</ul>
+                </div>
+              }
+              @if (enrichment(); as en) {
+                <div class="research">
+                  @if (en.status !== 'success') { <p class="text-sm">{{ en.status === 'not_configured' ? 'No business-data provider is connected.' : 'The lookup failed.' }}</p> }
+                  @else {
+                    <strong>From {{ en.provider }}</strong>
+                    @if (en.provider === 'mock') { <span class="tag tag-warning">Demo data — not real</span> }
+                    <p class="text-sm">{{ en.data?.industry }} · {{ en.data?.estimatedEmployeeCount }} employees</p>
+                  }
+                </div>
+              }
+            </section>
+          </div>
+        }
+
+        @case ('offers') { <app-offers [ws]="w" (changed)="load()" (compose)="compose($event.channel, $event.category)" /> }
+
+        @case ('handoff') { <app-handoff [ws]="w" (changed)="load()" /> }
+
+        @case ('files') {
+          @if (w.clientId) {
+            <div class="muted-box">Files, logos and photos live on the client record so the whole team can use them.
+              <a [routerLink]="['/app/clients', w.clientId, 'media']">Open the client’s Media tab →</a></div>
+          } @else {
+            <div class="muted-box">Files are collected once they’re a client — the handoff lists what’s needed and the client’s Media tab stores it. Until then, keep proposals and documents in your email.</div>
+          }
+        }
+      }
+    </div>
+
+    <!-- Dialogs -->
+    <app-dialog [open]="!!outcomeDialog()" title="Log what happened" [wide]="true" (closed)="outcomeDialog.set(null)">
+      @if (outcomeDialog(); as od) {
+        <app-outcome-form [ws]="w" [presetChannel]="od.channel" [activityId]="od.activityId" [inQueue]="queueMode() && queue.active()"
+          (saved)="outcomeSaved($event)" (cancelled)="outcomeDialog.set(null)" />
+      }
+    </app-dialog>
+
+    <app-dialog [open]="!!composerDialog()" [title]="composerDialog()?.channel === 'sms' ? 'Text ' + w.business.name : 'Email ' + w.business.name" [wide]="true" (closed)="composerDialog.set(null)">
+      @if (composerDialog(); as cd) {
+        <app-composer [ws]="w" [channel]="cd.channel" [category]="cd.category" (sent)="composerSent($event)" (closed)="composerDialog.set(null)" />
+      }
+    </app-dialog>
+
+    <app-dialog [open]="nextDialog()" title="Next step" (closed)="nextDialog.set(false)">
+      <div class="form-group"><label class="form-label" for="n-at">When</label><input id="n-at" class="form-control" type="datetime-local" [(ngModel)]="nextAt" /></div>
+      <div class="form-group mt-2"><label class="form-label" for="n-type">What</label>
+        <select id="n-type" class="form-select" [(ngModel)]="nextType">@for (t of nextTypes; track t.key) { <option [value]="t.key">{{ t.label }}</option> }</select></div>
+      <div class="form-group mt-2"><label class="form-label" for="n-note">Note</label><input id="n-note" class="form-control" [(ngModel)]="nextNote" /></div>
+      <div dialog-actions>
+        @if (w.opportunity.nextActionAt) { <button class="btn btn-ghost" (click)="saveNext(true)">Clear</button> }
+        <button class="btn btn-primary" (click)="saveNext()" [disabled]="!nextAt || busy()">Save</button>
+      </div>
+    </app-dialog>
+
+    <app-dialog [open]="stageDialog()" title="Change stage" [wide]="true" (closed)="stageDialog.set(false)">
+      <p class="text-sm text-muted">Stages also move forward on their own when you log outcomes and create payment links. <strong>Won</strong> is set automatically when the first payment arrives.</p>
+      <div class="stage-options" role="radiogroup" aria-label="Stage">
+        @for (g of w.pipeline.stages; track g.key) {
+          @if (g.key !== 'won' || w.opportunity.stage === 'won') {
+            <label class="stage-opt" [class.active]="stageChoice === g.key">
+              <input type="radio" name="stageChoice" [value]="g.key" [(ngModel)]="stageChoice" (ngModelChange)="stageMissing.set([])" />
+              <span>
+                <span [class]="'stage-chip stage-' + g.key">{{ g.label }}</span>
+                <span class="meaning">{{ g.meaning }}</span>
+                @if (g.requiresLabels.length) { <small>Needs: {{ g.requiresLabels.join(', ') }}</small> }
+              </span>
+            </label>
+          }
+        }
+      </div>
+      @if (stageChoice === 'lost' || stageChoice === 'nurture') {
+        <div class="grid-2 mt-2">
+          <div class="form-group"><label class="form-label" for="s-reason">Reason *</label>
+            <select id="s-reason" class="form-select" [(ngModel)]="stageReason">
+              <option value="">Choose a reason…</option>
+              @for (r of (stageChoice === 'nurture' ? w.pipeline.nurtureReasons : w.pipeline.closeReasons); track r.key) { <option [value]="r.key">{{ r.label }}</option> }
+            </select></div>
+          @if (stageChoice === 'nurture') {
+            <div class="form-group"><label class="form-label" for="s-revisit">Revisit on *</label><input id="s-revisit" class="form-control" type="date" [(ngModel)]="revisitAt" /></div>
+          }
+          <div class="form-group span-2"><label class="form-label" for="s-lost">Details {{ stageReason === 'other' ? '*' : '(optional)' }}</label><input id="s-lost" class="form-control" [(ngModel)]="lostReason" maxlength="255" /></div>
+        </div>
+      }
+      @if (stageMissing().length) {
+        <div class="missing" role="alert">
+          <p><strong>Before moving to {{ labelFor(stageChoice) }}</strong>, add what you know:</p>
+          @for (m of missingQual(); track m.key) {
+            <div class="form-group"><label class="form-label" [for]="'sm-' + m.key">{{ m.label }}</label>
+              <input [id]="'sm-' + m.key" class="form-control" [(ngModel)]="stageQual[m.key]" maxlength="200" /></div>
+          }
+          @for (m of missingOther(); track m.key) { <p class="form-error">{{ m.label }} is required above.</p> }
+        </div>
+      }
+      <div dialog-actions>
+        <button class="btn btn-ghost" (click)="stageDialog.set(false)">Cancel</button>
+        <button class="btn btn-primary" (click)="saveStage()" [disabled]="busy() || stageChoice === w.opportunity.stage">{{ stageMissing().length ? 'Save & move' : 'Move' }}</button>
+      </div>
+    </app-dialog>
+
+    <app-dialog [open]="dncDialog()" title="Mark do not contact" (closed)="dncDialog.set(false)">
+      <p class="text-sm">This stops all calls, texts and emails to {{ w.business.name }} from Leadzaro and removes it from every queue. The stage stays as it is.</p>
+      <div class="form-group mt-2"><label class="form-label" for="dnc-r">Reason</label><input id="dnc-r" class="form-control" [(ngModel)]="dncReason" placeholder="e.g. Asked us to stop calling" /></div>
+      <div dialog-actions>
+        <button class="btn btn-ghost" (click)="dncDialog.set(false)">Cancel</button>
+        <button class="btn btn-danger" (click)="saveDnc()" [disabled]="busy()">Mark do not contact</button>
+      </div>
+    </app-dialog>
+
+    <app-dialog [open]="dealDialog()" title="New deal for this business" (closed)="dealDialog.set(false)">
+      <p class="text-sm text-muted">For selling something new to {{ w.business.name }} — it gets its own stage, payments and handoff.</p>
+      <div class="form-group mt-2"><label class="form-label" for="nd-title">What is it?</label><input id="nd-title" class="form-control" [(ngModel)]="newDealTitle" placeholder="e.g. SEO add-on" /></div>
+      <div dialog-actions>
+        <button class="btn btn-ghost" (click)="dealDialog.set(false)">Cancel</button>
+        <button class="btn btn-primary" (click)="createDeal()" [disabled]="busy()">Create deal</button>
+      </div>
+    </app-dialog>
+
+    @if (kitOpen()) {
+      <div class="drawer-backdrop" (click)="kitOpen.set(false)" aria-hidden="true"></div>
+      <aside class="drawer" role="dialog" aria-label="Sales kit">
+        <header class="drawer-head"><h2>Sales kit</h2><button class="icon-btn" (click)="kitOpen.set(false)" aria-label="Close"><lz-icon name="x" [size]="16" /></button></header>
+        <div class="drawer-body">
+          @if (w.opportunity.qualification.qualNeed) { <div class="kit-block need"><p class="eyebrow">Their need</p><p>{{ w.opportunity.qualification.qualNeed }}</p></div> }
+          @if (w.business.website) { <p class="text-sm">Their current site: <a [href]="w.business.website" target="_blank" rel="noopener">{{ w.business.website }}</a></p> }
+          @if (!w.salesKit.pitch && !w.salesKit.services.length && !w.salesKit.portfolio.length && !w.salesKit.objections.length) {
+            <p class="muted-box">No sales kit yet. An administrator can add the approved services and prices, portfolio links, pitch and answers to common objections in <a routerLink="/app/settings/sales-kit">Settings → Sales kit &amp; goals</a>.</p>
+          }
+          @if (w.salesKit.pitch) {
+            <div class="kit-block"><div class="kit-row"><p class="eyebrow">Pitch</p><button class="link-btn small" (click)="copy(w.salesKit.pitch)">Copy</button></div><p class="pre">{{ w.salesKit.pitch }}</p></div>
+          }
+          @if (w.salesKit.services.length) {
+            <div class="kit-block"><p class="eyebrow">Services &amp; approved prices</p>
+              @for (sv of w.salesKit.services; track sv.name) {
+                <div class="kit-item"><div class="kit-row"><strong>{{ sv.name }}</strong><span>{{ kitPrice(sv.priceCents, sv.billing) }}</span></div>
+                  @if (sv.description) { <p class="text-sm text-muted">{{ sv.description }}</p> }</div>
+              }
+              <p class="form-hint">Payment links use the prices in Stripe — see Offers &amp; payments.</p>
+            </div>
+          }
+          @if (w.salesKit.portfolio.length) {
+            <div class="kit-block"><p class="eyebrow">Portfolio</p>
+              @for (pf of w.salesKit.portfolio; track pf.url) {
+                <div class="kit-row"><a [href]="pf.url" target="_blank" rel="noopener">{{ pf.label }} ↗</a><button class="link-btn small" (click)="copy(pf.url)">Copy link</button></div>
+              }
+            </div>
+          }
+          @if (w.salesKit.objections.length) {
+            <div class="kit-block"><p class="eyebrow">Common objections</p>
+              @for (ob of w.salesKit.objections; track ob.objection) {
+                <details class="kit-item"><summary>“{{ ob.objection }}”</summary><p class="pre text-sm">{{ ob.response }}</p><button class="link-btn small" (click)="copy(ob.response)">Copy answer</button></details>
+              }
+            </div>
+          }
+        </div>
+      </aside>
+    }
+
+    <app-dialog [open]="replyDialog()" title="Log a reply they sent" (closed)="replyDialog.set(false)">
+      <p class="text-sm text-muted">For replies that arrived outside Leadzaro (your inbox or phone). It shows on Today until you answer.</p>
+      <div class="form-group mt-2"><label class="form-label" for="r-ch">How did they reply?</label>
+        <select id="r-ch" class="form-select" [(ngModel)]="replyChannel"><option value="email">Email</option><option value="sms">Text</option><option value="call">Called us</option><option value="other">Other</option></select></div>
+      <div class="form-group mt-2"><label class="form-label" for="r-note">What did they say?</label><textarea id="r-note" class="form-control" rows="4" [(ngModel)]="replyNote"></textarea></div>
+      <div dialog-actions>
+        <button class="btn btn-ghost" (click)="replyDialog.set(false)">Cancel</button>
+        <button class="btn btn-primary" (click)="saveReply()" [disabled]="busy()">Log reply</button>
+      </div>
+    </app-dialog>
+  }
+</div>

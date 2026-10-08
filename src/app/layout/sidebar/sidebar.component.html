@@ -7,7 +7,7 @@
     </div>
     <div class="brand-text">
       <span class="brand-name">Leadzaro</span>
-      <span class="brand-tag">Find. Engage. Grow.</span>
+      <span class="brand-tag">Powered by <span>TWG</span></span>
     </div>
   </div>
 
@@ -21,49 +21,46 @@
 
   <!-- Navigation -->
   <nav class="sidebar-nav">
-    @for (item of nav(); track item.route) {
-      <a
-        [routerLink]="item.route"
-        routerLinkActive="active"
-        class="nav-item"
-        (click)="closeMobile.emit()"
-      >
-        <span class="nav-icon">
-          <lz-icon [name]="item.icon" [size]="17" />
-        </span>
-        <span class="nav-label">{{ item.label }}</span>
-      </a>
-    }
-
-    @if (showAdminLink()) {
-      <a
-        routerLink="/app/admin"
-        routerLinkActive="active"
-        class="nav-item"
-        (click)="closeMobile.emit()"
-      >
-        <span class="nav-icon"><lz-icon name="users" [size]="17" /></span>
-        <span class="nav-label">Administration</span>
-      </a>
+    @for (section of navSections(); track section.title) {
+      @if (section.title) {
+        <div class="nav-section-label">{{ section.title }}</div>
+      }
+      @for (item of section.items; track item.route) {
+        <a
+          [routerLink]="item.route"
+          routerLinkActive="active"
+          class="nav-item"
+          (click)="closeMobile.emit()"
+        >
+          <span class="nav-icon">
+            <lz-icon [name]="item.icon" [size]="17" />
+          </span>
+          <span class="nav-label">{{ item.label }}</span>
+        </a>
+      }
     }
   </nav>
 
   <!-- User section -->
   <div class="sidebar-footer">
-    <div class="notif-row">
+    <button type="button" class="notif-row" (click)="toggleNotifications()" [class.open]="showNotifications()"
+      [attr.aria-expanded]="showNotifications()" [attr.aria-label]="'Notifications' + (notifications.unreadCount() ? ', ' + notifications.unreadCount() + ' unread' : '')">
       <lz-icon name="bell" [size]="16" />
       <span>Notifications</span>
       @if (notifications.unreadCount() > 0) {
-        <span class="notif-badge">{{ notifications.unreadCount() }}</span>
+        <span class="notif-badge">{{ notifications.unreadCount() > 99 ? '99+' : notifications.unreadCount() }}</span>
       }
-    </div>
+    </button>
+    @if (showNotifications()) {
+      <app-notifications-panel (closed)="closeNotifications()" />
+    }
 
     @if (auth.currentUser(); as user) {
       <div class="user-row">
         <div class="user-avatar">{{ user.name[0].toUpperCase() }}</div>
         <div class="user-info">
           <div class="user-name">{{ user.name }}</div>
-          <div class="user-type">{{ org.membership()?.membershipType === 'client' ? 'Client' : user.salespersonType }}</div>
+          <div class="user-type">{{ org.membership()?.membershipType === 'client' ? 'Client' : (org.membership()?.title || org.organization()?.name || 'Team member') }}</div>
         </div>
       </div>
     }

@@ -1,0 +1,267 @@
+@if (detail(); as d) {
+<div class="page overview">
+
+  <app-client-account />
+
+  <!-- Profile essentials: only what's missing; disappears when complete -->
+  @if (canEdit() && store.missingEssentials().length) {
+    <section class="essentials" aria-label="Profile essentials">
+      <span class="essentials-title">Profile essentials · {{ essentialsDone() }} of {{ store.essentialsTotal }}</span>
+      <div class="essentials-chips">
+        @for (item of store.missingEssentials(); track item.key) {
+          <button type="button" class="essential-chip" (click)="openEssential(item)">+ {{ item.label }}</button>
+        }
+      </div>
+    </section>
+  }
+
+  <!-- Hero: the client's site, front and center -->
+  <div class="hero-row">
+    <section class="hero card" aria-label="Site preview">
+      @if (store.heroImage(); as image) {
+        <div class="browser-frame">
+          <div class="browser-bar">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="browser-url">{{ profile().websiteUrl ? (profile().websiteUrl | host) : image.originalName }}</span>
+          </div>
+          <img class="hero-image" [src]="image.mediumUrl || image.url" [alt]="d.client.name + ' site preview'" />
+        </div>
+        <div class="hero-footer">
+          @if (profile().websiteUrl) {
+            <a class="btn btn-primary btn-sm" [href]="profile().websiteUrl" target="_blank" rel="noopener">Visit live site ↗</a>
+          } @else if (canEdit()) {
+            <a class="btn btn-outline btn-sm" routerLink="../domains" [queryParams]="{ website: 1 }">Add website URL</a>
+          }
+          @if (canEdit()) {
+            <a class="btn btn-ghost btn-sm" routerLink="../media" [queryParams]="{ upload: 1 }">Change image</a>
+          }
+        </div>
+      } @else {
+        <div class="hero-empty">
+          <div class="browser-frame placeholder">
+            <div class="browser-bar">
+              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+              <span class="browser-url">{{ profile().websiteUrl ? (profile().websiteUrl | host) : 'no website yet' }}</span>
+            </div>
+            <div class="placeholder-body">
+              <lz-icon name="image" [size]="28" />
+              <span>Add a screenshot or featured image to see this client at a glance.</span>
+            </div>
+          </div>
+          <div class="hero-footer">
+            @if (canEdit()) {
+              <a class="btn btn-primary btn-sm" routerLink="../media" [queryParams]="{ upload: 1 }">Upload screenshot</a>
+            }
+            @if (profile().websiteUrl) {
+              <a class="btn btn-outline btn-sm" [href]="profile().websiteUrl" target="_blank" rel="noopener">Visit live site ↗</a>
+            } @else if (canEdit()) {
+              <a class="btn btn-outline btn-sm" routerLink="../domains" [queryParams]="{ website: 1 }">Add website URL</a>
+            }
+          </div>
+        </div>
+      }
+    </section>
+
+    <div class="side-stack">
+      <section class="card side-card" aria-label="Primary contact">
+        <div class="side-card-head">
+          <h2>Primary contact</h2>
+          @if (canEdit()) {
+            <a class="edit-link" routerLink="../contacts" [queryParams]="store.primaryContact() ? {} : { add: 1 }">{{ store.primaryContact() ? 'Edit' : 'Add' }}</a>
+          }
+        </div>
+        @if (store.primaryContact(); as contact) {
+          <div class="contact-name">{{ contact.name }}</div>
+          @if (contact.title) { <div class="text-sm text-muted">{{ contact.title }}</div> }
+          <div class="contact-lines">
+            @if (contact.email) {
+              <a [href]="'mailto:' + contact.email"><lz-icon name="mail" [size]="14" /> {{ contact.email }}</a>
+            } @else if (canEdit()) {
+              <a class="add-inline" routerLink="../contacts"><lz-icon name="mail" [size]="14" /> Add email</a>
+            }
+            @if (contact.phone) {
+              <a [href]="'tel:' + contact.phone"><lz-icon name="phone" [size]="14" /> {{ contact.phone }}</a>
+            } @else if (canEdit()) {
+              <a class="add-inline" routerLink="../contacts"><lz-icon name="phone" [size]="14" /> Add phone</a>
+            }
+          </div>
+        } @else {
+          <p class="text-sm text-muted">No contact yet.</p>
+        }
+      </section>
+
+      <section class="card side-card" aria-label="Quick links">
+        <div class="side-card-head">
+          <h2>Quick links</h2>
+          @if (canEdit()) { <a class="edit-link" routerLink="../domains" [queryParams]="{ website: 1 }">Edit</a> }
+        </div>
+        @if (quickLinks().length) {
+          <ul class="link-list">
+            @for (link of quickLinks(); track link.url + link.label) {
+              <li><a [href]="link.url" target="_blank" rel="noopener">{{ link.label }} <span class="text-muted">{{ link.url | host }}</span></a></li>
+            }
+          </ul>
+        } @else {
+          <p class="text-sm text-muted">Add the live site and admin login pages (registrar, hosting, CMS) for one-click access.</p>
+        }
+      </section>
+
+      <!-- Still needed: small and to the side, not the focus -->
+      @if (store.stillNeeded().length) {
+        <section class="card side-card" aria-label="Still needed">
+          <div class="side-card-head">
+            <h2>Still needed</h2>
+            <a class="edit-link" routerLink="../projects">Manage</a>
+          </div>
+          <ul class="needs-list">
+            @for (need of store.stillNeeded().slice(0, 5); track need.id) {
+              <li><span class="need-dot"></span><span>{{ need.label }} <span class="text-muted text-sm">· {{ need.projectName }}</span></span></li>
+            }
+          </ul>
+          @if (store.stillNeeded().length > 5) {
+            <p class="text-sm text-muted more">+ {{ store.stillNeeded().length - 5 }} more</p>
+          }
+        </section>
+      }
+    </div>
+  </div>
+
+  @if (profile().description) {
+    <p class="client-description">{{ profile().description }}</p>
+  }
+
+  <!-- Projects -->
+  <section class="section">
+    <div class="section-head">
+      <h2>Projects</h2>
+      @if (canEdit()) {
+        <a class="btn btn-outline btn-sm" routerLink="../projects" [queryParams]="{ add: 1 }"><lz-icon name="plus" [size]="14" /> Add project</a>
+      }
+    </div>
+    @if (d.projects.length) {
+      <div class="project-grid">
+        @for (project of d.projects; track project.id) {
+          <article class="project-card card">
+            <div class="project-thumb">
+              @if (project.previewImage) {
+                <img [src]="project.previewImage.mediumUrl || project.previewImage.url" [alt]="project.displayName + ' preview'" loading="lazy" />
+              } @else {
+                <span>{{ projectTypeLabel(project.projectType) }}</span>
+              }
+            </div>
+            <div class="project-body">
+              <div class="project-title-row">
+                <span class="project-name">{{ project.displayName }}</span>
+                <span class="stage-badge">{{ project.stage }}</span>
+              </div>
+              <span class="text-sm text-muted">{{ projectTypeLabel(project.projectType) }}</span>
+              <div class="project-links">
+                @if (project.liveUrl) { <a [href]="project.liveUrl" target="_blank" rel="noopener">Live ↗</a> }
+                @if (project.previewUrl) { <a [href]="project.previewUrl" target="_blank" rel="noopener">Preview ↗</a> }
+                <a [routerLink]="['/app/projects', project.id, 'overview']">Open workspace →</a>
+              </div>
+            </div>
+          </article>
+        }
+      </div>
+    } @else {
+      <p class="compact-empty">No projects yet — add the website, app or engagement you’re doing for this client.</p>
+    }
+  </section>
+
+  <!-- Compact summaries -->
+  <div class="summary-grid">
+    @let firstPlan = store.domains()?.hosting?.[0];
+    <section class="card summary-card" aria-label="Domains and hosting">
+      <div class="side-card-head">
+        <h2>Domains & hosting</h2>
+        <a class="edit-link" routerLink="../domains">{{ (store.domains()?.domains?.length || store.domains()?.hosting?.length) ? 'Open' : (canEdit() ? 'Add' : 'Open') }}</a>
+      </div>
+      @if (store.primaryDomain(); as domain) {
+        <dl class="facts">
+          <dt>Domain</dt>
+          <dd>{{ domain.displayName }}@if ((store.domains()?.domains?.length ?? 0) > 1) { <span class="text-muted"> +{{ store.domains()!.domains.length - 1 }} more</span> }</dd>
+          <dt>Registrar</dt><dd>{{ domain.registrar.value || 'Not recorded' }}</dd>
+          <dt>Expires</dt>
+          <dd [class]="'renewal-' + (renewalTone(domain.expiresOn.value) || 'ok')">
+            @if (domain.expiresOn.value) { {{ domain.expiresOn.value | date:'MMM d, y' }} · {{ renewalHint(domain.expiresOn.value) }} } @else { Unknown }
+          </dd>
+          <dt>Auto-renew</dt><dd>{{ domain.autoRenew.value === true ? 'On' : domain.autoRenew.value === false ? 'Off' : 'Unknown' }}</dd>
+          @if (store.domains()?.hosting?.[0]; as plan) {
+            <dt>Hosting</dt><dd>{{ plan.providerName || plan.name }}@if (plan.shared) { <span class="text-muted"> · shared</span> }</dd>
+          }
+        </dl>
+        @if (store.domainsNeedingReview().length) {
+          <p class="text-sm review-note">{{ store.domainsNeedingReview().length }} domain{{ store.domainsNeedingReview().length === 1 ? '' : 's' }} need{{ store.domainsNeedingReview().length === 1 ? 's' : '' }} review.</p>
+        }
+      } @else if (firstPlan) {
+        <dl class="facts">
+          <dt>Hosting</dt><dd>{{ firstPlan.providerName || firstPlan.name }}</dd>
+        </dl>
+        <p class="text-sm text-muted">No domain recorded yet.</p>
+      } @else {
+        <p class="text-sm text-muted">No domain or hosting recorded yet.</p>
+      }
+    </section>
+
+    <section class="card summary-card" aria-label="Billing">
+      <div class="side-card-head">
+        <h2>Billing</h2>
+        @if (canEdit()) { <a class="edit-link" routerLink="../billing" [queryParams]="{ edit: 1 }">{{ profile().recurringPriceCents !== null || profile().setupPriceCents !== null ? 'Edit' : 'Add' }}</a> }
+      </div>
+      @if (profile().recurringPriceCents !== null || profile().setupPriceCents !== null) {
+        @if (profile().recurringPriceCents !== null) {
+          <div class="big-number">{{ profile().recurringPriceCents | cents:frequencySuffix(profile().billingFrequency) }}</div>
+        }
+        <dl class="facts">
+          @if (profile().setupPriceCents !== null) { <dt>Setup / build</dt><dd>{{ profile().setupPriceCents | cents }}</dd> }
+          @if (profile().paymentStatus) {
+            <dt>Status</dt><dd><span class="pay-status" [class]="'pay-' + profile().paymentStatus">{{ profile().paymentStatus | label }}</span></dd>
+          }
+        </dl>
+      } @else if (d.stripe?.subscriptions?.length) {
+        <p class="text-sm">Stripe subscription on file — see Billing.</p>
+      } @else {
+        <p class="text-sm text-muted">What this client pays hasn’t been recorded yet.</p>
+      }
+    </section>
+
+    <section class="card summary-card" aria-label="Media">
+      <div class="side-card-head">
+        <h2>Media & files</h2>
+        <a class="edit-link" routerLink="../media">{{ d.files.length ? 'Open' : 'Add' }}</a>
+      </div>
+      @if (d.files.length) {
+        <div class="thumb-row">
+          @for (file of mediaThumbs(); track file.id) {
+            <img [src]="file.thumbnailUrl || file.url" [alt]="file.originalName" loading="lazy" />
+          }
+        </div>
+        <p class="text-sm text-muted">{{ d.files.length }} file{{ d.files.length === 1 ? '' : 's' }}</p>
+      } @else {
+        <p class="text-sm text-muted">No files yet — logos, photos, screenshots and documents live here.</p>
+      }
+    </section>
+  </div>
+
+  <!-- Latest notes -->
+  <section class="section">
+    <div class="section-head">
+      <h2>Latest notes</h2>
+      <a class="edit-link" routerLink="../notes">{{ d.notesCount ? 'All notes (' + d.notesCount + ')' : 'Add a note' }}</a>
+    </div>
+    @if (d.recentNotes.length) {
+      <div class="notes-preview">
+        @for (note of d.recentNotes; track note.id) {
+          <div class="note-preview">
+            <span class="text-sm text-muted">{{ note.author?.name || 'Someone' }} · {{ note.createdAt | date:'MMM d' }}</span>
+            <p>{{ note.body }}</p>
+          </div>
+        }
+      </div>
+    } @else {
+      <p class="compact-empty">No notes yet — log calls and decisions so the whole team has the context.</p>
+    }
+  </section>
+</div>
+}

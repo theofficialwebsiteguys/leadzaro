@@ -1,0 +1,213 @@
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Clients</h1>
+      <p>Who looks after each client, what they’re waiting on and what happens next.</p>
+    </div>
+    <div class="header-actions">
+      @if (org.hasPermission('payments.create')) {
+        <button class="btn btn-outline" (click)="matchOpen.set(true)" title="Suggest Stripe customers for clients that aren't linked yet">
+          <lz-icon name="card" [size]="16" /> Match with Stripe
+        </button>
+      }
+      @if (org.hasPermission('projects.manage')) {
+        <button class="btn btn-primary" (click)="addOpen.set(true)">
+          <lz-icon name="plus" [size]="16" /> Add existing client
+        </button>
+      }
+    </div>
+  </div>
+
+  @if (result(); as r) {
+    <div class="views" role="toolbar" aria-label="Client views">
+      <button type="button" class="view-chip" [class.active]="!view()" (click)="setView('')">All <span class="count">{{ r.counts['all'] }}</span></button>
+      @for (chip of chips(); track chip.key) {
+        <button type="button" class="view-chip" [class.active]="view() === chip.key" [class.warn]="chip.key === 'attention' && chip.count > 0" (click)="setView(chip.key)">
+          {{ chip.label }} <span class="count">{{ chip.count }}</span>
+        </button>
+      }
+    </div>
+
+    <div class="toolbar">
+      <div class="search-row">
+        <lz-icon name="search" [size]="16" />
+        <input class="search-input" type="search" placeholder="Search name, website, contact, service or manager" aria-label="Search clients"
+          [(ngModel)]="searchText" (ngModelChange)="onSearch()" />
+      </div>
+      <select class="form-select compact" aria-label="Client manager" [ngModel]="manager()" (ngModelChange)="manager.set($event); change()">
+        <option value="">All managers</option>
+        <option value="none">No client manager</option>
+        @for (m of team(); track m.id) { <option [value]="m.id">{{ m.name }}</option> }
+      </select>
+      <select class="form-select compact" aria-label="Status" [ngModel]="status()" (ngModelChange)="status.set($event); change()">
+        <option value="active">Active clients</option>
+        <option value="ended">Former clients ({{ r.counts['ended'] }})</option>
+        <option value="all">All clients</option>
+      </select>
+      <select class="form-select compact" aria-label="Sort" [ngModel]="sort()" (ngModelChange)="sort.set($event); change()">
+        @for (s of sorts; track s.key) { <option [value]="s.key">{{ s.label }}</option> }
+      </select>
+      <div class="seg" role="group" aria-label="Layout">
+        <button type="button" [class.active]="layout() === 'table'" (click)="setLayout('table')" aria-label="Table"><lz-icon name="list" [size]="15" /></button>
+        <button type="button" [class.active]="layout() === 'cards'" (click)="setLayout('cards')" aria-label="Cards"><lz-icon name="columns" [size]="15" /></button>
+      </div>
+    </div>
+  }
+
+  @if (notice()) { <div class="alert alert-info notice" role="status">{{ notice() }} <button type="button" class="icon-btn" (click)="notice.set('')" aria-label="Dismiss"><lz-icon name="x" [size]="14" /></button></div> }
+
+  @if (loading() && !result()) {
+    <div class="loading-state"><div class="spinner"></div></div>
+  } @else if (loadError()) {
+    <div class="alert alert-error">{{ loadError() }} <button class="btn btn-ghost btn-sm" (click)="load()">Try again</button></div>
+  } @else if (result() && result()!.counts['all'] === 0 && !filtersActive()) {
+    <div class="card">
+      <app-empty-state icon="folder" title="No clients yet"
+        description="Add the businesses you already work with. Clients won through Leads appear here automatically after their first payment."
+        [actionLabel]="org.hasPermission('projects.manage') ? 'Add an existing client' : ''" (action)="addOpen.set(true)" />
+    </div>
+  } @else if (clients().length === 0) {
+    <div class="card empty-filter">
+      <p>No clients match these filters.</p>
+      <button class="btn btn-outline btn-sm" (click)="clearFilters()">Clear filters</button>
+    </div>
+  } @else if (layout() === 'table') {
+    @if (selected().size && org.hasPermission('projects.manage')) {
+      <div class="bulk" role="region" aria-label="Bulk actions">
+        <strong>{{ selected().size }} selected</strong>
+        <select class="form-select compact" aria-label="New client manager" [(ngModel)]="bulkManager">
+          <option value="">Set client manager…</option>
+          @for (m of team(); track m.id) { <option [value]="m.id">{{ m.name }}</option> }
+          <option value="none">Remove manager</option>
+        </select>
+        <button class="btn btn-primary btn-sm" [disabled]="!bulkManager || bulkSaving()" (click)="assignSelected()">{{ bulkSaving() ? 'Saving…' : 'Apply' }}</button>
+        <button class="btn btn-ghost btn-sm" (click)="clearSelection()">Clear</button>
+      </div>
+    }
+    <div class="card table-card" [class.dim]="loading()">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              @if (org.hasPermission('projects.manage')) {
+                <th class="check"><input type="checkbox" [checked]="allSelected()" (change)="toggleAll()" aria-label="Select all on this page" /></th>
+              }
+              <th>Client</th>
+              <th>Client manager</th>
+              <th>Status</th>
+              <th>Next action</th>
+              <th>Billing</th>
+              <th>Since</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (client of clients(); track client.id) {
+              <tr [class.selected]="selected().has(client.id)">
+                @if (org.hasPermission('projects.manage')) {
+                  <td class="check"><input type="checkbox" [checked]="selected().has(client.id)" (change)="toggle(client.id)" [attr.aria-label]="'Select ' + client.name" /></td>
+                }
+                <td class="client-cell">
+                  <span class="mini-logo">{{ initialsOf(client.name) }}</span>
+                  <div class="min0">
+                    <a class="name" [routerLink]="['/app/clients', client.id]">{{ client.name }}</a>
+                    <div class="sub">
+                      @if (client.websiteUrl) { <span>{{ client.websiteUrl | host }}</span> }
+                      @for (s of (client.services || []).slice(0, 2); track s) { <span class="svc">{{ s }}</span> }
+                      @if ((client.services || []).length > 2) { <span class="text-muted">+{{ (client.services || []).length - 2 }}</span> }
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  @if (client.manager) { {{ client.manager.name }} } @else { <span class="text-muted">—</span> }
+                </td>
+                <td class="status-cell">
+                  @for (b of badges(client); track b.label) { <span class="tag" [class]="'tag tag-' + b.tone">{{ b.label }}</span> }
+                  @if (client.clientEndedAt) { <span class="tag tag-muted">Ended {{ client.clientEndedAt | date: 'MMM y' }}</span> }
+                  @if (topReason(client)) { <div class="reason" [title]="topReason(client)">{{ topReason(client) }}</div> }
+                  @else if (!badges(client).length && !client.clientEndedAt) {
+                    @if (client.health?.missing?.length) { <span class="text-xs text-muted">Missing: {{ client.health!.missing.length }} detail{{ client.health!.missing.length === 1 ? '' : 's' }}</span> }
+                    @else { <span class="text-xs ok">All good</span> }
+                  }
+                </td>
+                <td>
+                  @if (client.nextActionAt) {
+                    <div [class.overdue]="isOverdue(client)">{{ client.nextActionAt | date: 'MMM d' : 'UTC' }}</div>
+                    @if (client.nextActionNote) { <div class="text-xs text-muted clip">{{ client.nextActionNote }}</div> }
+                  } @else if (client.waitingOn === 'client') {
+                    <span class="text-xs text-muted">Waiting on them</span>
+                  } @else { <span class="text-muted">—</span> }
+                </td>
+                <td><span class="tag" [class]="'tag tag-' + billingTone(client)">{{ client.health?.billing?.label }}</span></td>
+                <td class="nowrap">
+                  @if (client.clientSince) { {{ client.clientSince | date: 'MMM y' : 'UTC' }} } @else { <span class="text-muted">—</span> }
+                  @if (client.acquisitionSource === 'sales') { <div class="text-xs text-muted">Won in Leadzaro</div> }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  } @else {
+    <div class="client-grid" [class.dim]="loading()">
+      @for (client of clients(); track client.id) {
+        <article class="client-card">
+          <div class="client-cover">
+            @if (client.cover) {
+              <img [src]="client.cover.mediumUrl || client.cover.url" [alt]="client.name + ' preview'" loading="lazy" />
+            } @else {
+              <div class="cover-placeholder">
+                <span>{{ client.websiteUrl ? (client.websiteUrl | host) : 'No preview yet' }}</span>
+              </div>
+            }
+            <div class="client-logo">
+              @if (client.logo) {
+                <img [src]="client.logo.thumbnailUrl || client.logo.url" [alt]="client.name + ' logo'" />
+              } @else {
+                <span>{{ initialsOf(client.name) }}</span>
+              }
+            </div>
+          </div>
+
+          <div class="client-body">
+            <a class="client-name stretched-link" [routerLink]="['/app/clients', client.id]">{{ client.name }}</a>
+            @if (client.websiteUrl) {
+              <a class="client-site" [href]="client.websiteUrl" target="_blank" rel="noopener">
+                {{ client.websiteUrl | host }} <span aria-hidden="true">↗</span>
+              </a>
+            }
+            <div class="client-contact">
+              @if (client.primaryContact; as contact) {
+                <lz-icon name="user" [size]="14" />
+                <span>{{ contact.name }}@if (contact.email || contact.phone) { · {{ contact.email || contact.phone }} }</span>
+              } @else {
+                <span class="text-muted">No contact yet</span>
+              }
+            </div>
+            <div class="project-chips">
+              @for (b of badges(client); track b.label) { <span class="tag" [class]="'tag tag-' + b.tone">{{ b.label }}</span> }
+              @for (project of client.projects; track project.id) {
+                <span class="project-chip" [title]="project.displayName + ' — ' + project.stage">{{ projectChip(client, project) }}</span>
+              }
+            </div>
+            <div class="text-xs text-muted">{{ client.manager ? 'Managed by ' + client.manager.name : 'No client manager' }}</div>
+          </div>
+        </article>
+      }
+    </div>
+  }
+
+  @if (result() && totalPages() > 1) {
+    <nav class="pager" aria-label="Pages">
+      <span class="text-sm text-muted">{{ rangeLabel() }}</span>
+      <button class="btn btn-ghost btn-sm" [disabled]="page() <= 1 || loading()" (click)="goTo(page() - 1)">Previous</button>
+      <span class="text-sm">Page {{ page() }} of {{ totalPages() }}</span>
+      <button class="btn btn-ghost btn-sm" [disabled]="page() >= totalPages() || loading()" (click)="goTo(page() + 1)">Next</button>
+    </nav>
+  } @else if (result() && result()!.total) {
+    <p class="text-xs text-muted count-line">{{ rangeLabel() }}</p>
+  }
+</div>
+
+<app-add-client-dialog [open]="addOpen()" [team]="team()" [currentUserId]="userId()" (closed)="addOpen.set(false)" (created)="onCreated($event)" />
+<app-stripe-match-dialog [open]="matchOpen()" (closed)="matchOpen.set(false)" (linkedAny)="load()" />

@@ -49,6 +49,14 @@ const ContentInboxItem = require('./ContentInboxItem')(sequelize);
 const Meeting = require('./Meeting')(sequelize);
 const File = require('./File')(sequelize);
 const CancellationRequest = require('./CancellationRequest')(sequelize);
+const ClientProfile = require('./ClientProfile')(sequelize);
+const ClientNote = require('./ClientNote')(sequelize);
+const IntegrationConnection = require('./IntegrationConnection')(sequelize);
+const DomainRecord = require('./DomainRecord')(sequelize);
+const ClientDomainLink = require('./ClientDomainLink')(sequelize);
+const HostingPlan = require('./HostingPlan')(sequelize);
+const HostingPlanClient = require('./HostingPlanClient')(sequelize);
+const ServiceExpense = require('./ServiceExpense')(sequelize);
 
 const DesignSystem = require('./DesignSystem')(sequelize);
 const Website = require('./Website')(sequelize);
@@ -69,6 +77,11 @@ const WebsitePageSeoSettings = require('./WebsitePageSeoSettings')(sequelize);
 const WebsiteRedirect = require('./WebsiteRedirect')(sequelize);
 const WebsiteSeoAudit = require('./WebsiteSeoAudit')(sequelize);
 const SeoTaskCycle = require('./SeoTaskCycle')(sequelize);
+const MessageTemplate = require('./MessageTemplate')(sequelize);
+const StripeCustomerLink = require('./StripeCustomerLink')(sequelize);
+const SalesPayment = require('./SalesPayment')(sequelize);
+const SalesHandoff = require('./SalesHandoff')(sequelize);
+const SalesGoal = require('./SalesGoal')(sequelize);
 
 const models = {
   User,
@@ -116,6 +129,14 @@ const models = {
   Meeting,
   File,
   CancellationRequest,
+  ClientProfile,
+  ClientNote,
+  IntegrationConnection,
+  DomainRecord,
+  ClientDomainLink,
+  HostingPlan,
+  HostingPlanClient,
+  ServiceExpense,
   DesignSystem,
   Website,
   WebsiteVersion,
@@ -135,6 +156,11 @@ const models = {
   WebsiteRedirect,
   WebsiteSeoAudit,
   SeoTaskCycle,
+  MessageTemplate,
+  StripeCustomerLink,
+  SalesPayment,
+  SalesHandoff,
+  SalesGoal,
 };
 
 // Run associations

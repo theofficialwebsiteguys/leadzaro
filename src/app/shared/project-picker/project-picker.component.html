@@ -1,0 +1,37 @@
+@if (compact()) {
+  <select
+    class="project-switcher"
+    aria-label="Switch project"
+    [ngModel]="currentProjectId()"
+    (ngModelChange)="switchTo($event)"
+    [disabled]="loading()"
+  >
+    @if (loading()) {
+      <option [ngValue]="null">Loading…</option>
+    }
+    @for (p of projects(); track p.id) {
+      <option [ngValue]="p.id">{{ p.organization?.name }}{{ p.name ? ' · ' + p.name : '' }}</option>
+    }
+  </select>
+} @else {
+  <div class="picker-wrap">
+    @if (loading()) {
+      <p class="text-muted">Loading…</p>
+    } @else if (projects().length === 0) {
+      <div class="card"><div class="card-body">No projects yet.</div></div>
+    } @else {
+      <p class="text-muted mb-4">Choose a project to continue.</p>
+      <div class="picker-grid">
+        @for (p of projects(); track p.id) {
+          <a class="picker-card" [routerLink]="[basePath(), p.id]">
+            <div class="picker-card-name">{{ p.organization?.name }}</div>
+            <div class="picker-card-meta">
+              <span class="text-sm text-muted">{{ p.stage }}</span>
+              <span class="health-badge" [class]="'health-' + p.healthStatus">{{ p.healthStatus }}</span>
+            </div>
+          </a>
+        }
+      </div>
+    }
+  </div>
+}

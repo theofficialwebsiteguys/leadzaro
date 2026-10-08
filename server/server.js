@@ -27,6 +27,8 @@ async function start() {
 
     app.listen(env.PORT, () => {
       console.log(`🚀 Leadzaro API running at http://localhost:${env.PORT}`);
+      // Daily Namecheap sync + renewal reminders (ADR 0009); off when JOBS_ENABLED=false.
+      require('./core/jobs/scheduler').startScheduler();
     });
   } catch (err) {
     console.error('❌ Server failed to start:', err.message);

@@ -175,12 +175,26 @@
       </div>
     </div>
 
+    @if (mapPoints().length) {
+      <div class="map-wrap">
+        <div class="map-head">
+          <strong>Map</strong>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="showMap.set(!showMap())">{{ showMap() ? 'Hide map' : 'Show map' }}</button>
+        </div>
+        @if (showMap()) {
+          <app-lead-map [points]="mapPoints()" [center]="results()!.center ?? null" [radiusMiles]="results()!.radiusMiles ?? null"
+            [selectedId]="expandedId()" [searchQuery]="lastQuery" (pick)="pickFromMap($event)" />
+        }
+      </div>
+    }
+
     <!-- Results table -->
     <div class="card results-card">
       <div class="table-wrap">
         <table class="results-table">
           <thead>
             <tr>
+              <th class="col-n">#</th>
               <th>Business</th>
               <th>Location</th>
               <th>Phone</th>
@@ -190,15 +204,29 @@
             </tr>
           </thead>
           <tbody>
-            @for (lead of results()!.items; track lead.id) {
-              <tr class="result-row"
+            @for (lead of results()!.items; track lead.id; let i = $index) {
+              <tr class="result-row" [id]="'row-' + lead.id"
                 [class.row-saved]="savedIds().has(lead.id)"
+                [class.row-open]="expandedId() === lead.id"
                 [class.row-no-website]="!lead.website && !savedIds().has(lead.id)">
 
+                <td class="col-n"><span class="n-badge">{{ i + 1 }}</span></td>
                 <td class="col-name">
-                  <div class="biz-name">{{ lead.name }}</div>
+                  <button type="button" class="biz-name as-link" (click)="toggleDetails(lead)" [attr.aria-expanded]="expandedId() === lead.id">{{ lead.name }}</button>
                   @if (lead.category) {
                     <div class="biz-category">{{ lead.category }}</div>
+                  }
+                  @let m = lead.possibleMatch;
+                  @if (lead.pipeline; as p) {
+                    <div class="pipeline-status">
+                      @if (p.isClient) { <span class="tag tag-success">Existing client</span> }
+                      <span [class]="'stage-chip stage-' + p.stage">{{ p.stageLabel }}</span>
+                      <span class="text-xs text-muted">{{ p.assignedTo ? p.assignedTo.name : 'Unclaimed' }} · {{ p.contacted ? 'contacted' : 'not contacted yet' }}</span>
+                      @if (p.doNotContact) { <span class="tag tag-danger">Do not contact</span> }
+                      @if (p.archived) { <span class="tag tag-muted">Archived</span> }
+                    </div>
+                  } @else if (m) {
+                    <div class="pipeline-status"><span class="tag tag-warning">Possible match</span> <span class="text-xs text-muted">{{ m.name }}{{ m.isClient ? ' (client)' : '' }} — {{ m.reasons.join(', ') }}</span></div>
                   }
                 </td>
 
@@ -208,6 +236,7 @@
                   } @else {
                     <span class="text-muted">—</span>
                   }
+                  @if (distance(lead)) { <div class="text-xs text-muted">{{ distance(lead) }} away</div> }
                 </td>
 
                 <td class="col-phone">
@@ -265,33 +294,81 @@
 
                 <td class="col-actions">
                   <div class="row-actions">
+                    <button type="button" class="btn btn-ghost btn-sm action-btn" (click)="toggleDetails(lead)" [attr.aria-expanded]="expandedId() === lead.id" title="More details before adding">
+                      {{ expandedId() === lead.id ? 'Less' : 'Details' }}
+                    </button>
                     @if (lead.googleMapsUrl) {
                       <a [href]="lead.googleMapsUrl" target="_blank" rel="noopener" class="btn btn-ghost btn-sm action-btn" title="View on Google Maps">
                         <lz-icon name="target" [size]="14" />
                       </a>
                     }
-                    <button
-                      class="btn btn-sm action-btn"
-                      [class.btn-primary]="!savedIds().has(lead.id)"
-                      [class.btn-saved]="savedIds().has(lead.id)"
-                      [disabled]="saving() === lead.id || savedIds().has(lead.id)"
-                      (click)="saveLead(lead)"
-                      [title]="savedIds().has(lead.id) ? 'Already saved' : 'Save lead'"
-                    >
-                      @if (saving() === lead.id) {
-                        <span class="spinner spinner-sm"></span>
-                      } @else if (savedIds().has(lead.id)) {
-                        <lz-icon name="check" [size]="14" />
-                        Saved
-                      } @else {
-                        <lz-icon name="plus" [size]="14" />
-                        Save
-                      }
-                    </button>
+                    @if (opportunityFor()[lead.id]) {
+                      <button class="btn btn-sm btn-outline action-btn" (click)="openLead(lead)" title="Open this lead">
+                        <lz-icon name="arrow-right" [size]="14" /> Open
+                      </button>
+                    } @else {
+                      <button
+                        class="btn btn-sm btn-primary action-btn"
+                        [disabled]="saving() === lead.id"
+                        (click)="saveLead(lead)"
+                        title="Add to Leads"
+                      >
+                        @if (saving() === lead.id) {
+                          <span class="spinner spinner-sm"></span>
+                        } @else {
+                          <lz-icon name="plus" [size]="14" />
+                          Add to leads
+                        }
+                      </button>
+                    }
+                    @if (saveErrors()[lead.id]) { <span class="text-xs save-error">{{ saveErrors()[lead.id] }}</span> }
                   </div>
                 </td>
 
               </tr>
+              @if (expandedId() === lead.id) {
+                <tr class="detail-row">
+                  <td colspan="7">
+                    @let det = detailsFor(lead);
+                    <div class="detail-grid">
+                      <div>
+                        <p class="eyebrow">Business</p>
+                        <p>{{ loadedDetails(lead)?.address || addressLine(lead) }}</p>
+                        <p>{{ lead.category || 'Category unknown' }}@if (lead.rating) { · {{ formatRating(lead.rating) }}★ from {{ lead.reviewCount }} reviews }</p>
+                        @if (loadedDetails(lead)?.businessStatus && loadedDetails(lead)?.businessStatus !== 'OPERATIONAL') { <p class="warn">Google status: {{ loadedDetails(lead)?.businessStatus }}</p> }
+                      </div>
+                      <div>
+                        <p class="eyebrow">Contact</p>
+                        @if (det === 'loading') { <p class="text-muted">Loading from Google…</p> }
+                        @else if (det === 'error') { <p class="warn">Google couldn’t load the details right now. Try again later.</p> }
+                        @else {
+                          <p>@if (resolvedPhone(lead)) { <a [href]="'tel:' + resolvedPhone(lead)">{{ resolvedPhone(lead) }}</a> } @else { <span class="text-muted">No phone listed</span> }</p>
+                          <p>@if (loadedDetails(lead)?.website || lead.website) { <a [href]="loadedDetails(lead)?.website || lead.website" target="_blank" rel="noopener">{{ loadedDetails(lead)?.website || lead.website }}</a> } @else { <span class="no-website-badge">No website</span> }</p>
+                        }
+                      </div>
+                      <div>
+                        <p class="eyebrow">Hours</p>
+                        @if (loadedDetails(lead)?.hours?.length) {
+                          <ul class="hours">@for (line of loadedDetails(lead)!.hours; track line) { <li>{{ line }}</li> }</ul>
+                        } @else if (lead.source === 'demo') { <p class="text-muted">Not available for demo data</p> }
+                        @else if (det !== 'loading') { <p class="text-muted">Not listed</p> }
+                      </div>
+                      <div>
+                        <p class="eyebrow">Why they might need us</p>
+                        @for (s of signals(lead); track s) { <p class="signal">• {{ s }}</p> } @empty { <p class="text-muted">Nothing obvious — check their site and reviews.</p> }
+                      </div>
+                    </div>
+                    <div class="detail-actions">
+                      @if (loadedDetails(lead)?.googleMapsUrl || lead.googleMapsUrl) { <a class="btn btn-ghost btn-sm" [href]="loadedDetails(lead)?.googleMapsUrl || lead.googleMapsUrl" target="_blank" rel="noopener">Open in Google Maps ↗</a> }
+                      @if (opportunityFor()[lead.id]) {
+                        <button class="btn btn-outline btn-sm" (click)="openLead(lead)">Open lead</button>
+                      } @else {
+                        <button class="btn btn-primary btn-sm" [disabled]="saving() === lead.id" (click)="saveLead(lead)">{{ saving() === lead.id ? 'Adding…' : 'Add to leads' }}</button>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              }
             }
           </tbody>
         </table>
@@ -316,3 +393,25 @@
   }
 
 </div>
+
+<app-dialog [open]="!!review()" title="Is this a business you already have?" [wide]="true" (closed)="review.set(null)">
+  @if (review(); as r) {
+    <p class="text-sm text-muted">{{ r.lead.name }} matches businesses already in Leadzaro. Nothing has been added yet.</p>
+    @for (dup of r.duplicates; track dup.organizationId) {
+      <div class="dup-row">
+        <div>
+          <strong>{{ dup.name }}</strong>@if (dup.isClient) { <span class="tag tag-success">Client</span> }
+          <div class="text-sm text-muted">Same {{ dup.reasons.join(', ').replace('same ', '') }}@if (dup.stageLabel) { · {{ dup.stageLabel }} }@if (dup.assignedTo) { · {{ dup.assignedTo.name }} }</div>
+        </div>
+        <div class="dup-actions">
+          @if (dup.opportunityId) { <a class="btn btn-ghost btn-sm" [routerLink]="['/app/leads', dup.opportunityId]" (click)="review.set(null)">Open</a> }
+          <button class="btn btn-outline btn-sm" (click)="saveLead(r.lead, { existingOrganizationId: dup.organizationId })">New deal for this business</button>
+        </div>
+      </div>
+    }
+  }
+  <div dialog-actions>
+    <button class="btn btn-ghost" (click)="review.set(null)">Cancel</button>
+    <button class="btn btn-primary" (click)="saveLead(review()!.lead, { confirmNew: true })">It’s a different business — add it</button>
+  </div>
+</app-dialog>

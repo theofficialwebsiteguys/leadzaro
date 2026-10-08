@@ -1,0 +1,59 @@
+<div class="page">
+  <p class="tab-subtitle">Team-only. Standing notes up top; calls, decisions and updates in the feed below.</p>
+
+  <section class="card standing">
+    <div class="standing-head">
+      <h2>Standing notes</h2>
+      @if (canEdit() && !editingInternal()) {
+        <button class="btn btn-ghost btn-sm" (click)="startEditInternal()">{{ internalNotes() ? 'Edit' : 'Add' }}</button>
+      }
+    </div>
+    @if (editingInternal()) {
+      <textarea class="form-control" rows="4" [(ngModel)]="internalDraft" aria-label="Standing notes"
+        placeholder="Preferences, history, how they like to work — context everyone should know"></textarea>
+      @if (internalError()) { <div class="alert alert-error mt-2">{{ internalError() }}</div> }
+      <div class="form-actions">
+        <button class="btn btn-ghost btn-sm" (click)="editingInternal.set(false)">Cancel</button>
+        <button class="btn btn-primary btn-sm" [disabled]="savingInternal()" (click)="saveInternal()">{{ savingInternal() ? 'Saving…' : 'Save' }}</button>
+      </div>
+    } @else if (internalNotes()) {
+      <p class="standing-body">{{ internalNotes() }}</p>
+    } @else {
+      <p class="text-sm text-muted">Nothing yet.</p>
+    }
+  </section>
+
+  @if (canEdit()) {
+    <form class="card compose" (ngSubmit)="post()">
+      <textarea class="form-control" name="body" rows="3" [(ngModel)]="newBody" aria-label="New note"
+        placeholder="Log a call, a decision, an update…"></textarea>
+      <div class="compose-row">
+        <select class="form-select" name="projectId" [(ngModel)]="newProjectId" aria-label="About">
+          <option value="">About the client</option>
+          @for (project of projects(); track project.id) { <option [value]="project.id">About {{ project.displayName }}</option> }
+        </select>
+        <button type="submit" class="btn btn-primary btn-sm" [disabled]="!newBody.trim() || posting()">{{ posting() ? 'Adding…' : 'Add note' }}</button>
+      </div>
+      @if (postError()) { <div class="alert alert-error mt-2">{{ postError() }}</div> }
+    </form>
+  }
+
+  @if (loading()) {
+    <p class="text-muted">Loading notes…</p>
+  } @else {
+    <div class="feed">
+      @for (note of notes(); track note.id) {
+        <article class="note">
+          <div class="note-meta">
+            <strong>{{ note.author?.name || 'Someone' }}</strong>
+            <span class="text-sm text-muted">{{ note.createdAt | date:'MMM d, y · h:mm a' }}</span>
+            @if (projectName(note.projectId); as name) { <span class="project-tag">{{ name }}</span> }
+          </div>
+          <p>{{ note.body }}</p>
+        </article>
+      } @empty {
+        <p class="compact-empty">No notes yet.</p>
+      }
+    </div>
+  }
+</div>

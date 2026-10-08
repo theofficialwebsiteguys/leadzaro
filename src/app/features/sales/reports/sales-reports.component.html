@@ -1,0 +1,212 @@
+<div class="page reports">
+  <header class="page-header">
+    <div>
+      <h1>Sales reports</h1>
+      <p>
+        @if (report(); as hr) {
+          {{ hr.scope === 'team' ? (hr.userId ? memberName(hr.userId) : 'Whole team') : 'Your numbers' }} · {{ hr.from | date: 'MMM d' }} – {{ hr.to | date: 'MMM d, y' }}
+        } @else { Outreach, conversations and paid sales. }
+      </p>
+    </div>
+  </header>
+
+  <div class="filters">
+    @if (canTeam()) {
+      <div class="seg" role="group" aria-label="Whose numbers">
+        <button type="button" [class.active]="scope === 'mine'" (click)="scope = 'mine'; userId = ''; load()">Mine</button>
+        <button type="button" [class.active]="scope === 'team'" (click)="scope = 'team'; load()">Team</button>
+      </div>
+      @if (scope === 'team') {
+        <select class="form-select" [(ngModel)]="userId" (ngModelChange)="load()" aria-label="Person">
+          <option value="">Everyone</option>
+          @for (m of members(); track m.id) { <option [value]="m.id">{{ m.name }}</option> }
+        </select>
+      }
+    }
+    <select class="form-select" [ngModel]="preset" (ngModelChange)="applyPreset($event)" aria-label="Date range">
+      <option value="week">This week</option>
+      <option value="month">This month</option>
+      <option value="7">Last 7 days</option>
+      <option value="30">Last 30 days</option>
+      <option value="90">Last 90 days</option>
+      <option value="custom">Custom</option>
+    </select>
+    @if (preset === 'custom') {
+      <input class="form-control date" type="date" [(ngModel)]="from" aria-label="From" />
+      <input class="form-control date" type="date" [(ngModel)]="to" aria-label="To" />
+      <button class="btn btn-ghost btn-sm" (click)="load()">Apply</button>
+    }
+    <label class="check"><input type="checkbox" [(ngModel)]="includeTest" (ngModelChange)="load()" /> Include demo &amp; Stripe test data</label>
+  </div>
+
+  @let r = report();
+  @if (loading() && !r) {
+    <div class="loading-state"><div class="spinner"></div></div>
+  } @else if (error()) {
+    <div class="alert alert-error">{{ error() }}</div>
+  } @else if (r) {
+    <section class="kpis">
+      <div class="kpi">
+        <span class="k-label">Outreach attempts</span>
+        <strong>{{ r.attempts.total }}</strong>
+        <span class="k-note">Calls, texts and emails actually made — not drafts</span>
+      </div>
+      <div class="kpi">
+        <span class="k-label">Businesses contacted</span>
+        <strong>{{ r.businessesContacted }}</strong>
+        <span class="k-note">Unique businesses</span>
+      </div>
+      <div class="kpi">
+        <span class="k-label">Reached</span>
+        <strong>{{ r.businessesReached }}</strong>
+        <span class="k-note">{{ rate(r.reachRate) }} of businesses contacted@if (r.reachRate) { ({{ r.reachRate.numerator }} of {{ r.reachRate.denominator }}) }</span>
+      </div>
+      <div class="kpi">
+        <span class="k-label">Meetings booked</span>
+        <strong>{{ r.meetings }}</strong>
+        <span class="k-note">{{ r.offers }} deal{{ r.offers === 1 ? '' : 's' }} sent a payment link</span>
+      </div>
+      <div class="kpi accent">
+        <span class="k-label">Paid sales</span>
+        <strong>{{ r.paidSales.total }}</strong>
+        <span class="k-note">{{ r.paidSales.newClients }} new client{{ r.paidSales.newClients === 1 ? '' : 's' }} · {{ r.paidSales.existingClients }} to existing clients<br />{{ r.paidSales.stripe }} confirmed by Stripe · {{ r.paidSales.manual }} recorded manually</span>
+      </div>
+      <div class="kpi accent">
+        <span class="k-label">New sales collected</span>
+        <strong>{{ amounts(r.paidSales.amounts) }}</strong>
+        <span class="k-note">First payments only, less refunds · close rate {{ rate(r.closeRate) }}@if (r.closeRate) { ({{ r.closeRate.numerator }} of {{ r.closeRate.denominator }} with a link) }</span>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="card panel">
+        <h3>Attempts by channel</h3>
+        @for (row of r.attempts.byChannel; track row.channel + row.origin) {
+          <div class="bar-row">
+            <span>{{ channelLabels[row.channel] || row.channel }} <small>{{ originLabels[row.origin] || row.origin }}</small></span>
+            <div class="bar"><span [style.width.%]="r.attempts.total ? (row.count / r.attempts.total) * 100 : 0"></span></div>
+            <strong>{{ row.count }}</strong>
+          </div>
+        } @empty { <p class="text-sm text-muted">No outreach recorded in this period.</p> }
+      </section>
+
+      <section class="card panel">
+        <h3>Follow-through</h3>
+        <dl class="kv">
+          <dt>Follow-ups done</dt><dd>{{ r.followUpsCompleted }} <small class="text-muted">interactions that completed a due next step</small></dd>
+          <dt>Overdue right now</dt><dd>{{ r.followUpsOverdueNow }}</dd>
+          <dt>Replies received</dt><dd>{{ r.repliesReceived }}</dd>
+          <dt>Handoffs completed</dt><dd>{{ r.handoffsCompleted }}</dd>
+          <dt>Renewals collected</dt><dd>@for (x of r.renewals; track x.currency) { {{ x.amountCents | money: x.currency }} ({{ x.count }}) } @empty { — } <small class="text-muted">recurring, not new sales</small></dd>
+          @if (r.recurringNow) { <dt>Recurring now</dt><dd>@for (x of r.recurringNow; track x.currency) { {{ x.monthlyCents | money: x.currency }}/mo across {{ x.subscriptions }} subscriptions } @empty { — }</dd> }
+        </dl>
+        @if (r.wonWithoutPaymentRecord) {
+          <p class="form-hint">{{ r.wonWithoutPaymentRecord }} deal{{ r.wonWithoutPaymentRecord === 1 ? ' was' : 's were' }} marked won before payment tracking and {{ r.wonWithoutPaymentRecord === 1 ? 'is' : 'are' }} not counted as verified sales.</p>
+        }
+      </section>
+    </div>
+
+    <div class="grid mt-4">
+      <section class="card panel">
+        <h3>Where deals are right now</h3>
+        <p class="text-sm text-muted">Open deals by stage today (not limited to the dates above). Stalled = no recorded activity for longer than the stage allows.</p>
+        <div class="table-wrap">
+          <table class="team">
+            <thead><tr><th>Stage</th><th>Deals</th><th>Avg days in stage</th><th>Stalled</th><th>No next step</th><th>Overdue</th></tr></thead>
+            <tbody>
+              @for (a of r.pipelineAging; track a.stage) {
+                <tr>
+                  <td><a routerLink="/app/leads" [queryParams]="{ stage: a.stage, owner: r.scope === 'team' ? 'all' : 'me' }"><span [class]="'stage-chip stage-' + a.stage">{{ a.label }}</span></a></td>
+                  <td>{{ a.count }}</td>
+                  <td>{{ a.avgDaysInStage ?? '—' }}</td>
+                  <td [class.warn]="a.stalled > 0">@if (a.stalled) { <a routerLink="/app/leads" [queryParams]="{ stage: a.stage, due: 'stalled', owner: r.scope === 'team' ? 'all' : 'me' }">{{ a.stalled }}</a> } @else { 0 }@if (a.stallDays) { <small class="text-muted"> (&gt;{{ a.stallDays }}d)</small> }</td>
+                  <td [class.warn]="a.noNextStep > 0 && a.stage !== 'nurture'">{{ a.noNextStep }}</td>
+                  <td [class.warn]="a.overdue > 0">{{ a.overdue }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card panel">
+        <h3>Why deals were lost or parked</h3>
+        <p class="text-sm text-muted">Deals moved to Lost or Nurture in this period, by the reason recorded.</p>
+        @for (reason of r.closeReasons; track reason.stage + reason.code) {
+          <div class="bar-row">
+            <span>{{ reason.label }} <small>{{ reason.stage === 'nurture' ? 'parked in Nurture' : 'lost' }}</small></span>
+            <div class="bar"><span [style.width.%]="closeTotal(r) ? (reason.count / closeTotal(r)) * 100 : 0"></span></div>
+            <strong>{{ reason.count }}</strong>
+          </div>
+        } @empty { <p class="text-sm text-muted">No deals were lost or parked in this period.</p> }
+      </section>
+    </div>
+
+    @if (r.clients; as c) {
+      <section class="card panel mt-4">
+        <h3>Client base</h3>
+        <p class="text-sm text-muted">Active clients now, and what changed in this period. Existing clients added directly never count as new; {{ c.includeTest ? 'test clients are included.' : 'test clients are excluded.' }}</p>
+        <div class="kpis inner">
+          <div class="kpi"><span class="k-label">Active clients</span><strong>{{ c.active }}</strong><span class="k-note">Goal {{ c.goal.target }} · {{ c.fromSales }} won in Leadzaro · {{ c.existing }} existing</span></div>
+          <div class="kpi"><span class="k-label">New clients</span><strong>{{ c.newInPeriod }}</strong><span class="k-note">First sale created (or won back) a client · plus {{ c.salesToExistingInPeriod }} sale{{ c.salesToExistingInPeriod === 1 ? '' : 's' }} to existing clients</span></div>
+          <div class="kpi"><span class="k-label">Ended</span><strong>{{ c.endedInPeriod }}</strong><span class="k-note">Net growth {{ c.net > 0 ? '+' : '' }}{{ c.net }}</span></div>
+          <div class="kpi"><span class="k-label">Retention</span><strong>{{ rate(c.retention) }}</strong><span class="k-note">@if (c.retention) { {{ c.retention.numerator }} of {{ c.retention.denominator }} clients active at the start are still active } @else { No clients were active at the start of the period }</span></div>
+        </div>
+        @if (c.endedClients.length) {
+          <p class="eyebrow mt-2">Ended in this period</p>
+          @for (e of c.endedClients; track e.id) { <div class="sale"><a [routerLink]="['/app/clients', e.id]">{{ e.name }}</a><span class="text-sm text-muted">{{ e.endedAt | date: 'MMM d, y' : 'UTC' }}@if (e.reason) { · {{ e.reason }} }</span></div> }
+        }
+        @if (c.workload.length) {
+          <p class="eyebrow mt-2">Workload by client manager</p>
+          <div class="table-wrap">
+            <table class="team">
+              <thead><tr><th>Client manager</th><th>Clients</th><th>Needing attention</th><th>Open tasks</th><th>Overdue tasks</th></tr></thead>
+              <tbody>
+                @for (w of c.workload; track w.userId) {
+                  <tr><td><a [routerLink]="['/app/clients']" [queryParams]="{ manager: w.userId }">{{ w.name }}</a></td><td>{{ w.clients }}</td><td [class.warn]="w.attention > 0">{{ w.attention }}</td><td>{{ w.openTasks }}</td><td [class.warn]="w.overdueTasks > 0">{{ w.overdueTasks }}</td></tr>
+                }
+                @if (c.unassigned) { <tr><td><a routerLink="/app/clients" [queryParams]="{ view: 'unassigned' }">No client manager</a></td><td>{{ c.unassigned }}</td><td></td><td></td><td></td></tr> }
+              </tbody>
+            </table>
+          </div>
+        }
+      </section>
+    }
+
+    @if (r.team) {
+      <section class="card panel mt-4">
+        <h3>By salesperson</h3>
+        <p class="text-sm text-muted">Credit stays with whoever did the work or made the sale, even if the lead is reassigned later. Click a name to see their numbers.</p>
+        <div class="table-wrap">
+          <table class="team">
+            <thead><tr><th>Name</th><th>Attempts</th><th>Contacted</th><th>Reached</th><th>Meetings</th><th>Links sent</th><th>Paid sales</th><th>Collected</th><th>Handoffs</th><th>Open</th><th>Overdue</th></tr></thead>
+            <tbody>
+              @for (row of r.team; track row.userId) {
+                <tr>
+                  <td><button class="link" (click)="drill(row.userId)">{{ row.name }}</button></td>
+                  <td>{{ row.attempts }}</td><td>{{ row.contacted }}</td><td>{{ row.reached }}</td><td>{{ row.meetings }}</td><td>{{ row.offers }}</td>
+                  <td>{{ row.paidSales }}@if (row.manualSales) { <small class="text-muted"> ({{ row.manualSales }} manual)</small> }</td>
+                  <td>{{ row.salesAmountCents | money }}</td><td>{{ row.handoffs }}</td><td>{{ row.openLeads }}</td>
+                  <td [class.warn]="row.overdue > 0">{{ row.overdue }}</td>
+                </tr>
+              } @empty { <tr><td colspan="11" class="text-muted">No activity in this period.</td></tr> }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    }
+
+    <section class="card panel mt-4">
+      <h3>Paid sales in this period</h3>
+      @for (sale of r.recentSales; track sale.id) {
+        <div class="sale">
+          <div>
+            @if (sale.opportunityId) { <a [routerLink]="['/app/leads', sale.opportunityId]"><strong>{{ sale.businessName }}</strong></a> } @else { <strong>{{ sale.businessName }}</strong> }
+            <div class="text-xs text-muted">{{ sale.paidAt | date: 'MMM d, y' }} · {{ sale.attributedTo || 'Unattributed' }} · {{ sale.source === 'stripe' ? 'Confirmed by Stripe' : 'Recorded manually' }}@if (sale.method) { ({{ sale.method }}) } · <span [class]="sale.newClient ? 'new-client' : ''">{{ sale.newClient ? 'New client' : 'Existing client' }}</span></div>
+          </div>
+          <strong>{{ (sale.amountCents - sale.amountRefundedCents) | money: sale.currency }}</strong>
+        </div>
+      } @empty { <p class="text-sm text-muted">No paid sales yet in this period.</p> }
+    </section>
+  }
+</div>

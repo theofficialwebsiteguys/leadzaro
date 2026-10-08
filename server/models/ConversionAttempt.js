@@ -59,6 +59,8 @@ module.exports = (sequelize) => {
       type: DataTypes.UUID,
       allowNull: true,
     },
+    // False when the sale was to a business that was already a client (ADR 0013).
+    createdNewClient: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
   });
 
   ConversionAttempt.associate = (models) => {

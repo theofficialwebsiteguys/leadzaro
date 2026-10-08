@@ -1,0 +1,311 @@
+@let s = status();
+<div class="offers">
+  <!-- Connection -->
+  @if (s && !s.connected) {
+    <div class="alert alert-warning">
+      <strong>Stripe not connected.</strong> Payment links can’t be created yet. An administrator adds the Stripe key on the server — see Settings → Integrations.
+      @if (ws().permissions.recordManualPayment) { You can still record a payment received by check, cash or transfer below. }
+    </div>
+  } @else if (s) {
+    <div class="stripe-line">
+      <span class="tag" [class.tag-success]="s.mode === 'live'" [class.tag-warning]="s.mode !== 'live'">{{ modeLabel(s.mode) }} mode</span>
+      <span class="text-sm text-muted">{{ s.account?.name || 'Stripe' }}@if (s.mode !== 'live') { · no real money moves }</span>
+      @if (s.problem) { <span class="tag tag-danger">{{ s.problem }}</span> }
+    </div>
+  }
+
+  @if (message()) { <div class="alert alert-info" role="status">{{ message() }}</div> }
+  @if (error()) { <div class="alert alert-error" role="alert">{{ error() }}</div> }
+
+  <!-- Stripe customer -->
+  @if (s?.connected) {
+    <section class="block">
+      <header class="block-head">
+        <div>
+          <h4>Stripe customer</h4>
+          <p>Needed for a customer checkout. A business keeps the same Stripe customer after it becomes a client.</p>
+        </div>
+      </header>
+      @if (linked(); as link) {
+        <div class="customer">
+          <div>
+            <strong>{{ link.name || 'Unnamed customer' }}</strong>
+            <span class="text-sm text-muted">{{ link.email || 'no email' }} · {{ link.stripeCustomerId }} · {{ link.linkMethod === 'created' ? 'created from Leadzaro' : link.linkMethod === 'checkout' ? 'created at checkout' : 'linked' }}</span>
+          </div>
+          @if (ws().permissions.createPayment) {
+            <div class="row-actions">
+              <button class="btn btn-ghost btn-sm" (click)="startEditCustomer()">Update details</button>
+              <button class="btn btn-ghost btn-sm" (click)="unlink()" [disabled]="busy() === 'unlink'">Unlink</button>
+            </div>
+          }
+        </div>
+        @if (editingCustomer) {
+          <div class="inline-form">
+            <input class="form-control" [(ngModel)]="customerEdit.name" placeholder="Name" aria-label="Customer name" />
+            <input class="form-control" [(ngModel)]="customerEdit.email" placeholder="Email" aria-label="Customer email" />
+            <input class="form-control" [(ngModel)]="customerEdit.phone" lzPhone placeholder="Phone (optional)" aria-label="Customer phone" />
+            <button class="btn btn-primary btn-sm" (click)="saveCustomer()">Save to Stripe</button>
+            <button class="btn btn-ghost btn-sm" (click)="editingCustomer = false">Cancel</button>
+          </div>
+        }
+      } @else if (ws().permissions.createPayment) {
+        @if (!showCustomerTools()) {
+          <div class="row-actions">
+            <button class="btn btn-outline btn-sm" (click)="loadSuggestions()">Find in Stripe</button>
+            <button class="btn btn-ghost btn-sm" (click)="createCustomer()" [disabled]="busy() === 'customer'">Create new customer</button>
+          </div>
+        } @else {
+          <div class="finder">
+            @if (suggestions(); as list) {
+              @if (list.length) {
+                <p class="eyebrow">Possible matches — check before linking</p>
+                @for (c of list; track c.id) {
+                  <div class="match">
+                    <div><strong>{{ c.name || 'Unnamed' }}</strong> <span class="text-sm text-muted">{{ c.email }} · {{ c.id }} · matched on {{ c.matchedOn }}</span>
+                      @if (c.linkedTo) { <div class="text-xs text-muted">Already linked to {{ c.linkedTo.name }}</div> }</div>
+                    <button class="btn btn-outline btn-sm" (click)="link(c)" [disabled]="!!c.linkedTo">Link</button>
+                  </div>
+                }
+              } @else { <p class="text-sm text-muted">No Stripe customer matches this business’s email or name.</p> }
+            }
+            <div class="search-row">
+              <input class="form-control" [(ngModel)]="customerQuery" (keyup.enter)="search()" placeholder="Search Stripe by email, name or cus_ id" aria-label="Search Stripe customers" />
+              <button class="btn btn-ghost btn-sm" (click)="search()">Search</button>
+            </div>
+            @for (c of searchResults() ?? []; track c.id) {
+              <div class="match">
+                <div><strong>{{ c.name || 'Unnamed' }}</strong> <span class="text-sm text-muted">{{ c.email }} · {{ c.id }}</span>
+                  @if (c.linkedTo) { <div class="text-xs text-muted">Already linked to {{ c.linkedTo.name }}</div> }</div>
+                <button class="btn btn-outline btn-sm" (click)="link(c)" [disabled]="!!c.linkedTo">Link</button>
+              </div>
+            }
+            <div class="row-actions">
+              <button class="btn btn-ghost btn-sm" (click)="createCustomer()" [disabled]="busy() === 'customer'">None of these — create a new customer</button>
+              <button class="btn btn-ghost btn-sm" (click)="showCustomerTools.set(false)">Close</button>
+            </div>
+          </div>
+        }
+        @if (candidates().length) {
+          <div class="alert alert-warning">
+            Stripe already has customers with this email. Link one above, or
+            <button class="btn btn-ghost btn-sm" (click)="createCustomer(true)">create a separate new customer anyway</button>.
+          </div>
+          @for (c of candidates(); track c.id) {
+            <div class="match">
+              <div><strong>{{ c.name || 'Unnamed' }}</strong> <span class="text-sm text-muted">{{ c.email }} · {{ c.id }}</span></div>
+              <button class="btn btn-outline btn-sm" (click)="link(c)" [disabled]="!!c.linkedTo">Link</button>
+            </div>
+          }
+        }
+      } @else { <p class="text-sm text-muted">Not linked to a Stripe customer.</p> }
+      @if (ws().stripe.otherModes.length) {
+        <p class="form-hint">Also linked in {{ otherModes() }} mode — those records are kept separate.</p>
+      }
+    </section>
+  }
+
+  <!-- Payment requests -->
+  <section class="block">
+    <header class="block-head">
+      <div>
+        <h4>Payment links</h4>
+        <p>The deal becomes Won only when Stripe confirms the first payment.</p>
+      </div>
+      @if (s?.connected && ws().permissions.createPayment && !isWon()) {
+        <button class="btn btn-primary btn-sm" (click)="openBuilder()">Create payment link</button>
+      }
+    </header>
+
+    @if (showBuilder()) {
+      <div class="builder">
+        @if (catalogError()) { <div class="alert alert-error">{{ catalogError() }}</div> }
+        <div class="builder-head">
+          <p class="eyebrow">Choose from your Stripe products</p>
+          <button class="btn btn-ghost btn-sm" (click)="loadCatalog(true)">Refresh catalog</button>
+        </div>
+        @if (!catalog().length && !catalogError()) { <p class="muted-box">No active products with fixed prices in Stripe yet. Add them in the Stripe dashboard, then refresh.</p> }
+        <div class="catalog">
+          @for (product of catalog(); track product.id) {
+            <div class="product">
+              <strong>{{ product.name }}</strong>
+              @if (product.description) { <span class="text-xs text-muted">{{ product.description }}</span> }
+              @for (price of product.prices; track price.id) {
+                <label class="price" [class.on]="selected().has(price.id)">
+                  <input type="checkbox" [checked]="selected().has(price.id)" (change)="toggle(price)" />
+                  {{ label(price) }}@if (price.nickname) { <span class="text-muted"> · {{ price.nickname }}</span> }
+                </label>
+              }
+            </div>
+          }
+        </div>
+
+        @if (ws().permissions.customOffer) {
+          <p class="eyebrow mt-4">Custom items</p>
+          @for (item of customItems; track $index) {
+            <div class="custom-row">
+              <input class="form-control" [(ngModel)]="item.name" placeholder="What is it? e.g. Website setup" aria-label="Custom item name" />
+              <input class="form-control amount" [(ngModel)]="item.amount" type="number" min="0.5" step="0.01" placeholder="Amount" aria-label="Amount" />
+              <select class="form-select" [(ngModel)]="item.interval" aria-label="Billing">
+                <option value="">One-time</option><option value="month">Monthly</option><option value="year">Yearly</option>
+              </select>
+              <button class="icon-btn" (click)="removeCustom($index)" aria-label="Remove item">✕</button>
+            </div>
+          }
+          <button class="btn btn-ghost btn-sm" (click)="addCustom()">+ Add custom item</button>
+          <p class="form-hint">Custom prices are created once in Stripe and reused when the same offer is made again.</p>
+        }
+
+        <div class="delivery">
+          <label class="radio" [class.on]="delivery === 'payment_link'">
+            <input type="radio" name="delivery" value="payment_link" [(ngModel)]="delivery" />
+            <span><strong>Shareable payment link</strong><small>Anyone with the link can pay. Stays valid until you deactivate it.</small></span>
+          </label>
+          <label class="radio" [class.on]="delivery === 'checkout'" [class.disabled]="!linked()">
+            <input type="radio" name="delivery" value="checkout" [(ngModel)]="delivery" [disabled]="!linked()" />
+            <span><strong>Checkout for this customer</strong><small>{{ linked() ? 'Tied to their Stripe customer; expires in ' + (s?.checkoutExpiryHours || 24) + ' hours and can be regenerated.' : 'Link a Stripe customer first.' }}</small></span>
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="of-title">Offer name (optional)</label>
+          <input id="of-title" class="form-control" [(ngModel)]="offerTitle" placeholder="Shown in Leadzaro only" />
+        </div>
+
+        @let sum = summary();
+        <div class="totals" aria-live="polite">
+          <div><span>Due today</span><strong>{{ sum.today | money: sum.currency }}</strong></div>
+          @if (sum.recurring) { <div><span>Then every {{ sum.interval }}</span><strong>{{ sum.recurring | money: sum.currency }}</strong></div> }
+          @if (sum.problem) { <div class="problem">{{ sum.problem }}</div> }
+          @if (s?.automaticTax) { <div class="text-xs text-muted">Tax is added by Stripe at checkout.</div> }
+        </div>
+
+        <div class="row-actions end">
+          <button class="btn btn-ghost" (click)="showBuilder.set(false)">Cancel</button>
+          <button class="btn btn-primary" (click)="create()" [disabled]="busy() === 'create' || !sum.today || !!sum.problem">{{ busy() === 'create' ? 'Creating in Stripe…' : 'Create link' }}</button>
+        </div>
+      </div>
+    }
+
+    @for (r of ws().paymentRequests; track r.id) {
+      <article class="request" [class.closed]="!r.isOpen">
+        <div class="request-top">
+          <div>
+            <strong>{{ r.offerTitle || r.servicePlan?.name || 'Payment request' }}</strong>
+            <div class="text-sm text-muted">{{ termsLabel(r) }} · {{ r.kind === 'checkout_session' ? 'customer checkout' : 'payment link' }} · created {{ r.createdAt | date: 'MMM d' }}@if (r.createdBy) { by {{ r.createdBy.name }} }</div>
+          </div>
+          <span class="tag" [class]="'tag tag-' + (statusLabels[r.status]?.tone || 'muted')">{{ statusLabels[r.status]?.label || r.status }}</span>
+        </div>
+        @if (r.stripeMode && r.stripeMode !== 'live') { <span class="tag tag-warning">{{ modeLabel(r.stripeMode) }}</span> }
+        @if (r.url && r.isOpen) {
+          <div class="url-row">
+            <input class="form-control mono" [value]="r.url" readonly aria-label="Payment link" (focus)="$any($event.target).select()" />
+            <button class="btn btn-ghost btn-sm" (click)="copy(r)">Copy</button>
+          </div>
+        }
+        @if (r.sentAt) { <p class="text-xs text-muted">Sent {{ r.sentAt | date: 'MMM d, h:mm a' }} by {{ r.sentVia === 'email' ? 'email' : r.sentVia === 'sms' ? 'text' : r.sentVia }}</p> }
+        @if (r.expiresAt && r.isOpen) { <p class="text-xs text-muted">Expires {{ r.expiresAt | date: 'MMM d, h:mm a' }}</p> }
+        @if (r.paidAt) { <p class="text-xs paid">Paid {{ r.amountPaidCents | money: r.currency }} on {{ r.paidAt | date: 'MMM d, y' }}</p> }
+        @if (r.lastError) { <p class="text-xs error">{{ r.lastError }}</p> }
+        @if (ws().permissions.createPayment) {
+          <div class="row-actions">
+            @if (r.isOpen) {
+              <button class="btn btn-outline btn-sm" (click)="compose.emit({ channel: 'email', category: 'payment_reminder' })">Email it</button>
+              <button class="btn btn-ghost btn-sm" (click)="compose.emit({ channel: 'sms', category: 'payment_reminder' })">Text it</button>
+              @if (!r.sentAt) { <button class="btn btn-ghost btn-sm" (click)="markSent(r, 'other')" [disabled]="busy() === 'sent-' + r.id">Mark as sent</button> }
+              <button class="btn btn-ghost btn-sm" (click)="refresh(r)" [disabled]="busy() === 'refresh-' + r.id">Check payment</button>
+              @if (s?.mode === 'mock') { <button class="btn btn-ghost btn-sm" (click)="simulate(r)" [disabled]="busy() === 'sim-' + r.id">Simulate payment</button> }
+              <button class="btn btn-ghost btn-sm danger" (click)="deactivate(r)" [disabled]="busy() === 'off-' + r.id">Deactivate</button>
+            }
+            @if (r.kind === 'checkout_session' && (r.status === 'expired' || r.status === 'failed') && !r.replacedByRequestId && !isWon()) {
+              <button class="btn btn-outline btn-sm" (click)="regenerate(r)" [disabled]="busy() === 'regen-' + r.id">Regenerate checkout</button>
+            }
+          </div>
+        }
+      </article>
+    } @empty {
+      @if (!showBuilder()) { <p class="muted-box">No payment links yet.@if (!isWon()) { When they’re ready to buy, create one here and send it. } </p> }
+    }
+  </section>
+
+  <!-- Payments received -->
+  <section class="block">
+    <header class="block-head">
+      <div>
+        <h4>Payments received</h4>
+        <p>Stripe-confirmed payments and manually recorded ones are shown separately.</p>
+      </div>
+      @if (ws().permissions.recordManualPayment && !showManual()) {
+        <button class="btn btn-ghost btn-sm" (click)="showManual.set(true)">Record a payment made outside Stripe</button>
+      }
+    </header>
+    @if (showManual()) {
+      <div class="builder">
+        <p class="text-sm text-muted">Only for money actually received (check, cash, bank transfer). It’s recorded with your name and marked as a manual payment.</p>
+        <div class="manual-grid">
+          <div class="form-group"><label class="form-label" for="mp-amt">Amount received</label><input id="mp-amt" class="form-control" type="number" min="0.01" step="0.01" [(ngModel)]="manual.amount" /></div>
+          <div class="form-group"><label class="form-label" for="mp-method">How</label>
+            <select id="mp-method" class="form-select" [(ngModel)]="manual.method"><option value="check">Check</option><option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></div>
+          <div class="form-group"><label class="form-label" for="mp-date">Date received</label><input id="mp-date" class="form-control" type="date" [(ngModel)]="manual.paidAt" /></div>
+          <div class="form-group"><label class="form-label" for="mp-ref">Reference (optional)</label><input id="mp-ref" class="form-control" [(ngModel)]="manual.reference" placeholder="Check no. — never card numbers" /></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="mp-note">Note (optional)</label><input id="mp-note" class="form-control" [(ngModel)]="manual.note" /></div>
+        <div class="row-actions end">
+          <button class="btn btn-ghost" (click)="showManual.set(false)">Cancel</button>
+          <button class="btn btn-primary" (click)="recordManual()" [disabled]="busy() === 'manual'">{{ busy() === 'manual' ? 'Recording…' : 'Record payment' }}</button>
+        </div>
+      </div>
+    }
+    @for (p of ws().payments; track p.id) {
+      <div class="payment">
+        <div>
+          <strong>{{ p.amountCents | money: p.currency }}</strong>
+          <span class="tag" [class.tag-success]="p.source === 'stripe'" [class.tag-muted]="p.source === 'manual'">{{ p.source === 'stripe' ? 'Confirmed by Stripe' : 'Recorded manually' }}</span>
+          <span class="tag tag-muted">{{ p.kind === 'initial' ? 'Sale' : p.kind === 'renewal' ? 'Renewal' : 'Other payment' }}</span>
+          @if (p.stripeMode && p.stripeMode !== 'live') { <span class="tag tag-warning">{{ modeLabel(p.stripeMode) }}</span> }
+          @if (p.status !== 'succeeded') { <span class="tag tag-danger">{{ p.status.replace('_', ' ') }}</span> }
+          <div class="text-xs text-muted">{{ p.paidAt | date: 'MMM d, y' }}@if (p.method) { · {{ p.method.replace('_', ' ') }} }@if (p.reference) { · {{ p.reference }} }@if (p.recordedBy) { · by {{ p.recordedBy.name }} }@if (!p.forThisDeal) { · another deal for this business }</div>
+        </div>
+        <div class="row-actions">
+          @if (p.receiptUrl) { <a class="btn btn-ghost btn-sm" [href]="p.receiptUrl" target="_blank" rel="noopener">Receipt</a> }
+          @if (p.invoiceUrl) { <a class="btn btn-ghost btn-sm" [href]="p.invoiceUrl" target="_blank" rel="noopener">Invoice</a> }
+        </div>
+      </div>
+    } @empty { <p class="muted-box">No payments yet.</p> }
+  </section>
+
+  <!-- Billing -->
+  @if (linked() || ws().clientId) {
+    <section class="block">
+      <header class="block-head">
+        <div><h4>Billing &amp; subscriptions</h4><p>Read from Stripe when you refresh.</p></div>
+        <button class="btn btn-ghost btn-sm" (click)="loadBilling(true)" [disabled]="busy() === 'billing'">{{ busy() === 'billing' ? 'Loading…' : 'Refresh from Stripe' }}</button>
+      </header>
+      @if (billing(); as b) {
+        @if (b.liveError) { <div class="alert alert-warning">{{ b.liveError }}</div> }
+        @for (sub of b.subscriptions; track sub.id) {
+          <div class="payment">
+            <div>
+              <strong>{{ sub.productName || 'Subscription' }}</strong>
+              <span class="tag" [class.tag-success]="sub.status === 'active' || sub.status === 'trialing'" [class.tag-danger]="sub.status === 'past_due' || sub.status === 'unpaid'">{{ sub.status.replace('_', ' ') }}</span>
+              <div class="text-xs text-muted">
+                @if (sub.amountCents) { {{ sub.amountCents | money: (sub.currency || 'usd') }} / {{ sub.interval }} · }
+                @if (sub.currentPeriodEnd) { {{ sub.cancelAtPeriodEnd ? 'ends' : 'next bill' }} {{ sub.currentPeriodEnd | date: 'MMM d, y' }} }
+              </div>
+            </div>
+          </div>
+        } @empty { <p class="text-sm text-muted">No subscriptions.</p> }
+        @if (b.invoices) {
+          <p class="eyebrow mt-4">Invoices</p>
+          @for (inv of b.invoices; track inv.id) {
+            <div class="payment">
+              <div><strong>{{ inv.number || inv.id }}</strong> <span class="tag tag-muted">{{ inv.status }}</span>
+                <div class="text-xs text-muted">{{ inv.created | date: 'MMM d, y' }} · {{ inv.amountPaid | money: inv.currency }} paid of {{ inv.amountDue | money: inv.currency }}</div></div>
+              @if (inv.hostedInvoiceUrl) { <a class="btn btn-ghost btn-sm" [href]="inv.hostedInvoiceUrl" target="_blank" rel="noopener">View</a> }
+            </div>
+          } @empty { <p class="text-sm text-muted">No invoices in Stripe.</p> }
+        }
+      }
+      @if (ws().clientId) { <a class="text-sm" [routerLink]="['/app/clients', ws().clientId, 'billing']">Open the client’s billing tab →</a> }
+    </section>
+  }
+</div>

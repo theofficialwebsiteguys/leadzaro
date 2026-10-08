@@ -1,9 +1,14 @@
 <div class="auth-page">
   <div class="auth-card">
 
-    <div class="auth-logo">⚡ Leadzaro</div>
-    <h2>Welcome back</h2>
-    <p class="auth-sub">Sign in to your account</p>
+    <div class="brand-lockup">
+      <div class="brand-chip"><img src="/logo.png" alt="" class="brand-mark" /></div>
+      <span class="brand-name">Leadzaro</span>
+    </div>
+    <div class="brand-powered">Powered by <span>TWG</span></div>
+
+    <h2>Internal Access</h2>
+    <p class="auth-sub">Sign in with your Website Guys account</p>
 
     @if (errorMsg()) {
       <div class="alert alert-error">{{ errorMsg() }}</div>
@@ -59,7 +64,7 @@
     </form>
 
     <p class="auth-footer">
-      New to Leadzaro? Ask an administrator to send you an invitation.
+      This is an internal tool for The Website Guys. No account? Contact your administrator for access.
     </p>
 
   </div>

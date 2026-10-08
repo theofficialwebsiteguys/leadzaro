@@ -46,4 +46,11 @@ export interface Subscription {
   currentPeriodStart?: string | null;
   currentPeriodEnd?: string | null;
   billingAccount?: { organization?: { id: string; name: string } };
+  servicePlan?: ServicePlan;
+}
+
+export interface ProjectBilling {
+  stripeCustomerId: string | null;
+  billingAccountStatus: string;
+  subscriptions: Subscription[];
 }

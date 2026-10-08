@@ -1,0 +1,168 @@
+<div class="page">
+  <div class="tab-head">
+    <p class="tab-subtitle">Everything we’re building or running for this client. Each project opens its own workspace for tasks, meetings and requests.</p>
+    @if (canEdit() && !addOpen()) {
+      <button class="btn btn-primary btn-sm" (click)="openAdd()"><lz-icon name="plus" [size]="14" /> Add project</button>
+    }
+  </div>
+
+  @if (notice()) {
+    <div class="alert alert-info mb-4">{{ notice() }}</div>
+    @if (savedMatch(); as m) { <app-domain-match [match]="m" /> }
+  }
+
+  <ng-template #projectFormTpl>
+    <form class="project-form card" (ngSubmit)="save()">
+      <h2>{{ editingId() ? 'Edit project' : 'New project' }}</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label" for="project-name">Project name</label>
+          <input id="project-name" class="form-control" name="name" [(ngModel)]="form.name" required placeholder="e.g. Main website" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="project-type">Type</label>
+          <select id="project-type" class="form-select" name="projectType" [(ngModel)]="form.projectType">
+            <option value="">Not set</option>
+            @for (type of projectTypes; track type) { <option [value]="type">{{ typeLabels[type] }}</option> }
+          </select>
+        </div>
+        <div class="form-group span-2">
+          <label class="form-label" for="project-description">Description</label>
+          <textarea id="project-description" class="form-control" name="description" rows="2" [(ngModel)]="form.description"
+            placeholder="Scope, goals, anything the team should know"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="project-live">Live URL</label>
+          <input id="project-live" class="form-control" name="liveUrl" [(ngModel)]="form.liveUrl" placeholder="example.com"
+            (blur)="liveLookup.check(form.liveUrl, store.clientId)" />
+          <app-domain-match [lookup]="liveLookup.result()" [checking]="liveLookup.checking()" [lookupFailed]="liveLookup.failed()" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="project-preview">Preview / staging URL</label>
+          <input id="project-preview" class="form-control" name="previewUrl" [(ngModel)]="form.previewUrl" placeholder="staging.example.com" />
+        </div>
+      </div>
+
+      <div class="preview-picker">
+        <span class="form-label">Preview image</span>
+        <div class="preview-row">
+          <div class="preview-current">
+            @if (pendingPreviewUrl()) {
+              <img [src]="pendingPreviewUrl()" alt="Selected preview" />
+            } @else {
+              <span class="text-sm text-muted">None</span>
+            }
+          </div>
+          <div class="preview-actions">
+            <label class="btn btn-outline btn-sm">
+              Upload image
+              <input type="file" accept="image/*" class="visually-hidden" (change)="onPreviewSelected($event)" />
+            </label>
+            @if (pendingPreviewUrl()) {
+              <button type="button" class="btn btn-ghost btn-sm" (click)="clearPreview()">Remove</button>
+            }
+          </div>
+        </div>
+        @if (store.imageFiles().length) {
+          <div class="image-choices">
+            @for (file of store.imageFiles(); track file.id) {
+              <button type="button" class="image-choice" [class.selected]="file.id === previewFileId()" (click)="choosePreview(file.id, file.thumbnailUrl || file.url)" [attr.aria-label]="'Use ' + file.originalName">
+                <img [src]="file.thumbnailUrl || file.url" [alt]="file.originalName" />
+              </button>
+            }
+          </div>
+        }
+      </div>
+
+      @if (error()) {
+        <div class="alert alert-error">{{ error() }}</div>
+      }
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" (click)="cancel()">Cancel</button>
+        <button type="submit" class="btn btn-primary" [disabled]="!form.name.trim() || saving()">{{ saving() ? 'Saving…' : (editingId() ? 'Save project' : 'Add project') }}</button>
+      </div>
+    </form>
+  </ng-template>
+
+  @if (addOpen()) {
+    <ng-container *ngTemplateOutlet="projectFormTpl" />
+  }
+
+  @for (project of projects(); track project.id) {
+    @if (editingId() === project.id) {
+      <ng-container *ngTemplateOutlet="projectFormTpl" />
+    } @else {
+      <article class="project card">
+        <div class="project-media">
+          @if (project.previewImage) {
+            <img [src]="project.previewImage.mediumUrl || project.previewImage.url" [alt]="project.displayName + ' preview'" />
+          } @else {
+            <div class="media-empty">
+              <span>{{ typeLabel(project.projectType) }}</span>
+              @if (canEdit()) { <button class="btn btn-ghost btn-sm" (click)="startEdit(project)">Add preview image</button> }
+            </div>
+          }
+        </div>
+
+        <div class="project-info">
+          <div class="project-top">
+            <div>
+              <h2>{{ project.displayName }}</h2>
+              <span class="text-sm text-muted">{{ typeLabel(project.projectType) }}</span>
+            </div>
+            <div class="project-actions">
+              @if (canEdit()) { <button class="btn btn-outline btn-sm" (click)="startEdit(project)">Edit</button> }
+              <a class="btn btn-primary btn-sm" [routerLink]="['/app/projects', project.id, 'overview']">Open workspace</a>
+            </div>
+          </div>
+
+          @if (project.description) { <p class="project-description">{{ project.description }}</p> }
+
+          <div class="project-meta">
+            <label class="stage-field">
+              <span class="field-label">Stage</span>
+              @if (org.hasPermission('projects.change_stage')) {
+                <select class="form-select" [ngModel]="project.stage" (ngModelChange)="changeStage(project, $event)" [attr.aria-label]="'Stage for ' + project.displayName">
+                  @for (stage of stages; track stage) { <option [value]="stage">{{ stage }}</option> }
+                </select>
+              } @else {
+                <span>{{ project.stage }}</span>
+              }
+            </label>
+            <div class="project-links">
+              @if (project.liveUrl) { <a [href]="project.liveUrl" target="_blank" rel="noopener">{{ project.liveUrl | host }} ↗</a> }
+              @if (project.previewUrl) { <a [href]="project.previewUrl" target="_blank" rel="noopener">Preview: {{ project.previewUrl | host }} ↗</a> }
+              @if (!project.liveUrl && !project.previewUrl && canEdit()) { <button class="link-button" (click)="startEdit(project)">+ Add URLs</button> }
+            </div>
+          </div>
+
+          <div class="needs">
+            <span class="field-label">Still needed @if (openCount(project)) { · {{ openCount(project) }} open }</span>
+            @for (need of project.outstandingNeeds; track need.id) {
+              <div class="need" [class.done]="need.done">
+                <label>
+                  <input type="checkbox" [checked]="need.done" [disabled]="!canEdit()" (change)="toggleNeed(project, need)" />
+                  <span>{{ need.label }}</span>
+                </label>
+                @if (canEdit()) { <button class="link-button" (click)="removeNeed(project, need)" [attr.aria-label]="'Remove ' + need.label">Remove</button> }
+              </div>
+            }
+            @if (canEdit()) {
+              <form class="need-add" (ngSubmit)="addNeed(project)">
+                <input class="form-control" [name]="'need-' + project.id" [(ngModel)]="needDrafts[project.id]" placeholder="e.g. Logo files from client" [attr.aria-label]="'Add a still-needed item to ' + project.displayName" />
+                <button type="submit" class="btn btn-ghost btn-sm">Add</button>
+              </form>
+            }
+          </div>
+        </div>
+      </article>
+    }
+  } @empty {
+    @if (!addOpen()) {
+      <div class="compact-empty">
+        <span>No projects yet — add the website, app or engagement you’re doing for this client.</span>
+        @if (canEdit()) { <button class="btn btn-primary btn-sm" (click)="openAdd()">Add project</button> }
+      </div>
+    }
+  }
+</div>

@@ -74,4 +74,6 @@ function listForOpportunity(opportunityId, agencyOrganizationId) {
   });
 }
 
+// createPaymentLink/listForOpportunity are superseded by
+// modules/sales/paymentRequestService.js (ADR 0011); kept for existing callers.
 module.exports = { createPaymentLink, listServicePlans, listForOpportunity };

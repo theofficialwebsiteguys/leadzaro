@@ -1,0 +1,10 @@
+<div class="empty-state">
+  <div class="empty-state-icon"><lz-icon [name]="icon()" [size]="22" /></div>
+  <div class="empty-state-title">{{ title() }}</div>
+  @if (description()) {
+    <p class="empty-state-desc">{{ description() }}</p>
+  }
+  @if (actionLabel()) {
+    <button class="btn btn-outline btn-sm" (click)="action.emit()">{{ actionLabel() }}</button>
+  }
+</div>

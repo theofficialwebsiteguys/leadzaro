@@ -29,7 +29,20 @@ export interface Project {
   launchedAt: string | null;
   cancellationRequestedAt: string | null;
   sourceConversionAttemptId: string | null;
+  // Nullable for projects that predate multi-project clients — display
+  // falls back to organization.name (see projectDisplayName).
+  name: string | null;
+  projectType: string | null;
+  description: string | null;
+  liveUrl: string | null;
+  previewUrl: string | null;
+  previewFileId: string | null;
+  outstandingNeeds: { id: string; label: string; done: boolean }[];
   organization?: { id: string; name: string };
+}
+
+export function projectDisplayName(project: Pick<Project, 'name' | 'organization'>): string {
+  return project.name || project.organization?.name || 'Untitled project';
 }
 
 export const PROJECT_ROLE_SLOTS = ['owner', 'project_manager', 'designer', 'advanced_designer', 'developer', 'support', 'billing'] as const;

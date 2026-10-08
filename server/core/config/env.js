@@ -11,6 +11,12 @@ const KNOWN_INSECURE_DEFAULTS = new Set([
   '',
 ]);
 
+function defaultStorageProvider() {
+  if (IS_PRODUCTION) return 'disabled';
+  if (NODE_ENV === 'test') return 'mock';
+  return 'local';
+}
+
 const KNOWN_PLACEHOLDER_VALUES = new Set([
   'your_google_places_api_key_here',
   'sk_test_placeholder',
@@ -31,13 +37,34 @@ function checkCoreSecrets(errors, warnings) {
     (IS_PRODUCTION ? errors : warnings).push(msg);
   }
 
+  // Hosted Postgres (Heroku) provides a single DATABASE_URL instead.
+  if (process.env.DATABASE_URL && NODE_ENV !== 'test') return;
+
   if (!process.env.DB_PASS || process.env.DB_PASS === 'leadzaro_pass') {
     const msg = 'DB_PASS is missing or the known local-development default.';
     (IS_PRODUCTION ? errors : warnings).push(msg);
   }
 
   if (!process.env.DB_NAME || !process.env.DB_USER || !process.env.DB_HOST) {
-    errors.push('DB_NAME, DB_USER, and DB_HOST are all required.');
+    errors.push('DB_NAME, DB_USER, and DB_HOST are all required (or DATABASE_URL on hosted Postgres).');
+  }
+}
+
+/**
+ * INTEGRATION_SECRETS_KEY encrypts third-party credentials an admin saves
+ * in the app (e.g. the Namecheap API key). It is optional — nothing
+ * depends on an integration being connected — but when set it must be a
+ * real 32-byte key, and production cannot store credentials without it.
+ */
+function checkIntegrationSecretsKey(errors, warnings) {
+  const raw = process.env.INTEGRATION_SECRETS_KEY || '';
+  if (!raw) {
+    if (IS_PRODUCTION) warnings.push('INTEGRATION_SECRETS_KEY is not set; integration credentials (e.g. Namecheap) cannot be saved until it is.');
+    return;
+  }
+  const decoded = /^[0-9a-f]{64}$/i.test(raw) ? Buffer.from(raw, 'hex') : Buffer.from(raw, 'base64');
+  if (decoded.length !== 32) {
+    (IS_PRODUCTION ? errors : warnings).push('INTEGRATION_SECRETS_KEY must be 32 random bytes, base64- or hex-encoded (e.g. `openssl rand -base64 32`).');
   }
 }
 
@@ -88,6 +115,7 @@ function validateEnv() {
   const warnings = [];
 
   checkCoreSecrets(errors, warnings);
+  checkIntegrationSecretsKey(errors, warnings);
   checkProductionHardening(errors, warnings);
 
   const defaultProvider = IS_PRODUCTION ? 'disabled' : 'mock';
@@ -158,6 +186,34 @@ const env = {
   STRIPE_PROVIDER: process.env.STRIPE_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '',
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
+  // Checkout/Payment Link behaviour that must match the Stripe account
+  // (ADR 0011): only turn tax on once Stripe Tax is set up in the account.
+  STRIPE_AUTOMATIC_TAX: process.env.STRIPE_AUTOMATIC_TAX === 'true',
+  STRIPE_ALLOW_PROMOTION_CODES: process.env.STRIPE_ALLOW_PROMOTION_CODES === 'true',
+  STRIPE_DEFAULT_CURRENCY: (process.env.STRIPE_DEFAULT_CURRENCY || 'usd').toLowerCase(),
+  STRIPE_CHECKOUT_EXPIRY_HOURS: Math.min(24, Math.max(1, parseInt(process.env.STRIPE_CHECKOUT_EXPIRY_HOURS, 10) || 24)),
+
+  // Outreach channels (ADR 0011). Email sends through SMTP when
+  // EMAIL_PROVIDER=smtp; texts and click-to-call through Twilio when its
+  // three values are set. Neither is simulated: an unconfigured channel is
+  // shown as not connected and outreach is logged by hand instead.
+  SMTP_HOST: process.env.SMTP_HOST || '',
+  SMTP_PORT: parseInt(process.env.SMTP_PORT, 10) || 587,
+  SMTP_SECURE: process.env.SMTP_SECURE === 'true',
+  SMTP_USER: process.env.SMTP_USER || '',
+  SMTP_PASSWORD: process.env.SMTP_PASSWORD || '',
+  SALES_EMAIL_FROM: process.env.SALES_EMAIL_FROM || '',
+  TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
+  TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',
+  TWILIO_FROM_NUMBER: process.env.TWILIO_FROM_NUMBER || '',
+  TWILIO_MESSAGING_SERVICE_SID: process.env.TWILIO_MESSAGING_SERVICE_SID || '',
+  // Public https base URL of this API, used for Twilio delivery/reply
+  // callbacks. Without it texts still send but delivery states and replies
+  // cannot arrive.
+  PUBLIC_API_BASE_URL: (process.env.PUBLIC_API_BASE_URL || '').replace(/\/$/, ''),
+  // Leadzaro is internal-only: paying clients are not invited to log in
+  // unless this is explicitly turned back on.
+  CLIENT_PORTAL_AUTO_INVITE: process.env.CLIENT_PORTAL_AUTO_INVITE === 'true',
 
   // No real Google Calendar/Cloud Storage credentials exist yet. Same
   // reasoning as ENRICHMENT_PROVIDER/STRIPE_PROVIDER: mock in dev, but
@@ -166,7 +222,12 @@ const env = {
   GOOGLE_CALENDAR_CREDENTIALS_JSON: process.env.GOOGLE_CALENDAR_CREDENTIALS_JSON || '',
   GOOGLE_CALENDAR_ID: process.env.GOOGLE_CALENDAR_ID || '',
 
-  STORAGE_PROVIDER: process.env.STORAGE_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
+  // Development defaults to 'local' (real files on disk, served through
+  // short-lived signed links) so uploads can actually be previewed and
+  // downloaded while building; tests keep the in-memory 'mock';
+  // production stays disabled unless 'live' (GCS) is configured.
+  STORAGE_PROVIDER: process.env.STORAGE_PROVIDER || defaultStorageProvider(),
+  LOCAL_STORAGE_DIR: process.env.LOCAL_STORAGE_DIR || 'server/.dev-storage',
   GCS_CREDENTIALS_JSON: process.env.GCS_CREDENTIALS_JSON || '',
   GCS_BUCKET_NAME: process.env.GCS_BUCKET_NAME || '',
 
@@ -207,6 +268,18 @@ const env = {
   // reasoning as every other provider above.
   SEO_AUDIT_PROVIDER: process.env.SEO_AUDIT_PROVIDER || (IS_PRODUCTION ? 'disabled' : 'mock'),
   SEO_AUDIT_API_CREDENTIALS_JSON: process.env.SEO_AUDIT_API_CREDENTIALS_JSON || '',
+
+  // Read-only registrar sync (ADR 0009) — unrelated to NAMECHEAP_PROVIDER
+  // above, which belongs to the hidden website builder. There is no mock
+  // mode: the connection is either a real, verified Namecheap account an
+  // admin entered in Settings, or it is not connected. Credentials are
+  // stored encrypted with this key (see core/security/secretBox.js).
+  INTEGRATION_SECRETS_KEY: process.env.INTEGRATION_SECRETS_KEY || '',
+
+  // The in-process daily scheduler (core/jobs/scheduler.js). Off in tests;
+  // a deployment whose API process does not stay running can instead run
+  // `npm run jobs:run` from an external scheduler.
+  JOBS_ENABLED: process.env.JOBS_ENABLED ? process.env.JOBS_ENABLED === 'true' : NODE_ENV !== 'test',
 };
 
 module.exports = { env, validateEnv };

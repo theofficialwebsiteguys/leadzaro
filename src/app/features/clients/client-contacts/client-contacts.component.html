@@ -1,0 +1,83 @@
+<div class="page">
+  <div class="tab-head">
+    <p class="tab-subtitle">The people we work with at this business. The primary contact is shown on the overview.</p>
+    @if (canEdit() && editing() !== 'new') {
+      <button class="btn btn-primary btn-sm" (click)="startAdd()"><lz-icon name="plus" [size]="14" /> Add contact</button>
+    }
+  </div>
+
+  <ng-template #contactFormTpl>
+    <form class="contact-form card" (ngSubmit)="save()">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label" for="contact-name">Name</label>
+          <input id="contact-name" class="form-control" name="name" [(ngModel)]="form.name" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="contact-title">Role</label>
+          <input id="contact-title" class="form-control" name="title" [(ngModel)]="form.title" placeholder="Owner, Marketing manager…" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="contact-email">Email</label>
+          <input id="contact-email" class="form-control" type="email" name="email" [(ngModel)]="form.email" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="contact-phone">Phone</label>
+          <input id="contact-phone" class="form-control" type="tel" name="phone" [(ngModel)]="form.phone" lzPhone placeholder="(555) 123-4567" />
+        </div>
+      </div>
+      <label class="checkbox-row">
+        <input type="checkbox" name="isPrimary" [(ngModel)]="form.isPrimary" /> Primary contact
+      </label>
+      @if (error()) {
+        <div class="alert alert-error">{{ error() }}</div>
+      }
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" (click)="editing.set(null)">Cancel</button>
+        <button type="submit" class="btn btn-primary" [disabled]="!form.name.trim() || saving()">{{ saving() ? 'Saving…' : 'Save contact' }}</button>
+      </div>
+    </form>
+  </ng-template>
+
+  @if (editing() === 'new') {
+    <ng-container *ngTemplateOutlet="contactFormTpl" />
+  }
+
+  <div class="contact-list">
+    @for (contact of contacts(); track contact.id) {
+      @if (editing() === contact.id) {
+        <ng-container *ngTemplateOutlet="contactFormTpl" />
+      } @else {
+        <article class="contact card">
+          <div class="avatar">{{ initialsOf(contact.name) }}</div>
+          <div class="contact-main">
+            <div class="contact-name-row">
+              <span class="contact-name">{{ contact.name }}</span>
+              @if (contact.isPrimary) { <span class="primary-badge">Primary</span> }
+            </div>
+            @if (contact.title) { <span class="text-sm text-muted">{{ contact.title }}</span> }
+            <div class="contact-lines">
+              @if (contact.email) { <a [href]="'mailto:' + contact.email"><lz-icon name="mail" [size]="14" /> {{ contact.email }}</a> }
+              @if (contact.phone) { <a [href]="'tel:' + contact.phone"><lz-icon name="phone" [size]="14" /> {{ contact.phone | phone }}</a> }
+              @if (!contact.email && !contact.phone && canEdit()) { <button class="link-button" (click)="startEdit(contact)">+ Add email or phone</button> }
+            </div>
+          </div>
+          @if (canEdit()) {
+            <div class="contact-actions">
+              <button class="btn btn-ghost btn-sm" (click)="startEdit(contact)">Edit</button>
+              @if (!contact.isPrimary) { <button class="btn btn-ghost btn-sm" (click)="makePrimary(contact)">Make primary</button> }
+              <button class="btn btn-ghost btn-sm danger" (click)="remove(contact)">Remove</button>
+            </div>
+          }
+        </article>
+      }
+    } @empty {
+      @if (editing() !== 'new') {
+        <div class="compact-empty">
+          <span>No contacts yet.</span>
+          @if (canEdit()) { <button class="btn btn-primary btn-sm" (click)="startAdd()">Add contact</button> }
+        </div>
+      }
+    }
+  </div>
+</div>

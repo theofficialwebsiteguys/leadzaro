@@ -1,0 +1,114 @@
+.nc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+
+  h3 { margin: 0; }
+}
+
+.nc-sub {
+  margin: 4px 0 0;
+  font-size: .82rem;
+  color: var(--text-muted);
+  max-width: 560px;
+}
+
+.nc-status {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: .75rem;
+  font-weight: 600;
+  background: var(--border-light);
+  color: var(--text-secondary);
+
+  &.status-connected { background: rgba(16, 185, 129, .12); color: var(--success-text, #047857); }
+  &.status-error { background: rgba(239, 68, 68, .1); color: var(--danger-text, #b91c1c); }
+  &.status-unverified, &.status-syncing { background: rgba(99, 102, 241, .12); color: var(--primary-dark); }
+}
+
+.nc-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0 0 14px;
+  font-size: .875rem;
+
+  dt { color: var(--text-muted); }
+  dd { margin: 0; }
+}
+
+.nc-badge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  font-size: .7rem;
+  font-weight: 600;
+  background: rgba(245, 158, 11, .14);
+  color: var(--warning-text);
+}
+
+.sync-success { color: var(--success-text, #047857); font-weight: 500; }
+.sync-partial, .sync-interrupted { color: var(--warning-text); font-weight: 500; }
+.sync-failed { color: var(--danger-text, #b91c1c); font-weight: 500; }
+.nc-warn { color: var(--warning-text); }
+
+.nc-error { margin-bottom: 14px; }
+
+.nc-issues {
+  margin-bottom: 14px;
+  font-size: .82rem;
+  color: var(--text-secondary);
+
+  summary { cursor: pointer; color: var(--warning-text); }
+  ul { margin: 8px 0 0; padding-left: 18px; }
+}
+
+.nc-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  .spacer { flex: 1; }
+}
+
+.nc-disconnect { color: var(--text-muted); }
+
+.nc-steps {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: .86rem;
+  color: var(--text-secondary);
+
+  strong { color: var(--text-primary); }
+  .form-hint { display: block; margin-top: 4px; }
+}
+
+.nc-detect {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.nc-ip {
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  background: var(--border-light);
+  font-size: .85rem;
+  user-select: all;
+}
+
+.nc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+
+  @media (max-width: 640px) { grid-template-columns: 1fr; }
+}

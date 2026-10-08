@@ -1,0 +1,35 @@
+<div class="project-shell">
+  <div class="project-header">
+    <div class="project-header-identity">
+      @if (project(); as p) {
+        <a class="back-link" [routerLink]="['/app/clients', p.organizationId]"><span aria-hidden="true">←</span> {{ p.organization?.name }}</a>
+        <h1>{{ displayName(p) }}</h1>
+        <div class="project-header-meta">
+          <span class="text-sm text-muted">{{ p.stage }}</span>
+          <span class="health-badge" [class]="'health-' + p.healthStatus">{{ p.healthStatus | label }}</span>
+        </div>
+      } @else {
+        <span class="project-header-eyebrow">Project</span>
+        <h1>&nbsp;</h1>
+      }
+    </div>
+
+    <div class="project-switcher-wrap">
+      <lz-icon name="folder" [size]="16" />
+      <app-project-picker basePath="/app/projects" [compact]="true" [currentProjectId]="projectId()" />
+    </div>
+  </div>
+
+  <nav class="project-tabs">
+    @for (tab of tabs; track tab.segment) {
+      <a class="project-tab" [routerLink]="[tab.segment]" routerLinkActive="active">
+        <lz-icon [name]="tab.icon" [size]="16" />
+        <span>{{ tab.label }}</span>
+      </a>
+    }
+  </nav>
+
+  <div class="project-tab-content">
+    <router-outlet />
+  </div>
+</div>

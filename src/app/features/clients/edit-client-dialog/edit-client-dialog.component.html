@@ -1,0 +1,75 @@
+<app-dialog title="Edit client" [open]="store.editClientOpen()" [wide]="true" (closed)="close()">
+  <form id="edit-client-form" (ngSubmit)="save()">
+    <div class="logo-editor">
+      <div class="logo-preview">
+        @if (logoPreviewUrl()) {
+          <img [src]="logoPreviewUrl()" alt="Logo preview" />
+        } @else {
+          <span>{{ initialsOf(form.name) }}</span>
+        }
+      </div>
+      <div class="logo-actions">
+        <span class="form-label">Logo</span>
+        <div class="logo-buttons">
+          <label class="btn btn-outline btn-sm">
+            Upload logo
+            <input type="file" accept="image/*" class="visually-hidden" (change)="onLogoSelected($event)" />
+          </label>
+          @if (store.imageFiles().length) {
+            <button type="button" class="btn btn-ghost btn-sm" (click)="choosingLogo.set(!choosingLogo())">Choose from media</button>
+          }
+          @if (logoPreviewUrl()) {
+            <button type="button" class="btn btn-ghost btn-sm" (click)="removeLogo()">Remove</button>
+          }
+        </div>
+      </div>
+    </div>
+
+    @if (choosingLogo()) {
+      <div class="logo-picker">
+        @for (file of store.imageFiles(); track file.id) {
+          <button type="button" class="logo-choice" [class.selected]="file.id === logoFileId()" (click)="chooseExistingLogo(file.id, file.thumbnailUrl || file.url)" [attr.aria-label]="'Use ' + file.originalName">
+            <img [src]="file.thumbnailUrl || file.url" [alt]="file.originalName" />
+          </button>
+        }
+      </div>
+    }
+
+    <div class="form-group">
+      <label class="form-label" for="client-name">Client name</label>
+      <input id="client-name" class="form-control" name="name" [(ngModel)]="form.name" required />
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="client-description">Description</label>
+      <textarea id="client-description" class="form-control" name="description" rows="3" [(ngModel)]="form.description"
+        placeholder="What the business does, who it serves"></textarea>
+    </div>
+
+    <fieldset class="address">
+      <legend class="form-label">Address</legend>
+      <input class="form-control span-2" name="addressLine1" [(ngModel)]="form.addressLine1" placeholder="Street address" aria-label="Street address" />
+      <input class="form-control span-2" name="addressLine2" [(ngModel)]="form.addressLine2" placeholder="Suite, unit (optional)" aria-label="Address line 2" />
+      <input class="form-control" name="city" [(ngModel)]="form.city" placeholder="City" aria-label="City" />
+      <input class="form-control" name="state" [(ngModel)]="form.state" placeholder="State" aria-label="State" />
+      <input class="form-control" name="postalCode" [(ngModel)]="form.postalCode" lzZip placeholder="ZIP / postal code" aria-label="Postal code" />
+      <input class="form-control" name="country" [(ngModel)]="form.country" placeholder="Country" aria-label="Country" />
+    </fieldset>
+
+    <div class="form-group">
+      <label class="form-label" for="client-internal-notes">Internal notes</label>
+      <textarea id="client-internal-notes" class="form-control" name="internalNotes" rows="3" [(ngModel)]="form.internalNotes"
+        placeholder="Standing context for the team — preferences, history, how they like to work"></textarea>
+      <p class="form-hint">Team-only. Don’t put passwords here.</p>
+    </div>
+
+    @if (error()) {
+      <div class="alert alert-error">{{ error() }}</div>
+    }
+  </form>
+  <ng-container dialog-actions>
+    <button type="button" class="btn btn-ghost" (click)="close()">Cancel</button>
+    <button type="submit" form="edit-client-form" class="btn btn-primary" [disabled]="!form.name.trim() || saving()">
+      {{ saving() ? 'Saving…' : 'Save changes' }}
+    </button>
+  </ng-container>
+</app-dialog>

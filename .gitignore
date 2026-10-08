@@ -57,3 +57,6 @@ logs/
 
 # Local exports / dev outbox (console email adapter writes here in dev)
 /server/.dev-outbox/
+
+# Uploaded files when STORAGE_PROVIDER=local (development default)
+/server/.dev-storage/

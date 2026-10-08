@@ -291,4 +291,21 @@ describe('ensureProjectForConversion (closing the Phase 3 -> Phase 4 loop)', () 
     const channels = await ProjectChannel.findAll({ where: { projectId: project.id }, __visibilityScoped: true });
     expect(channels.length).toBe(8);
   });
+
+  test('two concurrent deliveries of one conversion still yield exactly one project', async () => {
+    const { ensureProjectForConversion } = require('../modules/projects/projectService');
+    const agency = await createOrganization(sequelize.models, { type: 'agency' });
+    const clientOrg = await createOrganization(sequelize.models, { type: 'client', managingAgencyOrganizationId: agency.id });
+    const conversionAttempt = await sequelize.models.ConversionAttempt.create({
+      agencyOrganizationId: agency.id, source: 'manual', status: 'succeeded', resultingClientOrganizationId: clientOrg.id,
+    });
+
+    const [first, second] = await Promise.all([
+      ensureProjectForConversion({ alreadyConverted: false, conversionAttempt }),
+      ensureProjectForConversion({ alreadyConverted: false, conversionAttempt }),
+    ]);
+    expect(first.id).toBe(second.id);
+    const projects = await Project.findAll({ where: { sourceConversionAttemptId: conversionAttempt.id }, __visibilityScoped: true });
+    expect(projects).toHaveLength(1);
+  });
 });

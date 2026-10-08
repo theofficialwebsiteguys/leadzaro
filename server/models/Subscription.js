@@ -19,7 +19,7 @@ module.exports = (sequelize) => {
     },
     servicePlanId: {
       type: DataTypes.UUID,
-      allowNull: false,
+      allowNull: true,
     },
     stripeSubscriptionId: {
       type: DataTypes.STRING(255),
@@ -48,6 +48,16 @@ module.exports = (sequelize) => {
       type: DataTypes.DATE,
       allowNull: true,
     },
+    stripeCustomerId: { type: DataTypes.STRING(255), allowNull: true },
+    stripeMode: { type: DataTypes.STRING(10), allowNull: true },
+    amountCents: { type: DataTypes.INTEGER, allowNull: true },
+    currency: { type: DataTypes.STRING(3), allowNull: true },
+    interval: { type: DataTypes.STRING(10), allowNull: true },
+    productName: { type: DataTypes.STRING(255), allowNull: true },
+    cancelAtPeriodEnd: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    canceledAt: { type: DataTypes.DATE, allowNull: true },
+    // Stripe event time of the last applied update — older events never overwrite newer state.
+    stripeUpdatedAt: { type: DataTypes.DATE, allowNull: true },
   });
 
   Subscription.associate = (models) => {

@@ -1,7 +1,10 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const { env } = require('../config/env');
+const { signFileToken } = require('./signedFileUrl');
 
 /**
  * File storage provider interface (Phase 4 files — master architecture
@@ -52,10 +55,11 @@ class LiveStorageProvider extends StorageProvider {
     return { key, provider: 'gcs' };
   }
 
-  async getSignedUrl(key, { expiresInSeconds = 900 } = {}) {
+  async getSignedUrl(key, { expiresInSeconds = 900, downloadName } = {}) {
     const [url] = await this.bucket.file(key).getSignedUrl({
       action: 'read',
       expires: Date.now() + expiresInSeconds * 1000,
+      ...(downloadName ? { responseDisposition: `attachment; filename="${downloadName.replaceAll('"', '')}"` } : {}),
     });
     return { url, expiresInSeconds };
   }
@@ -96,6 +100,61 @@ class MockStorageProvider extends StorageProvider {
   }
 }
 
+/**
+ * Real files on local disk, for development (and single-server
+ * deployments that accept that trade-off). Objects are stored under a
+ * hash of their key, never the key itself, so an uploaded filename can
+ * never influence the on-disk path. Reads go only through signed links
+ * (see signedFileUrl.js and the /api/v1/files/content route), mirroring
+ * the private-bucket + signed-URL model of the GCS provider.
+ */
+class LocalDiskStorageProvider extends StorageProvider {
+  constructor(rootDir) {
+    super();
+    this.rootDir = path.resolve(rootDir);
+  }
+
+  pathForKey(key) {
+    const digest = crypto.createHash('sha256').update(key).digest('hex');
+    return path.join(this.rootDir, digest.slice(0, 2), digest);
+  }
+
+  async upload({ key, buffer }) {
+    const filePath = this.pathForKey(key);
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.promises.writeFile(filePath, buffer);
+    return { key, provider: 'local' };
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  async getSignedUrl(key, { expiresInSeconds = 900, contentType, downloadName } = {}) {
+    const token = signFileToken({
+      k: key, exp: Date.now() + expiresInSeconds * 1000, ct: contentType || 'application/octet-stream', fn: downloadName || null,
+    });
+    return { url: `/api/v1/files/content?token=${token}`, expiresInSeconds };
+  }
+
+  async open(key) {
+    const filePath = this.pathForKey(key);
+    try {
+      const stat = await fs.promises.stat(filePath);
+      return { stream: fs.createReadStream(filePath), size: stat.size };
+    } catch (err) {
+      if (err.code === 'ENOENT') return null;
+      throw err;
+    }
+  }
+
+  async delete(key) {
+    try {
+      await fs.promises.unlink(this.pathForKey(key));
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+    }
+    return { deleted: true };
+  }
+}
+
 class DisabledStorageProvider extends StorageProvider {
   // eslint-disable-next-line class-methods-use-this
   async upload() {
@@ -129,6 +188,15 @@ function getStorageProvider() {
     return cachedProvider;
   }
 
+  if (env.STORAGE_PROVIDER === 'local') {
+    if (env.IS_PRODUCTION) {
+      // eslint-disable-next-line no-console
+      console.warn('[config] WARNING: STORAGE_PROVIDER=local is set in production — files live on this server\'s disk only (not shared across instances, not backed up by the app).');
+    }
+    cachedProvider = new LocalDiskStorageProvider(env.LOCAL_STORAGE_DIR);
+    return cachedProvider;
+  }
+
   if (env.STORAGE_PROVIDER === 'mock') {
     if (env.IS_PRODUCTION) {
       // eslint-disable-next-line no-console
@@ -143,5 +211,5 @@ function getStorageProvider() {
 }
 
 module.exports = {
-  getStorageProvider, StorageProvider, LiveStorageProvider, MockStorageProvider, DisabledStorageProvider,
+  getStorageProvider, StorageProvider, LiveStorageProvider, LocalDiskStorageProvider, MockStorageProvider, DisabledStorageProvider,
 };

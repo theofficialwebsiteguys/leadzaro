@@ -1,0 +1,133 @@
+<div class="page">
+  <div class="tab-head">
+    <p class="tab-subtitle">The client’s domains, read from Namecheap: status, expiry and nameservers. Changes are made in Namecheap.</p>
+    @if (canEdit() && !adding()) {
+      <button class="btn btn-outline btn-sm" (click)="openAdd()"><lz-icon name="plus" [size]="14" /> Add domain</button>
+    }
+  </div>
+
+  @if (view(); as v) {
+    <div class="conn-strip" [class]="'conn-strip conn-' + (v.connection.connected ? (v.connection.lastSyncStatus === 'failed' ? 'warn' : 'ok') : (v.connection.configured ? 'warn' : 'off'))">
+      <span class="dot"></span>
+      @if (v.connection.syncing) {
+        Namecheap sync running…
+      } @else if (v.connection.connected) {
+        Namecheap connected · last complete sync {{ syncAge(v.connection.lastSuccessfulSyncAt) }}
+        @if (v.connection.lastSyncStatus === 'failed' || v.connection.lastSyncStatus === 'partial') { · last sync {{ v.connection.lastSyncStatus }} — showing the last known details }
+      } @else if (v.connection.configured) {
+        Namecheap needs attention — {{ v.connection.lastError?.message || 'the connection hasn’t been verified' }}. Details below are the last known and manual ones.
+      } @else {
+        Namecheap isn’t connected — details are entered by hand.
+      }
+      @if (isAdmin()) { <a routerLink="/app/settings/integrations" class="conn-link">Settings</a> }
+      <a routerLink="/app/domains" class="conn-link">All renewals</a>
+    </div>
+  }
+
+  @if (lastMatch(); as m) {
+    <app-domain-match [match]="m" />
+  }
+
+  @if (adding()) {
+    <form class="card add-card" (ngSubmit)="addDomain()">
+      <div class="add-grid">
+        <div class="form-group">
+          <label class="form-label" for="new-domain">Domain or website address</label>
+          <input id="new-domain" class="form-control" name="domain" [(ngModel)]="newDomain" placeholder="example.com" autocomplete="off"
+            (blur)="addLookup.check(newDomain, store.clientId)" required />
+          <app-domain-match [lookup]="addLookup.result()" [checking]="addLookup.checking()" [lookupFailed]="addLookup.failed()" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="new-domain-project">Used by</label>
+          <select id="new-domain-project" class="form-select" name="projectId" [(ngModel)]="newDomainProjectId">
+            <option value="">The client as a whole</option>
+            @for (project of view()?.projects ?? []; track project.id) { <option [value]="project.id">{{ project.name }}</option> }
+          </select>
+          <label class="check"><input type="checkbox" name="primary" [(ngModel)]="newDomainPrimary" /> Primary domain</label>
+        </div>
+      </div>
+      @if (addError()) { <div class="alert alert-error">{{ addError() }}</div> }
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost btn-sm" (click)="adding.set(false)">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm" [disabled]="addBusy() || !newDomain.trim()">{{ addBusy() ? 'Adding…' : 'Add domain' }}</button>
+      </div>
+    </form>
+  }
+
+  @if (store.domainsError()) {
+    <div class="alert alert-error">{{ store.domainsError() }}</div>
+  } @else if (!view()) {
+    <p class="text-muted">Loading domains…</p>
+  } @else {
+    @let v = view()!;
+    <section class="section">
+      <h2 class="section-title">Domains</h2>
+      @if (v.domains.length) {
+        <div class="domain-list">
+          @for (domain of v.domains; track domain.id) {
+            <app-domain-card [domain]="domain" [clientId]="store.clientId" [projects]="v.projects" [canEdit]="canEdit()"
+              [canSeeInternals]="v.canSeeInternals" [connection]="v.connection" (changed)="onDomainChanged()" />
+          }
+        </div>
+      } @else {
+        <div class="compact-empty">
+          <span>No domains yet. Adding the client’s website below, a project’s live URL, or a domain here links it automatically.</span>
+          @if (canEdit() && !adding()) { <button class="btn btn-primary btn-sm" (click)="openAdd()">Add domain</button> }
+        </div>
+      }
+    </section>
+  }
+
+  <section class="section">
+    <div class="section-head">
+      <h2 class="section-title">Website &amp; access</h2>
+      @if (canEdit() && !editingWebsite()) { <button class="btn btn-ghost btn-sm" (click)="startWebsiteEdit()">Edit</button> }
+    </div>
+    @if (websiteMatch(); as m) { <app-domain-match [match]="m" /> }
+    @if (editingWebsite()) {
+      <form class="card edit-card" (ngSubmit)="saveWebsite()">
+        <div class="form-group">
+          <label class="form-label" for="site-url">Client website</label>
+          <input id="site-url" class="form-control" name="websiteUrl" [(ngModel)]="website.websiteUrl" placeholder="havenfitclub.com"
+            (blur)="websiteLookup.check(website.websiteUrl, store.clientId)" />
+          <app-domain-match [lookup]="websiteLookup.result()" [checking]="websiteLookup.checking()" [lookupFailed]="websiteLookup.failed()" />
+        </div>
+        <div class="form-group">
+          <span class="form-label">Admin links</span>
+          <p class="form-hint">Registrar, hosting control panel, CMS login — the pages you open to manage this site.</p>
+          <app-link-list-editor [(links)]="links" />
+        </div>
+        @if (store.detail()?.canSeeInternals) {
+          <div class="form-group">
+            <label class="form-label" for="access-notes">Access notes</label>
+            <textarea id="access-notes" class="form-control" name="accessNotes" rows="3" [(ngModel)]="website.accessNotes"
+              placeholder="e.g. Logins are in 1Password under “Haven Fit Club”. Client owns the registrar account."></textarea>
+            <p class="form-hint warn"><lz-icon name="x" [size]="12" /> Never store passwords here — note where credentials are kept instead.</p>
+          </div>
+        }
+        @if (websiteError()) { <div class="alert alert-error">{{ websiteError() }}</div> }
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost btn-sm" (click)="editingWebsite.set(false)">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm" [disabled]="websiteBusy()">{{ websiteBusy() ? 'Saving…' : 'Save' }}</button>
+        </div>
+      </form>
+    } @else {
+      <div class="card info-card">
+        <dl class="facts">
+          <dt>Website</dt>
+          <dd>@if (profile().websiteUrl) { <a [href]="profile().websiteUrl" target="_blank" rel="noopener">{{ profile().websiteUrl | host }} ↗</a> } @else { <span class="text-muted">Not recorded</span> }</dd>
+          <dt>Admin links</dt>
+          <dd>
+            @for (link of profile().adminLinks; track link.url) {
+              <a [href]="link.url" target="_blank" rel="noopener" class="admin-link">{{ link.label || (link.url | host) }} ↗</a>
+            } @empty { <span class="text-muted">None yet</span> }
+          </dd>
+          @if (store.detail()?.canSeeInternals) {
+            <dt>Access notes</dt>
+            <dd class="access-notes">@if (profile().accessNotes) { {{ profile().accessNotes }} } @else { <span class="text-muted">None — note where logins are kept (never the passwords).</span> }</dd>
+          }
+        </dl>
+      </div>
+    }
+  </section>
+</div>

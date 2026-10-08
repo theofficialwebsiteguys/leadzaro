@@ -6,7 +6,8 @@
   flex-direction: column;
   flex-shrink: 0;
   position: relative;
-  z-index: 10;
+  /* Above the sticky page header so the notifications panel is never covered. */
+  z-index: 150;
 }
 
 /* Brand */
@@ -37,6 +38,8 @@
   height: 24px;
   object-fit: contain;
   display: block;
+  /* logo.png is solid black on transparent; invert so it reads against the dark sidebar */
+  filter: invert(1) brightness(1.4);
 }
 
 .brand-text {
@@ -47,6 +50,7 @@
 }
 
 .brand-name {
+  font-family: var(--font-display);
   font-size: 1.05rem;
   font-weight: 800;
   color: #fff;
@@ -56,10 +60,12 @@
 
 .brand-tag {
   font-size: .6rem;
-  font-weight: 500;
+  font-weight: 700;
   color: var(--sidebar-text);
-  letter-spacing: .06em;
+  letter-spacing: .08em;
   text-transform: uppercase;
+
+  span { color: #A5B4FC; font-weight: 800; }
 }
 
 /* Active organization */
@@ -87,9 +93,19 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 8px 10px;
   font-size: .8125rem;
   color: var(--sidebar-text);
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition), color var(--transition);
+
+  &:hover, &.open { background: var(--sidebar-hover); color: var(--sidebar-text-active); }
+  &:focus-visible { outline: 2px solid var(--primary-light); outline-offset: 1px; }
 }
 
 .notif-badge {
@@ -110,6 +126,15 @@
   padding: 4px 10px;
   gap: 1px;
   overflow-y: auto;
+}
+
+.nav-section-label {
+  padding: 14px 12px 6px;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(148,163,184,.45);
 }
 
 .nav-item {

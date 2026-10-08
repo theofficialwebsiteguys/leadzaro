@@ -17,6 +17,7 @@ const {
 } = require('sequelize');
 const {
   Project, ProjectFinancials, Organization, Task, ProjectChannel, Message, User, ClientRequest, ContentInboxItem, Meeting, File, CancellationRequest,
+  ClientProfile, ClientNote, Contact,
   DesignSystem, Website, WebsiteVersion, SectionDefinition, WebsiteEditorAssignment,
   WebsiteComment, WebsiteEditLock, WebsitePresence, WebsiteRepository, WebsiteDeployment, WebsiteDevelopmentHandoff,
   WebsiteDomain, WebsitePublicFormSubmission, WebsiteAnalyticsEvent, SeoEntitlementGrant, WebsitePageSeoSettings, WebsiteRedirect, WebsiteSeoAudit, SeoTaskCycle,
@@ -51,9 +52,9 @@ const projectWhereForRequester = tenantWhereForRequester;
 
 // Organization is unguarded (no visibility hook), so including it here is
 // safe — it is not one of the guarded-model includes ADR 0007's "known
-// limitation" section warns against. Only used for display (a Project
-// has no name of its own; its client Organization's name serves that
-// purpose, since the two are one-to-one).
+// limitation" section warns against. Only used for display: a project's
+// name is optional (ADR 0008), and an unnamed project is shown under its
+// client Organization's name.
 const ORGANIZATION_INCLUDE = { model: Organization, as: 'organization', attributes: ['id', 'name'] };
 
 function listProjectsForRequester(context, extraWhere = {}) {
@@ -272,6 +273,79 @@ async function getFileByIdForRequester(context, fileId) {
  */
 function listCancellationRequestsForRequester(context, extraWhere = {}) {
   return CancellationRequest.findAll(scoped({ where: tenantWhereForRequester(context, extraWhere), order: [['createdAt', 'DESC']] }));
+}
+
+/**
+ * The client hub (ADR 0008) is agency-only: ClientProfile holds internal
+ * costs and access notes, and ClientNote is the team's internal notes
+ * feed. Same stance as ProjectFinancials — a client-membership context
+ * reaching these is a bug in the caller, so it throws rather than
+ * returning an empty result.
+ */
+function assertEmployeeContextForClientHub(context) {
+  if (context.membership.membershipType === 'client') {
+    throw new Error('The client hub (ClientProfile/ClientNote) is never reachable by a client-membership request');
+  }
+}
+
+/**
+ * Organization itself is unguarded (see ORGANIZATION_INCLUDE above), but
+ * "which organizations count as this agency's clients" is still a
+ * tenant-scoping decision, so it lives here rather than being
+ * re-derived in each service.
+ */
+function clientOrganizationWhereForRequester(context, extraWhere = {}) {
+  assertEmployeeContextForClientHub(context);
+  return {
+    ...extraWhere, type: 'client', managingAgencyOrganizationId: context.organization.id, deletedAt: null,
+  };
+}
+
+function listClientOrganizationsForRequester(context, extraWhere = {}) {
+  return Organization.findAll({ where: clientOrganizationWhereForRequester(context, extraWhere), order: [['name', 'ASC']] });
+}
+
+function getClientOrganizationForRequester(context, organizationId) {
+  return Organization.findOne({ where: clientOrganizationWhereForRequester(context, { id: organizationId }) });
+}
+
+function listClientProfilesForRequester(context, organizationIds) {
+  assertEmployeeContextForClientHub(context);
+  return ClientProfile.findAll(scoped({ where: { organizationId: organizationIds, agencyOrganizationId: context.organization.id } }));
+}
+
+/**
+ * Profiles are created lazily — a client converted through the CRM, or
+ * one that predates the client hub, simply has no row until someone
+ * first opens or edits it. The caller must already have resolved the
+ * organization through getClientOrganizationForRequester.
+ */
+async function findOrCreateClientProfile(context, organization) {
+  assertEmployeeContextForClientHub(context);
+  const [profile] = await ClientProfile.findOrCreate(scoped({
+    where: { organizationId: organization.id, agencyOrganizationId: context.organization.id },
+    defaults: { organizationId: organization.id, agencyOrganizationId: context.organization.id },
+  }));
+  return profile;
+}
+
+function listClientNotesForRequester(context, extraWhere = {}) {
+  assertEmployeeContextForClientHub(context);
+  return ClientNote.findAll(scoped({ where: { ...extraWhere, agencyOrganizationId: context.organization.id }, include: [AUTHOR_INCLUDE], order: [['createdAt', 'DESC']] }));
+}
+
+/**
+ * Contact has no projectId of its own (it belongs directly to an
+ * Organization, not a Project) — tenantWhereForRequester's
+ * organizationId/agencyOrganizationId split already scopes it correctly
+ * without any project-specific handling.
+ */
+function listContactsForRequester(context, extraWhere = {}) {
+  return Contact.findAll(scoped({ where: tenantWhereForRequester(context, { ...extraWhere, archivedAt: null, deletedAt: null }), order: [['isPrimary', 'DESC'], ['createdAt', 'ASC']] }));
+}
+
+function getContactByIdForRequester(context, contactId) {
+  return Contact.findOne(scoped({ where: tenantWhereForRequester(context, { id: contactId }) }));
 }
 
 function getCancellationRequestByIdForRequester(context, requestId) {
@@ -925,9 +999,12 @@ function listWebsitePresenceForRequester(context, extraWhere = {}) {
  * `req.context` to scope by — the conversion itself already establishes
  * which organization/agency this Project belongs to). Never call this
  * from anything reachable by an actual client or employee HTTP request.
+ * Keyed by conversion, not organization: a client may own several
+ * projects (ADR 0008), but one conversion yields exactly one — backed by
+ * the projects_source_conversion_unique index.
  */
-function findProjectByOrganizationIdSystemLevel(organizationId) {
-  return Project.findOne(scoped({ where: { organizationId } }));
+function findProjectByConversionAttemptIdSystemLevel(conversionAttemptId) {
+  return Project.findOne(scoped({ where: { sourceConversionAttemptId: conversionAttemptId } }));
 }
 
 /**
@@ -950,7 +1027,7 @@ async function pruneOldAutosaveVersions(websiteId, keepCount) {
 
 module.exports = {
   listProjectsForRequester,
-  findProjectByOrganizationIdSystemLevel,
+  findProjectByConversionAttemptIdSystemLevel,
   getProjectByIdForRequester,
   getProjectFinancials,
   findOrCreateProjectFinancials,
@@ -970,6 +1047,14 @@ module.exports = {
   getContentInboxItemByIdForRequester,
   listMeetingsForRequester,
   getMeetingByIdForRequester,
+  clientOrganizationWhereForRequester,
+  listClientOrganizationsForRequester,
+  getClientOrganizationForRequester,
+  listClientProfilesForRequester,
+  findOrCreateClientProfile,
+  listClientNotesForRequester,
+  listContactsForRequester,
+  getContactByIdForRequester,
   listFilesForRequester,
   getFileByIdForRequester,
   listCancellationRequestsForRequester,

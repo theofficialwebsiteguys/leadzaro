@@ -58,11 +58,13 @@ router.get('/opportunities/:id/enrichment', requirePermission('leads.read'), enr
 router.post('/opportunities/:id/enrich', requirePermission('crm.manage_pipeline'), enrichmentController.enrich);
 
 router.get('/opportunities/:id/payment-links', requirePermission('leads.read'), billingController.listPaymentLinks);
-router.post('/opportunities/:id/payment-links', requirePermission('crm.manage_pipeline'), [
+router.post('/opportunities/:id/payment-links', requirePermission('payments.create'), [
   body('servicePlanId').notEmpty(),
   body('addOnServicePlanIds').optional().isArray(),
 ], validate, billingController.createPaymentLink);
-router.post('/opportunities/:id/convert', requirePermission('crm.manage_pipeline'), [
+// Marks a deal won without a Stripe payment, so it needs the same
+// authorization as recording a manual payment (ADR 0011).
+router.post('/opportunities/:id/convert', requirePermission('payments.record_manual'), [
   body('servicePlanId').optional().isString(),
 ], validate, billingController.manualConvert);
 

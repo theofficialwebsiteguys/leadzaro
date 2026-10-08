@@ -1,0 +1,158 @@
+.tab-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+
+  .tab-subtitle { margin: 0; }
+}
+
+h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: .95rem;
+}
+
+.edit-card {
+  padding: 18px 20px;
+}
+
+.edit-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+
+  @media (max-width: 860px) { grid-template-columns: 1fr; }
+
+  fieldset {
+    border: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  legend {
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+}
+
+.cost-side {
+  padding-left: 24px !important;
+  border-left: 1px solid var(--border-light) !important;
+
+  @media (max-width: 860px) {
+    padding-left: 0 !important;
+    border-left: none !important;
+  }
+}
+
+.price-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.billing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.pays-card,
+.cost-card,
+.stripe-card {
+  padding: 18px 20px;
+}
+
+.cost-card {
+  border-style: dashed;
+}
+
+.internal-tag {
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: var(--border-light);
+  font-size: .7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.money-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  margin-bottom: 12px;
+
+  div { display: flex; flex-direction: column; }
+}
+
+.money {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 700;
+
+  &.small { font-size: 1.2rem; }
+  &.negative { color: var(--danger-text); }
+}
+
+.money-label {
+  font-size: .78rem;
+  color: var(--text-muted);
+}
+
+.pay-status {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  background: var(--border-light);
+  font-size: .78rem;
+
+  &.pay-current { background: var(--success-bg); color: var(--success-text); }
+  &.pay-pending, &.pay-paused { background: var(--warning-bg); color: var(--warning-text); }
+  &.pay-overdue, &.pay-cancelled { background: var(--danger-bg); color: var(--danger-text); }
+}
+
+.link-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  a { color: var(--primary-dark); }
+}
+
+.notes {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: .875rem;
+  color: var(--text-secondary);
+}
+
+.subscriptions {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+}
+
+/* Sales payments and Stripe invoices (ADR 0011). */
+.sales-billing { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-light); }
+.sales-billing-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }

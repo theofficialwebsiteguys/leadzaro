@@ -1,5 +1,8 @@
-const { searchLeads, getPlaceDetails } = require('../services/leadSearchService');
+const {
+  searchLeads, getPlaceDetails, getPlaceFullDetails, getStaticMap,
+} = require('../services/leadSearchService');
 const { Lead, SavedLead } = require('../models');
+const { annotateSearchResults } = require('../modules/sales/leadIntakeService');
 const { success, notFound } = require('../utils/response');
 const { getPagination, formatPaginatedResponse } = require('../utils/pagination');
 const { Op } = require('sequelize');
@@ -11,17 +14,9 @@ async function search(req, res, next) {
 
     const results = await searchLeads({ keyword, location, radius, minRating, minReviews, demo, page, limit });
 
-    // Mark which results the organization has already saved
-    const savedLeads = await SavedLead.findAll({
-      where: { organizationId: req.context.organization.id, archivedAt: null, deletedAt: null },
-      include: [{ model: Lead, as: 'lead', attributes: ['googlePlaceId'] }],
-    });
-    const savedPlaceIds = new Set(savedLeads.map((sl) => sl.lead?.googlePlaceId).filter(Boolean));
-
-    const enriched = results.items.map((item) => ({
-      ...item,
-      isSaved: savedPlaceIds.has(item.googlePlaceId || item.id),
-    }));
+    // Each result shows whether it is already a lead (whose, which stage),
+    // an existing client, or a possible match on phone/website.
+    const enriched = await annotateSearchResults(req.context.organization.id, results.items);
 
     return success(res, { ...results, items: enriched });
   } catch (err) {
@@ -71,4 +66,40 @@ async function getContactDetails(req, res, next) {
   }
 }
 
-module.exports = { search, getById, getAll, getContactDetails };
+/** Everything worth knowing before adding a result: phone, website, hours, status. */
+async function getFullDetails(req, res, next) {
+  try {
+    const details = await getPlaceFullDetails(req.params.placeId);
+    return success(res, { details });
+  } catch (err) {
+    if (/Places API error|timeout/i.test(err.message)) return res.status(502).json({ success: false, message: 'Google couldn’t load this business’s details right now.' });
+    return next(err);
+  }
+}
+
+/** The results map image, proxied so the Google key stays on the server. */
+async function getMapImage(req, res, next) {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  const zoom = Number.parseInt(req.query.zoom, 10);
+  const width = Number.parseInt(req.query.w, 10);
+  const height = Number.parseInt(req.query.h, 10);
+  const valid = Number.isFinite(lat) && lat >= -85 && lat <= 85 && Number.isFinite(lng) && lng >= -180 && lng <= 180
+    && zoom >= 2 && zoom <= 18 && width >= 100 && width <= 640 && height >= 100 && height <= 640;
+  if (!valid) return res.status(422).json({ success: false, message: 'Invalid map request' });
+  try {
+    const image = await getStaticMap({
+      lat, lng, zoom, width, height,
+    });
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'private, max-age=86400');
+    return res.send(image);
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });
+    return next(err);
+  }
+}
+
+module.exports = {
+  search, getById, getAll, getContactDetails, getFullDetails, getMapImage,
+};

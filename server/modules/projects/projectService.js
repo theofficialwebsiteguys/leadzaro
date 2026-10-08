@@ -1,10 +1,10 @@
 'use strict';
 
 const {
-  ProjectAssignment, User, Project, ProjectChannel, Organization, OrganizationMembership,
+  sequelize, ProjectAssignment, User, Project, ProjectChannel, Organization, OrganizationMembership, BillingAccount, Subscription, ServicePlan,
 } = require('../../models');
 const {
-  listProjectsForRequester, getProjectByIdForRequester, getProjectFinancials, findOrCreateProjectFinancials, findProjectByOrganizationIdSystemLevel,
+  listProjectsForRequester, getProjectByIdForRequester, getProjectFinancials, findOrCreateProjectFinancials, findProjectByConversionAttemptIdSystemLevel,
   listTasksForRequester, listChannelsForRequester, listMessagesForRequester, listClientRequestsForRequester, listMeetingsForRequester,
 } = require('../../core/authorization/clientVisibleModels');
 const { STAGES, STAGE_CHECKLISTS, CHANNEL_DEFAULTS } = require('../../core/projects/projectCatalog');
@@ -121,6 +121,59 @@ async function getFinancials(context, projectId) {
   return getProjectFinancials(context, projectId);
 }
 
+/**
+ * What the client actually pays, sourced from Postgres (no Stripe call
+ * needed for this summary) via the same
+ * Organization -> BillingAccount -> Subscription -> ServicePlan chain
+ * billingController.js's listSubscriptions/getCustomerPortalLink already
+ * use directly (neither BillingAccount nor Subscription is a
+ * visibility-guarded model — same reasoning applies here as there).
+ * Returns null when the client has no billing account yet, e.g. an
+ * internally-onboarded project with no Stripe conversion behind it.
+ */
+async function getBilling(context, projectId) {
+  const project = await getProject(context, projectId);
+  const billingAccount = await BillingAccount.findOne({ where: { organizationId: project.organizationId } });
+  if (!billingAccount) return null;
+
+  const subscriptions = await Subscription.findAll({
+    where: { billingAccountId: billingAccount.id },
+    include: [{ model: ServicePlan, as: 'servicePlan' }],
+    order: [['createdAt', 'DESC']],
+  });
+
+  return {
+    stripeCustomerId: billingAccount.stripeCustomerId,
+    billingAccountStatus: billingAccount.status,
+    subscriptions,
+  };
+}
+
+/**
+ * The one place a Project row is created, so every project — converted
+ * through the CRM or added by hand on the client hub — gets the same
+ * default channel set, and both inserts commit or roll back together.
+ * Callers are responsible for having resolved the tenant columns from an
+ * already-authorized organization.
+ */
+async function createProjectRecord(attributes, { transaction: outerTransaction } = {}) {
+  const create = async (transaction) => {
+    const project = await Project.create(attributes, { transaction });
+    await ProjectChannel.bulkCreate(CHANNEL_DEFAULTS.map((channel) => ({
+      projectId: project.id,
+      organizationId: attributes.organizationId,
+      agencyOrganizationId: attributes.agencyOrganizationId,
+      key: channel.key,
+      name: channel.name,
+      visibility: channel.visibility,
+    })), { transaction });
+    return project;
+  };
+  // Joins a caller's transaction when one is given (e.g. creating a client,
+  // its first project and its domain link together), else runs its own.
+  return outerTransaction ? create(outerTransaction) : sequelize.transaction(create);
+}
+
 async function updateFinancials({
   context, projectId, estimatedCostCents, actualCostCents, marginNotes,
 }) {
@@ -150,7 +203,7 @@ async function updateFinancials({
  * No requester context exists at this call site (a webhook has no
  * HTTP session; the manual-conversion controller's actor is the
  * *sales* rep converting the deal, not someone acting within Projects
- * module authorization) — hence `findProjectByOrganizationIdSystemLevel`
+ * module authorization) — hence `findProjectByConversionAttemptIdSystemLevel`
  * rather than the normal per-requester lookup.
  */
 async function ensureProjectForConversion(conversionResult) {
@@ -158,7 +211,7 @@ async function ensureProjectForConversion(conversionResult) {
   const { conversionAttempt } = conversionResult;
   const organizationId = conversionAttempt.resultingClientOrganizationId;
 
-  const existing = await findProjectByOrganizationIdSystemLevel(organizationId);
+  const existing = await findProjectByConversionAttemptIdSystemLevel(conversionAttempt.id);
   if (existing) return existing;
 
   const organization = await Organization.findByPk(organizationId);
@@ -166,21 +219,22 @@ async function ensureProjectForConversion(conversionResult) {
     throw invalid(`Organization ${organizationId} has no managingAgencyOrganizationId; refusing to create an untenanted Project`, 500);
   }
 
-  const project = await Project.create({
-    organizationId,
-    agencyOrganizationId: organization.managingAgencyOrganizationId,
-    ownerUserId: conversionAttempt.createdByUserId || null,
-    sourceConversionAttemptId: conversionAttempt.id,
-  });
-
-  await ProjectChannel.bulkCreate(CHANNEL_DEFAULTS.map((channel) => ({
-    projectId: project.id,
-    organizationId,
-    agencyOrganizationId: organization.managingAgencyOrganizationId,
-    key: channel.key,
-    name: channel.name,
-    visibility: channel.visibility,
-  })));
+  let project;
+  try {
+    project = await createProjectRecord({
+      organizationId,
+      agencyOrganizationId: organization.managingAgencyOrganizationId,
+      ownerUserId: conversionAttempt.createdByUserId || null,
+      sourceConversionAttemptId: conversionAttempt.id,
+    });
+  } catch (err) {
+    // A concurrent delivery of the same conversion won the race; the
+    // partial unique index on sourceConversionAttemptId guarantees there
+    // is exactly one project for it, so return that one.
+    if (err.name !== 'SequelizeUniqueConstraintError' && err.parent?.code !== '23505') throw err;
+    project = await findProjectByConversionAttemptIdSystemLevel(conversionAttempt.id);
+    if (!project) throw err;
+  }
 
   if (conversionAttempt.projectSetupPending) {
     await conversionAttempt.update({ projectSetupPending: false });
@@ -249,4 +303,6 @@ module.exports = {
   getFinancials,
   updateFinancials,
   getLastWorkedContext,
+  getBilling,
+  createProjectRecord,
 };

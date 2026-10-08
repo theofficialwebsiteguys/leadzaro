@@ -1,10 +1,8 @@
 'use strict';
 
-const { WebhookEvent, PaymentLinkRequest, Subscription } = require('../../models');
+const { WebhookEvent } = require('../../models');
 const { getStripeAdapter } = require('../../core/integrations/stripe/stripeAdapter');
-const { convertOpportunityToClient, recordNeedsAttention } = require('./conversionService');
-const { triggerClientInvitationIfNew } = require('./clientInvitationService');
-const { ensureProjectForConversion } = require('../projects/projectService');
+const paymentEvents = require('../sales/paymentEventsService');
 
 const POSTGRES_UNIQUE_VIOLATION = '23505';
 
@@ -19,18 +17,25 @@ function invalid(message, statusCode = 422) {
 }
 
 /**
- * One handler per Stripe event type this app acts on. Every lifecycle
- * handler (everything except checkout.session.completed) matches by
- * `stripeSubscriptionId` only, per docs/leadzaro/current-phase-plan.md
- * § 2e/§ 7a — Payment Link metadata is not guaranteed to propagate past
- * the bootstrap checkout event.
+ * One handler per Stripe event type Leadzaro acts on (ADR 0011). Every
+ * handler is idempotent and safe against out-of-order delivery; events
+ * for Stripe customers or checkouts that did not come from Leadzaro are
+ * recorded as ignored, never as failures — the connected account may
+ * have plenty of unrelated activity.
  */
 const HANDLERS = {
-  'checkout.session.completed': handleCheckoutCompleted,
-  'invoice.payment_succeeded': handleInvoicePaymentSucceeded,
-  'invoice.payment_failed': handleInvoicePaymentFailed,
-  'customer.subscription.updated': handleSubscriptionUpdated,
-  'customer.subscription.deleted': handleSubscriptionDeleted,
+  'checkout.session.completed': (event, ledger) => paymentEvents.handleCheckoutSession(event.data.object, { webhookEventId: ledger.id }),
+  'checkout.session.async_payment_succeeded': (event, ledger) => paymentEvents.handleCheckoutSession(event.data.object, { webhookEventId: ledger.id }),
+  'checkout.session.async_payment_failed': (event) => paymentEvents.handleCheckoutFailed(event.data.object),
+  'checkout.session.expired': (event) => paymentEvents.handleCheckoutExpired(event.data.object),
+  'invoice.paid': (event, ledger) => paymentEvents.handleInvoicePaid(event.data.object, { eventCreated: event.created, webhookEventId: ledger.id }),
+  // Older endpoints were registered with this name; the invoice id keeps it to one record.
+  'invoice.payment_succeeded': (event, ledger) => paymentEvents.handleInvoicePaid(event.data.object, { eventCreated: event.created, webhookEventId: ledger.id }),
+  'invoice.payment_failed': (event) => paymentEvents.handleInvoiceFailed(event.data.object),
+  'customer.subscription.created': (event) => paymentEvents.handleSubscriptionEvent(event.data.object, { eventCreated: event.created }),
+  'customer.subscription.updated': (event) => paymentEvents.handleSubscriptionEvent(event.data.object, { eventCreated: event.created }),
+  'customer.subscription.deleted': (event) => paymentEvents.handleSubscriptionEvent(event.data.object, { eventCreated: event.created, deleted: true }),
+  'charge.refunded': (event) => paymentEvents.handleChargeRefunded(event.data.object),
 };
 
 /**
@@ -72,6 +77,8 @@ async function processWebhook(rawBody, signatureHeader) {
       eventType: event.type,
       payload: event.data,
       status: 'received',
+      livemode: event.livemode === undefined ? null : Boolean(event.livemode),
+      stripeCreatedAt: event.created ? new Date(event.created * 1000) : null,
     });
   } catch (err) {
     if (isUniqueViolation(err)) return { duplicate: true };
@@ -101,7 +108,12 @@ async function processWebhookEventById(webhookEventId) {
     throw invalid('Only a failed webhook event can be reprocessed', 422);
   }
 
-  const event = { id: webhookEvent.stripeEventId, type: webhookEvent.eventType, data: webhookEvent.payload };
+  const event = {
+    id: webhookEvent.stripeEventId,
+    type: webhookEvent.eventType,
+    data: webhookEvent.payload,
+    created: webhookEvent.stripeCreatedAt ? Math.floor(webhookEvent.stripeCreatedAt.getTime() / 1000) : undefined,
+  };
   return dispatch(event, webhookEvent);
 }
 
@@ -113,141 +125,18 @@ async function dispatch(event, webhookEvent) {
   }
 
   try {
-    await handler(event, webhookEvent);
+    const result = await handler(event, webhookEvent);
+    if (result?.ignored) {
+      // Kept for the record with the reason, e.g. a checkout from another app.
+      await webhookEvent.update({ status: 'ignored', errorMessage: result.reason || null, processedAt: new Date() });
+      return { duplicate: false, status: 'ignored' };
+    }
     await webhookEvent.update({ status: 'processed', errorMessage: null, processedAt: new Date() });
     return { duplicate: false, status: 'processed' };
   } catch (err) {
     await webhookEvent.update({ status: 'failed', errorMessage: err.message, processedAt: new Date() });
     return { duplicate: false, status: 'failed' };
   }
-}
-
-async function handleCheckoutCompleted(event, webhookEvent) {
-  const session = event.data.object;
-  const opportunityId = session.metadata?.leadzaroOpportunityId;
-  const agencyOrganizationId = session.metadata?.leadzaroAgencyOrganizationId;
-
-  if (!opportunityId || !agencyOrganizationId) {
-    await recordNeedsAttention({
-      source: 'webhook',
-      webhookEventId: webhookEvent.id,
-      failureReason: 'checkout.session.completed had no resolvable leadzaroOpportunityId/leadzaroAgencyOrganizationId metadata',
-    });
-    return;
-  }
-
-  // Resolve which service plan this checkout was for. An opportunity can
-  // have more than one PaymentLinkRequest (a rep re-quoting a different
-  // plan) — matching by "most recently created" would silently attach
-  // the wrong plan/add-ons to the Subscription and flip the wrong link's
-  // status if the customer paid an older link while a newer one also
-  // exists. session.payment_link (real Stripe's own field identifying
-  // exactly which Payment Link a checkout originated from) is the
-  // correct match; falling back to "most recent" only when it's absent
-  // (the mock adapter, unless a test explicitly supplies it).
-  const linkRequest = session.payment_link
-    ? await PaymentLinkRequest.findOne({ where: { opportunityId, agencyOrganizationId, stripePaymentLinkId: session.payment_link } })
-    : await PaymentLinkRequest.findOne({ where: { opportunityId, agencyOrganizationId }, order: [['createdAt', 'DESC']] });
-
-  let result;
-  try {
-    result = await convertOpportunityToClient({
-      opportunityId,
-      agencyOrganizationId,
-      servicePlanId: linkRequest?.servicePlanId || null,
-      addOnServicePlanIds: linkRequest?.addOnServicePlanIds || [],
-      stripeCustomerId: session.customer || null,
-      stripeSubscriptionId: session.subscription || null,
-      source: 'webhook',
-      webhookEventId: webhookEvent.id,
-    });
-  } catch (err) {
-    await recordNeedsAttention({
-      opportunityId, agencyOrganizationId, source: 'webhook', webhookEventId: webhookEvent.id, failureReason: err.message,
-    });
-    return;
-  }
-
-  // Best-effort past this point: the conversion itself already succeeded
-  // and is real. A failure flipping the link's status or sending the
-  // invitation must never retroactively mark this webhook event/
-  // conversion as needs_attention — that would misrepresent a genuine
-  // success as unresolved on the manager-facing worklist.
-  if (linkRequest && !result.alreadyConverted) {
-    try {
-      await linkRequest.update({ status: 'paid' });
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`[billing] failed to flip PaymentLinkRequest ${linkRequest.id} to paid after a successful conversion:`, err.message);
-    }
-  }
-  await triggerClientInvitationIfNew(result);
-  await ensureProjectForConversion(result);
-}
-
-/**
- * A one-off Stripe invoice (no `subscription` at all) is a legitimate,
- * benign input unrelated to any subscription lifecycle — a no-op, not a
- * failure. An invoice that *does* reference a subscription but matches
- * no local `Subscription` row is different: either out-of-order webhook
- * delivery (Stripe does not guarantee delivery order) or an unknown
- * subscription, and is treated as a real failure for human review via
- * `processWebhookEventById` rather than silently dropped.
- */
-async function findSubscriptionForInvoiceOrThrow(invoice) {
-  if (!invoice.subscription) return null;
-  const subscription = await Subscription.findOne({ where: { stripeSubscriptionId: invoice.subscription } });
-  if (!subscription) {
-    throw invalid(`No local Subscription found for stripeSubscriptionId ${invoice.subscription}`, 422);
-  }
-  return subscription;
-}
-
-async function handleInvoicePaymentSucceeded(event) {
-  const invoice = event.data.object;
-  const subscription = await findSubscriptionForInvoiceOrThrow(invoice);
-  if (!subscription) return;
-
-  await subscription.update({
-    status: 'active',
-    currentPeriodStart: invoice.period_start ? new Date(invoice.period_start * 1000) : subscription.currentPeriodStart,
-    currentPeriodEnd: invoice.period_end ? new Date(invoice.period_end * 1000) : subscription.currentPeriodEnd,
-  });
-}
-
-async function handleInvoicePaymentFailed(event) {
-  const invoice = event.data.object;
-  const subscription = await findSubscriptionForInvoiceOrThrow(invoice);
-  if (!subscription) return;
-
-  await subscription.update({ status: 'past_due' });
-}
-
-async function findSubscriptionByStripeIdOrThrow(stripeSubscriptionId) {
-  const subscription = await Subscription.findOne({ where: { stripeSubscriptionId } });
-  if (!subscription) {
-    throw invalid(`No local Subscription found for stripeSubscriptionId ${stripeSubscriptionId}`, 422);
-  }
-  return subscription;
-}
-
-async function handleSubscriptionUpdated(event) {
-  const stripeSubscription = event.data.object;
-  const subscription = await findSubscriptionByStripeIdOrThrow(stripeSubscription.id);
-
-  await subscription.update({
-    status: stripeSubscription.status,
-    currentPeriodStart: stripeSubscription.current_period_start
-      ? new Date(stripeSubscription.current_period_start * 1000) : subscription.currentPeriodStart,
-    currentPeriodEnd: stripeSubscription.current_period_end
-      ? new Date(stripeSubscription.current_period_end * 1000) : subscription.currentPeriodEnd,
-  });
-}
-
-async function handleSubscriptionDeleted(event) {
-  const stripeSubscription = event.data.object;
-  const subscription = await findSubscriptionByStripeIdOrThrow(stripeSubscription.id);
-  await subscription.update({ status: 'canceled' });
 }
 
 module.exports = { processWebhook, processWebhookEventById };

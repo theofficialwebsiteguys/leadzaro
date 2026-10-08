@@ -1,0 +1,36 @@
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.priority-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: transform var(--transition);
+
+  &:hover { transform: scale(1.3); }
+
+  &.priority-low { background: var(--text-muted, #94a3b8); }
+  &.priority-medium { background: var(--info, #2563eb); }
+  &.priority-high { background: var(--warning, #f59e0b); }
+  &.priority-urgent { background: var(--danger, #ef4444); }
+}
+
+.assign-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+
+  .form-control, .form-select {
+    width: auto;
+    flex: 1 1 170px;
+    min-width: 140px;
+  }
+}

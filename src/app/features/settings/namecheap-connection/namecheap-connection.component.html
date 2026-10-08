@@ -1,0 +1,163 @@
+<div class="card nc-card">
+  <div class="card-header nc-head">
+    <div>
+      <h3>Namecheap</h3>
+      <p class="nc-sub">Syncs your domains, expirations and renewal prices. Read-only — Leadzaro never buys, renews, transfers, or changes DNS or auto-renew.</p>
+    </div>
+    @if (status(); as s) {
+      <span class="nc-status" [class]="'nc-status status-' + (s.syncing ? 'syncing' : s.status)">{{ statusLabel() }}</span>
+    }
+  </div>
+
+  <div class="card-body">
+    @if (loadError()) { <div class="alert alert-error mb-4">{{ loadError() }}</div> }
+
+    @if (status(); as s) {
+      @if (s.secretsKey.source === 'missing' || s.secretsKey.source === 'invalid') {
+        <div class="alert alert-error mb-4">
+          This server can’t store credentials yet: set <code>INTEGRATION_SECRETS_KEY</code> (32 random bytes, e.g. <code>openssl rand -base64 32</code>) in its environment and restart it.
+        </div>
+      }
+
+      @if (s.configured && !editing()) {
+        <dl class="nc-facts">
+          <dt>Account</dt><dd>{{ s.accountUserName }}@if (s.environment === 'sandbox') { <span class="nc-badge">Sandbox</span> }</dd>
+          <dt>Client IP</dt><dd>{{ s.clientIp }}</dd>
+          <dt>API key</dt><dd>Saved (encrypted) · {{ s.credentialsUpdatedAt | date:'MMM d, y' }}</dd>
+          <dt>Last sync</dt>
+          <dd>
+            @if (s.syncing) { <span class="spinner spinner-sm"></span> Running now… }
+            @else if (s.lastSyncFinishedAt) {
+              {{ s.lastSyncFinishedAt | date:'MMM d, h:mm a' }} ·
+              <span [class]="'sync-' + s.lastSyncStatus">{{ s.lastSyncStatus === 'success' ? 'complete' : s.lastSyncStatus }}</span>
+              @if (s.lastSyncTrigger === 'scheduled') { <span class="text-muted"> (daily)</span> }
+            } @else { <span class="text-muted">Not synced yet</span> }
+          </dd>
+          @if (s.lastSuccessfulSyncAt) {
+            <dt>Last complete sync</dt><dd>{{ s.lastSuccessfulSyncAt | date:'MMM d, h:mm a' }}</dd>
+          }
+          @if (s.lastSyncSummary?.domainsSeen !== undefined) {
+            <dt>Domains</dt>
+            <dd>
+              {{ s.lastSyncSummary?.domainsSeen }} in the account
+              @if (s.lastSyncSummary?.domainsAdded) { · {{ s.lastSyncSummary?.domainsAdded }} new }
+              @if (s.lastSyncSummary?.markedMissing) { · {{ s.lastSyncSummary?.markedMissing }} no longer found }
+            </dd>
+          }
+          @if (s.account?.availableBalanceCents !== undefined && s.account?.availableBalanceCents !== null) {
+            <dt>Account balance</dt>
+            <dd>
+              {{ s.account?.availableBalanceCents | cents }}
+              @if (s.account?.fundsRequiredForAutoRenewCents) {
+                · <span class="nc-warn">{{ s.account?.fundsRequiredForAutoRenewCents | cents }} needed for auto-renewals in the next 90 days</span>
+              }
+            </dd>
+          }
+        </dl>
+
+        @if (s.lastError) {
+          <div class="alert alert-error nc-error">
+            <strong>{{ s.lastError.message }}</strong>
+            @if (s.lastError.providerCode) { <span class="text-muted"> (Namecheap error {{ s.lastError.providerCode }})</span> }
+          </div>
+        }
+        @if (syncErrors().length && !s.lastError) {
+          <details class="nc-issues">
+            <summary>{{ syncErrors().length }} issue(s) in the last sync — earlier data was kept</summary>
+            <ul>
+              @for (issue of syncErrors(); track $index) { <li><strong>{{ issue.step }}</strong>@if (issue.domain) { · {{ issue.domain }} } — {{ issue.message }}</li> }
+            </ul>
+          </details>
+        }
+
+        @if (lastTest(); as t) {
+          <div class="alert mb-4" [class.alert-success]="t.ok" [class.alert-error]="!t.ok">
+            @if (t.ok) { Namecheap answered: {{ t.totalDomains }} domain{{ t.totalDomains === 1 ? '' : 's' }} in the account. } @else { {{ t.error?.message }} }
+          </div>
+        }
+
+        <div class="nc-actions">
+          <button class="btn btn-primary btn-sm" (click)="syncNow()" [disabled]="s.syncing || s.status === 'error'">{{ s.syncing ? 'Syncing…' : 'Sync now' }}</button>
+          <button class="btn btn-outline btn-sm" (click)="test()" [disabled]="testing()">{{ testing() ? 'Testing…' : 'Test connection' }}</button>
+          <button class="btn btn-ghost btn-sm" (click)="startEdit()">Edit credentials</button>
+          <a class="btn btn-ghost btn-sm" routerLink="/app/domains">Domains &amp; renewals →</a>
+          <span class="spacer"></span>
+          @if (confirmDisconnect()) {
+            <span class="text-sm">Remove the saved key? Synced details and everything entered by hand stay.</span>
+            <button class="btn btn-danger btn-sm" (click)="disconnect()">Disconnect</button>
+            <button class="btn btn-ghost btn-sm" (click)="confirmDisconnect.set(false)">Keep</button>
+          } @else {
+            <button class="btn btn-ghost btn-sm nc-disconnect" (click)="confirmDisconnect.set(true)">Disconnect</button>
+          }
+        </div>
+        <p class="form-hint">Syncs automatically once a day while the Leadzaro server is running.</p>
+      }
+
+      @if (editing()) {
+        <ol class="nc-steps">
+          <li>
+            <strong>Turn on API access in Namecheap</strong> — Profile → Tools → Business &amp; Dev Tools → Namecheap API Access.
+            <span class="text-muted">Namecheap requires at least 20 domains, a $50 balance, or $50 spent in the last 2 years.</span>
+          </li>
+          <li>
+            <strong>Whitelist this server’s public IPv4 address</strong> in the same screen (Whitelisted IPs → Add IP). Namecheap only accepts IPv4.
+            <div class="nc-detect">
+              <button type="button" class="btn btn-outline btn-sm" (click)="detectIp()" [disabled]="detecting()">{{ detecting() ? 'Detecting…' : 'Detect this server’s IP' }}</button>
+              @if (detectedIp(); as ip) {
+                <code class="nc-ip">{{ ip }}</code>
+                @if (form.clientIp !== ip) { <button type="button" class="btn btn-ghost btn-sm" (click)="useDetectedIp()">Use it below</button> }
+              }
+              @if (detectError()) { <span class="form-error text-sm">{{ detectError() }}</span> }
+            </div>
+            <span class="form-hint">Detect asks api.ipify.org which address this server’s requests come from. A home or office connection’s address can change — update the whitelist if it does. A deployed server needs a fixed outbound IPv4.</span>
+          </li>
+          <li><strong>Paste your API details below</strong>, then save. Leadzaro makes one read-only call to check them.</li>
+        </ol>
+
+        <form class="nc-form" (ngSubmit)="save()" autocomplete="off">
+          <div class="nc-grid">
+            <div class="form-group">
+              <label class="form-label" for="nc-api-user">API user</label>
+              <input id="nc-api-user" class="form-control" name="apiUser" [(ngModel)]="form.apiUser" required maxlength="20" placeholder="Your Namecheap username" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="nc-username">Username <span class="text-muted">(if different)</span></label>
+              <input id="nc-username" class="form-control" name="userName" [(ngModel)]="form.userName" maxlength="20" placeholder="Usually the same as API user" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="nc-api-key">API key</label>
+              <input id="nc-api-key" class="form-control" type="password" name="apiKey" [(ngModel)]="form.apiKey" maxlength="50" autocomplete="new-password"
+                [placeholder]="status()?.hasApiKey ? 'Saved — leave blank to keep it' : 'Paste the key from Namecheap'" />
+              <p class="form-hint">Stored encrypted on the server and never shown again.</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="nc-client-ip">Client IP (the whitelisted IPv4)</label>
+              <input id="nc-client-ip" class="form-control" name="clientIp" [(ngModel)]="form.clientIp" required maxlength="15" placeholder="203.0.113.10" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="nc-env">Environment</label>
+              <select id="nc-env" class="form-select" name="environment" [(ngModel)]="form.environment">
+                <option value="production">Production (namecheap.com)</option>
+                <option value="sandbox">Sandbox (separate test account)</option>
+              </select>
+            </div>
+          </div>
+
+          @if (formError()) { <div class="alert alert-error mb-4">{{ formError() }}</div> }
+          @if (lastTest(); as t) {
+            @if (!t.ok) { <div class="alert alert-error mb-4">Saved, but the test failed: {{ t.error?.message }}</div> }
+          }
+          @if (s.secretsKey.source === 'derived') {
+            <p class="form-hint">Development setup: the key is encrypted with a key derived from JWT_SECRET. Set <code>INTEGRATION_SECRETS_KEY</code> before deploying.</p>
+          }
+          <div class="nc-actions">
+            <button type="submit" class="btn btn-primary btn-sm" [disabled]="saving() || !s.secretsKey.canStore">{{ saving() ? 'Checking with Namecheap…' : 'Save & test' }}</button>
+            @if (s.configured) { <button type="button" class="btn btn-ghost btn-sm" (click)="cancelEdit()">Cancel</button> }
+          </div>
+        </form>
+      }
+    } @else if (!loadError()) {
+      <p class="text-muted">Loading…</p>
+    }
+  </div>
+</div>

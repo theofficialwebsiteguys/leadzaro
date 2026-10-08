@@ -155,6 +155,15 @@ async function getDashboard(req, res, next) {
   }
 }
 
+async function getBilling(req, res, next) {
+  try {
+    const billing = await projectService.getBilling(req.context, req.params.id);
+    return success(res, { billing });
+  } catch (err) {
+    handleServiceError(err, res, next);
+  }
+}
+
 module.exports = {
   list,
   getById,
@@ -166,4 +175,5 @@ module.exports = {
   getFinancials,
   updateFinancials,
   getDashboard,
+  getBilling,
 };

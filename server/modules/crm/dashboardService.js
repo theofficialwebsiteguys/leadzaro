@@ -30,8 +30,8 @@ async function getPipelineSummary(agencyOrganizationId, { userId, includeTeamBre
   const totalActive = stageCounts.reduce(
     (sum, s) => sum + (CLOSED_STAGES.has(s.stage) ? 0 : s.count), 0
   );
-  const closedWon = stageCounts.find((s) => s.stage === 'Closed Won')?.count || 0;
-  const closedLost = stageCounts.find((s) => s.stage === 'Closed Lost')?.count || 0;
+  const closedWon = stageCounts.find((s) => s.stage === 'won')?.count || 0;
+  const closedLost = stageCounts.find((s) => s.stage === 'lost')?.count || 0;
   const winRate = (closedWon + closedLost) > 0
     ? Math.round((closedWon / (closedWon + closedLost)) * 100)
     : null;
@@ -42,7 +42,7 @@ async function getPipelineSummary(agencyOrganizationId, { userId, includeTeamBre
     raw: true,
   });
   const myOpen = myOpportunities.filter((o) => !CLOSED_STAGES.has(o.stage)).length;
-  const myClosedWon = myOpportunities.filter((o) => o.stage === 'Closed Won').length;
+  const myClosedWon = myOpportunities.filter((o) => o.stage === 'won').length;
   const scored = myOpportunities.filter((o) => o.score !== null && o.score !== undefined);
   const myAvgScore = scored.length
     ? Math.round(scored.reduce((sum, o) => sum + o.score, 0) / scored.length)
@@ -72,8 +72,8 @@ async function getPipelineSummary(agencyOrganizationId, { userId, includeTeamBre
       if (!byUser.has(row.assignedToUserId)) byUser.set(row.assignedToUserId, { open: 0, closedWon: 0, closedLost: 0 });
       const entry = byUser.get(row.assignedToUserId);
       const count = Number(row.count);
-      if (row.stage === 'Closed Won') entry.closedWon += count;
-      else if (row.stage === 'Closed Lost') entry.closedLost += count;
+      if (row.stage === 'won') entry.closedWon += count;
+      else if (row.stage === 'lost') entry.closedLost += count;
       else entry.open += count;
     }
 

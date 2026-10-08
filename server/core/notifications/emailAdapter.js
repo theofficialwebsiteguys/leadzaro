@@ -33,10 +33,51 @@ class NoopEmailAdapter extends EmailAdapter {
   }
 }
 
+/**
+ * Real delivery through an SMTP server (EMAIL_PROVIDER=smtp) — used for
+ * notifications and for sales outreach (ADR 0011). "delivered" here means
+ * the SMTP server accepted the message; bounces are not tracked.
+ */
+class SmtpEmailAdapter extends EmailAdapter {
+  constructor() {
+    super();
+    // eslint-disable-next-line global-require
+    const nodemailer = require('nodemailer');
+    this.transport = nodemailer.createTransport({
+      host: env.SMTP_HOST,
+      port: env.SMTP_PORT,
+      secure: env.SMTP_SECURE,
+      auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASSWORD } : undefined,
+    });
+  }
+
+  async send({
+    to, subject, text, from, replyTo, headers,
+  }) {
+    try {
+      const info = await this.transport.sendMail({
+        from: from || env.EMAIL_FROM_ADDRESS, to, subject, text, replyTo, headers,
+      });
+      return { delivered: true, provider: 'smtp', messageId: info.messageId };
+    } catch (err) {
+      return { delivered: false, provider: 'smtp', error: err.message };
+    }
+  }
+}
+
+function isSmtpConfigured() {
+  return env.EMAIL_PROVIDER === 'smtp' && Boolean(env.SMTP_HOST);
+}
+
 let cachedAdapter = null;
 
 function getEmailAdapter() {
   if (cachedAdapter) return cachedAdapter;
+
+  if (isSmtpConfigured()) {
+    cachedAdapter = new SmtpEmailAdapter();
+    return cachedAdapter;
+  }
 
   // The console adapter logs invitation/password-reset links — including
   // the raw secret token — to stdout. That's a deliberate, useful dev-mode
@@ -57,4 +98,6 @@ function getEmailAdapter() {
   return cachedAdapter;
 }
 
-module.exports = { getEmailAdapter, EmailAdapter, ConsoleEmailAdapter, NoopEmailAdapter };
+module.exports = {
+  getEmailAdapter, isSmtpConfigured, EmailAdapter, ConsoleEmailAdapter, NoopEmailAdapter, SmtpEmailAdapter,
+};

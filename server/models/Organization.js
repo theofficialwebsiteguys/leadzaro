@@ -55,6 +55,21 @@ module.exports = (sequelize) => {
       type: DataTypes.UUID,
       allowNull: true,
     },
+    // Business details (ADR 0011), owned by the agency — never written back
+    // to the shared Lead row. detailsSource records where each came from
+    // ('google_places', 'manual', 'inbound_form', 'verified').
+    phone: { type: DataTypes.STRING(50), allowNull: true },
+    email: { type: DataTypes.STRING(255), allowNull: true },
+    website: { type: DataTypes.STRING(500), allowNull: true },
+    addressLine1: { type: DataTypes.STRING(255), allowNull: true },
+    city: { type: DataTypes.STRING(100), allowNull: true },
+    state: { type: DataTypes.STRING(100), allowNull: true },
+    postalCode: { type: DataTypes.STRING(20), allowNull: true },
+    category: { type: DataTypes.STRING(150), allowNull: true },
+    detailsSource: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    // Workspace-wide defaults for an agency (ADR 0012): timezone, default
+    // search location/keywords, default follow-up days.
+    settings: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
   });
 
   Organization.TYPES = TYPES;
@@ -72,6 +87,7 @@ module.exports = (sequelize) => {
     Organization.hasMany(models.Contact, { foreignKey: 'organizationId', as: 'contacts' });
     Organization.hasMany(models.Location, { foreignKey: 'organizationId', as: 'locations' });
     Organization.hasOne(models.BillingAccount, { foreignKey: 'organizationId', as: 'billingAccount' });
+    Organization.hasOne(models.ClientProfile, { foreignKey: 'organizationId', as: 'clientProfile' });
   };
 
   return Organization;

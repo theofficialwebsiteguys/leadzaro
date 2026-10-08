@@ -18,6 +18,28 @@ function invalid(message, statusCode = 422) {
 }
 
 /**
+ * The agency's own copy of a business's contact details (ADR 0011), with
+ * where each came from — the shared Lead row is never edited.
+ */
+function businessDetailsFromLead(lead) {
+  const source = ['google', 'google_places'].includes(lead.source) ? 'google_places' : (lead.source || 'manual');
+  const detailsSource = {};
+  if (lead.phone) detailsSource.phone = source;
+  if (lead.website) detailsSource.website = source;
+  if (lead.address) detailsSource.address = source;
+  return {
+    phone: lead.phone || null,
+    website: lead.website || null,
+    addressLine1: lead.address || null,
+    city: lead.city || null,
+    state: lead.state || null,
+    postalCode: lead.zip || null,
+    category: lead.category || null,
+    detailsSource,
+  };
+}
+
+/**
  * Creates a new prospect Organization + Opportunity for the given agency,
  * upserting the canonical Lead the same way saveLead() already does.
  * Rejects if an active Opportunity already exists for this
@@ -52,6 +74,7 @@ async function createFromLead({
       type: 'prospect',
       status: 'active',
       managingAgencyOrganizationId: agencyOrganizationId,
+      ...businessDetailsFromLead(lead),
     }, { transaction });
 
     const initialScore = computeAutoScore({
@@ -70,6 +93,9 @@ async function createFromLead({
       assignedToUserId: assignedToUserId || actorUserId,
       score: initialScore.score,
       scoreReason: initialScore.reason,
+      createdByUserId: actorUserId || null,
+      stageChangedAt: new Date(),
+      isTest: lead.source === 'demo',
     }, { transaction });
 
     return { opportunity, organization: prospectOrg, lead };
@@ -118,8 +144,12 @@ async function getInAgency(id, agencyOrganizationId) {
 async function updateStage(id, agencyOrganizationId, { stage, score, scoreReason }) {
   const opportunity = await getInAgency(id, agencyOrganizationId);
   if (stage && !STAGES.includes(stage)) throw invalid('Unknown pipeline stage');
+  // Won is reached only through a recorded payment (ADR 0011).
+  if (stage === 'won' && opportunity.stage !== 'won') throw invalid('A deal becomes Won automatically when its first payment is received. Use “Record payment” for a payment made outside Stripe.');
+  if (stage && stage !== opportunity.stage && opportunity.stage === 'won') throw invalid('This deal is already won and paid — start a new deal for this business instead.', 409);
   await opportunity.update({
     stage: stage || opportunity.stage,
+    stageChangedAt: stage && stage !== opportunity.stage ? new Date() : opportunity.stageChangedAt,
     score: score === undefined ? opportunity.score : score,
     scoreReason: scoreReason === undefined ? opportunity.scoreReason : scoreReason,
   });
@@ -239,6 +269,7 @@ async function restore(id, agencyOrganizationId) {
 }
 
 module.exports = {
+  businessDetailsFromLead,
   createFromLead,
   listForAgency,
   getInAgency,

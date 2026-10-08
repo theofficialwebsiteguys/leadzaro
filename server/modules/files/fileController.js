@@ -46,7 +46,7 @@ async function upload(req, res, next) {
 
 async function getSignedUrl(req, res, next) {
   try {
-    const { file, url, expiresInSeconds } = await fileService.getSignedUrl(req.context, req.params.fileId, req.query.variant);
+    const { file, url, expiresInSeconds } = await fileService.getSignedUrl(req.context, req.params.fileId, req.query.variant, { download: req.query.download === '1' });
     return success(res, {
       file, url, expiresInSeconds,
     });

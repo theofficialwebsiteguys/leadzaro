@@ -32,6 +32,11 @@ router.patch('/:id/financials', requirePermission('projects.manage'), controller
 
 router.get('/:id/dashboard', requirePermission('projects.view'), controller.getDashboard);
 
+router.get('/:id/billing', requirePermission('projects.view'), controller.getBilling);
+
+// Domains & Hosting for the project workspace (agency team only — enforced in the controller).
+router.get('/:projectId/domains', requirePermission('projects.view'), require('../domains/domainController').projectDomains);
+
 router.use('/:projectId/tasks', require('../tasks/routes'));
 router.use('/:projectId/channels', require('../messaging/routes'));
 router.use('/:projectId/requests', require('../requests/routes'));
@@ -40,5 +45,6 @@ router.use('/:projectId/meetings', require('../meetings/routes'));
 router.use('/:projectId/files', require('../files/routes'));
 router.use('/:projectId/cancellation-requests', require('../cancellations/routes'));
 router.use('/:projectId/website', require('../websites/routes'));
+router.use('/:projectId/notes', require('../notes/projectNoteRoutes'));
 
 module.exports = router;

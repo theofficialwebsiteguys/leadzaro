@@ -1,237 +1,224 @@
-<div class="page">
-
-  <!-- Page header -->
-  <div class="page-header">
+<div class="page overview">
+  <header class="ov-head">
     <div>
-      @if (auth.currentUser(); as u) {
-        <h1>Welcome back, {{ u.name.split(' ')[0] }}</h1>
-        <p>Here's what's happening with your leads today.</p>
-      } @else {
-        <h1>Dashboard</h1>
-      }
+      <h1>Overview</h1>
+      <p class="sub">
+        @if (data(); as hd) {
+          <span class="scope-label">{{ hd.scope === 'team' ? 'Team activity' : 'My activity' }}</span>
+          · {{ hd.period.label }}
+          · updated {{ hd.generatedAt | date: 'h:mm a' }}
+        } @else { Welcome back{{ firstName() ? ', ' + firstName() : '' }}. }
+      </p>
     </div>
-    <a routerLink="/app/search" class="btn btn-primary">
-      <lz-icon name="plus" [size]="16" />
-      Search Leads
-    </a>
-  </div>
-
-  @if (loading()) {
-    <div class="loading-state">
-      <div class="spinner"></div>
-      <span>Loading dashboard…</span>
-    </div>
-  } @else if (error()) {
-    <div class="alert alert-error">{{ error() }}</div>
-  } @else {
-    @if (data(); as d) {
-
-      <!-- Getting Started (zero state) -->
-      @if (d.stats.totalSaved === 0) {
-        <div class="card getting-started-card">
-          <div class="card-body">
-            <h3>Welcome! Here's how to get your first leads</h3>
-            <p class="gs-sub">Follow these three steps to build your pipeline.</p>
-            <div class="gs-steps">
-              <div class="gs-step">
-                <div class="gs-icon"><lz-icon name="search" [size]="18" /></div>
-                <div>
-                  <strong>Search leads</strong>
-                  <p>Find local businesses by keyword and city</p>
-                </div>
-              </div>
-              <div class="gs-divider">→</div>
-              <div class="gs-step">
-                <div class="gs-icon"><lz-icon name="leads" [size]="18" /></div>
-                <div>
-                  <strong>Save the best ones</strong>
-                  <p>One click adds them to your pipeline</p>
-                </div>
-              </div>
-              <div class="gs-divider">→</div>
-              <div class="gs-step">
-                <div class="gs-icon"><lz-icon name="outreach" [size]="18" /></div>
-                <div>
-                  <strong>Log outreach</strong>
-                  <p>Track every call, email, and follow-up</p>
-                </div>
-              </div>
-            </div>
-            <a routerLink="/app/search" class="btn btn-primary">Start Searching →</a>
-          </div>
+    <div class="ov-controls">
+      @if (data()?.canSeeTeam) {
+        <div class="seg" role="group" aria-label="Whose activity">
+          <button type="button" [class.active]="scope === 'mine'" [attr.aria-pressed]="scope === 'mine'" (click)="setScope('mine')">My activity</button>
+          <button type="button" [class.active]="scope === 'team'" [attr.aria-pressed]="scope === 'team'" (click)="setScope('team')">Team activity</button>
         </div>
       }
+      <select class="form-select period" [ngModel]="period" (ngModelChange)="setPeriod($event)" aria-label="Time period">
+        <option value="7">Last 7 days</option>
+        <option value="30">Last 30 days</option>
+        <option value="month">This month</option>
+        <option value="90">Last 90 days</option>
+      </select>
+      @for (a of quickActions(); track a.path) {
+        <a [routerLink]="a.path" class="btn btn-sm" [class.btn-primary]="a.primary" [class.btn-outline]="!a.primary"><lz-icon [name]="a.icon" [size]="14" /> {{ a.label }}</a>
+      }
+    </div>
+  </header>
 
-      <!-- KPI Cards -->
-      <div class="kpi-grid">
-        @for (card of kpiCards(); track card.label) {
-          <a [routerLink]="card.route" class="kpi-card kpi-{{ card.color }}">
-            <div class="kpi-icon">
-              <lz-icon [name]="card.icon" [size]="18" />
-            </div>
-            <div class="kpi-body">
-              <div class="kpi-value">{{ card.value | number }}</div>
-              <div class="kpi-label">{{ card.label }}</div>
-            </div>
-          </a>
+  @let d = data();
+  @if (loading() && !d) {
+    <div class="skeleton-row" aria-busy="true" aria-label="Loading overview">
+      @for (i of [1, 2, 3, 4]; track i) { <div class="skeleton"></div> }
+    </div>
+  } @else if (error() && !d) {
+    <div class="alert alert-error">{{ error() }} <button class="btn btn-ghost btn-sm" (click)="load()">Try again</button></div>
+  } @else if (d) {
+    @if (d.setup && d.setup.remaining.length) {
+      <section class="setup">
+        <button class="setup-toggle" (click)="showSetup.set(!showSetup())" [attr.aria-expanded]="showSetup()">
+          <lz-icon name="zap" [size]="15" />
+          <strong>Finish setting up</strong>
+          <span>{{ d.setup.total - d.setup.remaining.length }} of {{ d.setup.total }} done</span>
+          <span class="chev">{{ showSetup() ? 'Hide' : 'Show' }}</span>
+        </button>
+        @if (showSetup()) {
+          <ul>
+            @for (s of d.setup.remaining; track s.key) {
+              <li><a [routerLink]="s.link"><strong>{{ s.label }}</strong><span>{{ s.detail }}</span></a></li>
+            }
+          </ul>
         }
-      </div>
+      </section>
+    }
 
-      <!-- Main 2-col grid -->
-      <div class="dash-grid">
+    @if (error()) { <div class="alert alert-warning mb-4">{{ error() }}</div> }
 
-        <!-- Recent Outreach -->
-        <div class="card">
-          <div class="card-header">
-            <h3>Recent Outreach</h3>
-            <a routerLink="/app/outreach" class="btn btn-ghost btn-sm">View All</a>
+    <section class="metrics" [class.dim]="loading()" aria-label="Key numbers">
+      @for (m of d.metrics; track m.key) {
+        <a class="metric" [routerLink]="m.link.path" [queryParams]="m.link.query">
+          <span class="m-top"><span class="m-label">{{ m.label }}</span><span class="m-when">{{ timeframe(m) }}</span></span>
+          @if (m.state === 'not_connected') {
+            <span class="m-value muted">Not connected</span>
+          } @else {
+            <span class="m-value">{{ metricValue(m) }}</span>
+          }
+          <span class="m-note">{{ m.note }}</span>
+        </a>
+      } @empty {
+        <p class="muted-box">No business numbers are available for your role. Your work is in the sections below.</p>
+      }
+    </section>
+
+    <div class="grid-main">
+      <section class="card attention" aria-labelledby="attn-title">
+        <header class="card-head">
+          <h2 id="attn-title">Needs attention @if (d.attention.total) { <span class="count">{{ d.attention.total }}</span> }</h2>
+          <span class="text-xs text-muted">{{ d.scope === 'team' ? 'Across the team' : 'Yours' }}</span>
+        </header>
+        @if (!d.attention.items.length) {
+          <div class="calm">
+            <lz-icon name="check-circle" [size]="22" />
+            <div><strong>Nothing needs attention</strong><p>No failed payments, waiting replies, overdue follow-ups, stuck handoffs or domain problems.</p></div>
           </div>
-          <div class="card-body">
-            @if (d.recentActivity.length === 0) {
-              <div class="empty-state" style="padding:32px 0">
-                <div class="empty-icon"><lz-icon name="outreach" [size]="20" /></div>
-                <h3>No outreach yet</h3>
-                <p>Log a call or email after saving your first lead.</p>
-              </div>
-            } @else {
-              <div class="activity-list">
-                @for (act of d.recentActivity; track act.id) {
-                  <div class="activity-row">
-                    <div class="act-icon act-{{ act.type }}">
-                      <lz-icon [name]="activityIcon(act.type)" [size]="15" />
-                    </div>
-                    <div class="act-body">
-                      <div class="act-name font-medium">{{ act.lead?.name }}</div>
-                      <div class="text-sm text-muted">{{ act.type | titlecase }} &middot; {{ act.note || 'No note' }}</div>
-                    </div>
-                    <div class="act-time text-xs text-muted">{{ act.createdAt | date:'MMM d' }}</div>
+        } @else {
+          <ul class="attn-list">
+            @for (item of d.attention.items; track item.key) {
+              <li class="attn" [attr.data-severity]="item.severity">
+                <span class="attn-icon" aria-hidden="true"><lz-icon [name]="kindIcons[item.kind] || 'alert'" [size]="15" /></span>
+                <div class="attn-body">
+                  <div class="attn-title"><strong>{{ item.subject }}</strong> — {{ item.issue }}</div>
+                  <div class="attn-why">
+                    {{ item.why }}
+                    @if (whenText(item)) { <span class="when">· {{ whenText(item) }}</span> }
+                    @if (item.owner) { <span class="owner">· {{ item.owner }}</span> }
                   </div>
+                </div>
+                <a class="btn btn-outline btn-sm" [routerLink]="item.action.path" [queryParams]="item.action.query">{{ item.action.label }}</a>
+              </li>
+            }
+          </ul>
+          @if (d.attention.total > d.attention.items.length || viewAllLinks().length) {
+            <footer class="attn-foot">
+              @if (d.attention.total > d.attention.items.length) { <span>{{ d.attention.total - d.attention.items.length }} more</span> }
+              @for (l of viewAllLinks(); track l.path + l.label) { <a [routerLink]="l.path" [queryParams]="l.query ?? null">View all in {{ l.label }} →</a> }
+            </footer>
+          }
+        }
+      </section>
+
+      <div class="side">
+        @if (d.sales; as s) {
+          <section class="card summary">
+            <header class="card-head"><h2>{{ d.scope === 'team' ? 'Team pipeline' : 'My pipeline' }}</h2><a routerLink="/app/leads" [queryParams]="{ layout: 'board', owner: d.scope === 'team' ? 'all' : 'me' }">Open board →</a></header>
+            @if (s.open) {
+              <div class="stage-bar" role="img" [attr.aria-label]="s.open + ' open deals by stage'">
+                @for (st of s.byStage; track st.stage) {
+                  @if (st.count) { <span [class]="'seg-' + st.stage" [style.flex]="st.count" [title]="st.label + ': ' + st.count"></span> }
                 }
               </div>
+              <ul class="stage-list">
+                @for (st of s.byStage; track st.stage) {
+                  @if (st.count) {
+                    <li><a routerLink="/app/leads" [queryParams]="{ stage: st.stage, owner: d.scope === 'team' ? 'all' : 'me' }"><span [class]="'dot seg-' + st.stage"></span>{{ st.label }}<strong>{{ st.count }}</strong></a></li>
+                  }
+                }
+              </ul>
+            } @else {
+              <p class="text-sm text-muted">No open deals{{ d.scope === 'team' ? '' : ' assigned to you' }} yet.</p>
             }
-          </div>
-        </div>
-
-        <!-- Quick Actions -->
-        <div class="card">
-          <div class="card-header"><h3>Quick Actions</h3></div>
-          <div class="card-body actions-list">
-            <a routerLink="/app/search" class="action-row">
-              <div class="action-icon"><lz-icon name="search" [size]="17" /></div>
-              <div class="action-text">
-                <div class="font-medium">Search New Leads</div>
-                <div class="text-sm text-muted">Find businesses by area or keyword</div>
-              </div>
-              <lz-icon name="arrow-right" [size]="16" class="action-arrow" />
-            </a>
-            <a routerLink="/app/leads" [queryParams]="{status: 'Follow Up'}" class="action-row">
-              <div class="action-icon action-amber"><lz-icon name="bell" [size]="17" /></div>
-              <div class="action-text">
-                <div class="font-medium">View Follow-ups</div>
-                <div class="text-sm text-muted">{{ d.stats.followUpsDue }} leads waiting</div>
-              </div>
-              <lz-icon name="arrow-right" [size]="16" class="action-arrow" />
-            </a>
-            <a routerLink="/app/leads" [queryParams]="{status: 'Interested'}" class="action-row">
-              <div class="action-icon action-green"><lz-icon name="star" [size]="17" /></div>
-              <div class="action-text">
-                <div class="font-medium">Interested Leads</div>
-                <div class="text-sm text-muted">{{ d.stats.interested }} ready to close</div>
-              </div>
-              <lz-icon name="arrow-right" [size]="16" class="action-arrow" />
-            </a>
-            <a routerLink="/app/leads" [queryParams]="{status: 'Contacted'}" class="action-row">
-              <div class="action-icon action-sky"><lz-icon name="phone" [size]="17" /></div>
-              <div class="action-text">
-                <div class="font-medium">Contacted Leads</div>
-                <div class="text-sm text-muted">{{ d.stats.contacted }} in progress</div>
-              </div>
-              <lz-icon name="arrow-right" [size]="16" class="action-arrow" />
-            </a>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Chart row -->
-      <div class="chart-row">
-
-        <!-- Lead growth line chart -->
-        <div class="card chart-card">
-          <div class="card-header">
-            <h3>Pipeline Overview</h3>
-            <span class="text-xs text-muted">Last 30 days</span>
-          </div>
-          <div class="card-body chart-body">
-            <div class="chart-y-labels">
-              <span>3K</span><span>2K</span><span>1K</span><span>0</span>
+            <div class="today-strip">
+              <a routerLink="/app/today"><strong>{{ s.replies }}</strong> repl{{ s.replies === 1 ? 'y' : 'ies' }} waiting</a>
+              <a routerLink="/app/today" [class.warn]="s.overdue"><strong>{{ s.overdue }}</strong> overdue</a>
+              <a routerLink="/app/today"><strong>{{ s.dueToday }}</strong> due today</a>
             </div>
-            <div class="chart-area">
-              <svg viewBox="0 0 560 110" preserveAspectRatio="none" class="line-chart-svg">
-                <defs>
-                  <linearGradient id="dashGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#6366F1" stop-opacity="0.14"/>
-                    <stop offset="100%" stop-color="#6366F1" stop-opacity="0"/>
-                  </linearGradient>
-                </defs>
-                <line x1="0" y1="27"  x2="560" y2="27"  stroke="#E2E8F0" stroke-width="1"/>
-                <line x1="0" y1="55"  x2="560" y2="55"  stroke="#E2E8F0" stroke-width="1"/>
-                <line x1="0" y1="82"  x2="560" y2="82"  stroke="#E2E8F0" stroke-width="1"/>
-                <path fill="url(#dashGrad)" d="M0,88 C40,83 70,79 110,70 C150,61 180,68 220,52 C260,36 290,44 330,27 C370,11 410,17 450,7 C490,1 530,3 560,1 L560,110 L0,110 Z"/>
-                <path fill="none" stroke="#6366F1" stroke-width="2.5" stroke-linecap="round" d="M0,88 C40,83 70,79 110,70 C150,61 180,68 220,52 C260,36 290,44 330,27 C370,11 410,17 450,7 C490,1 530,3 560,1"/>
-              </svg>
-              <div class="chart-x-labels">
-                <span>Apr 13</span><span>Apr 20</span><span>Apr 27</span>
-                <span>May 4</span><span>May 11</span><span>May 18</span>
-              </div>
+          </section>
+        }
+
+        @if (d.clients; as c) {
+          <section class="card summary">
+            <header class="card-head"><h2>Client base</h2><a routerLink="/app/clients">All clients →</a></header>
+            <div class="goal">
+              <div class="goal-line"><strong>{{ c.active }}</strong> active clients <span class="text-muted">of a {{ c.goal.target }} goal</span></div>
+              <div class="goal-bar" role="progressbar" [attr.aria-valuenow]="c.active" aria-valuemin="0" [attr.aria-valuemax]="c.goal.target"><span [style.width.%]="goalPercent(c.active, c.goal.target)"></span></div>
+              <p class="text-xs text-muted">{{ c.fromSales }} won through Leadzaro · {{ c.existing }} added as existing clients@if (c.goal.remaining) { · {{ c.goal.remaining }} to go } · test clients excluded</p>
             </div>
-          </div>
-        </div>
-
-        <!-- Top sources donut -->
-        <div class="card sources-card">
-          <div class="card-header"><h3>Top Sources</h3></div>
-          <div class="card-body sources-body">
-            <svg viewBox="0 0 130 130" class="donut-svg">
-              <circle cx="65" cy="65" r="48" fill="none" stroke="#EEF2FF" stroke-width="22"/>
-              <circle cx="65" cy="65" r="48" fill="none" stroke="#6366F1" stroke-width="22"
-                stroke-dasharray="135.7 165.9" stroke-dashoffset="0"
-                transform="rotate(-90 65 65)"/>
-              <circle cx="65" cy="65" r="48" fill="none" stroke="#8B5CF6" stroke-width="22"
-                stroke-dasharray="90.5 211.1" stroke-dashoffset="-135.7"
-                transform="rotate(-90 65 65)"/>
-              <circle cx="65" cy="65" r="48" fill="none" stroke="#C7D2FE" stroke-width="22"
-                stroke-dasharray="45.2 256.4" stroke-dashoffset="-226.2"
-                transform="rotate(-90 65 65)"/>
-              <text x="65" y="61" text-anchor="middle" font-size="13" font-weight="700" fill="#0F172A" font-family="Inter,sans-serif">2,534</text>
-              <text x="65" y="75" text-anchor="middle" font-size="9" fill="#64748B" font-family="Inter,sans-serif">Total</text>
-            </svg>
-            <div class="sources-legend">
-              <div class="legend-row"><span class="ldot" style="background:#6366F1"></span><span class="lname">Google Maps</span><span class="lpct">45%</span></div>
-              <div class="legend-row"><span class="ldot" style="background:#8B5CF6"></span><span class="lname">Direct Search</span><span class="lpct">30%</span></div>
-              <div class="legend-row"><span class="ldot" style="background:#C7D2FE"></span><span class="lname">Referrals</span><span class="lpct">15%</span></div>
-              <div class="legend-row"><span class="ldot" style="background:#EEF2FF"></span><span class="lname">Other</span><span class="lpct">10%</span></div>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Pipeline filters -->
-      @if (d.dashboardConfig.quickFilters.length > 0) {
-        <div class="card mt-4">
-          <div class="card-header">
-            <h3>Pipeline Filters &mdash; {{ d.userType }}</h3>
-          </div>
-          <div class="card-body filters-row">
-            @for (filter of d.dashboardConfig.quickFilters; track filter) {
-              <a routerLink="/app/leads" [queryParams]="{status: filter}" class="filter-chip">{{ filter }}</a>
+            <dl class="mini four">
+              <div><dt>New · {{ d.period.label.toLowerCase() }}</dt><dd>{{ c.newInPeriod }}</dd></div>
+              <div><dt>Ended</dt><dd [class.bad]="c.endedInPeriod">{{ c.endedInPeriod }}</dd></div>
+              <div><dt>Net growth</dt><dd [class.bad]="c.net < 0">{{ c.net > 0 ? '+' : '' }}{{ c.net }}</dd></div>
+              <div><dt>Retention</dt><dd>@if (c.retention) { {{ percent(c.retention.numerator, c.retention.denominator) }} } @else { <span class="text-muted" title="No clients were active at the start of the period">—</span> }</dd></div>
+            </dl>
+            <p class="text-xs text-muted note">@if (c.salesToExistingInPeriod) { Plus {{ c.salesToExistingInPeriod }} sale{{ c.salesToExistingInPeriod === 1 ? '' : 's' }} to existing clients (not counted as new). }@if (c.retention) { Retention: {{ c.retention.numerator }} of {{ c.retention.denominator }} clients active at the start are still active. }</p>
+            <ul class="flag-links">
+              @for (f of clientFlags; track f.key) {
+                @if ((c.flags[f.key] || 0) > 0) {
+                  <li><a routerLink="/app/clients" [queryParams]="{ view: f.key }" [class.warn]="f.warn">{{ f.label }}<strong>{{ c.flags[f.key] }}</strong></a></li>
+                }
+              }
+              @if (c.handoffsOpen) { <li><a routerLink="/app/today" class="warn">Handoffs to finish<strong>{{ c.handoffsOpen }}</strong></a></li> }
+            </ul>
+            @if (c.workload && c.workload.length) {
+              <table class="workload">
+                <thead><tr><th>Client manager</th><th>Clients</th><th>Need attention</th><th>Open tasks</th></tr></thead>
+                <tbody>
+                  @for (w of c.workload; track w.userId) {
+                    <tr><td><a routerLink="/app/clients" [queryParams]="{ manager: w.userId }">{{ w.name }}</a></td><td>{{ w.clients }}</td><td [class.warn]="w.attention">{{ w.attention }}</td><td>{{ w.openTasks }}@if (w.overdueTasks) { <span class="bad"> ({{ w.overdueTasks }} late)</span> }</td></tr>
+                  }
+                  @if (c.unassigned) { <tr><td><a routerLink="/app/clients" [queryParams]="{ view: 'unassigned' }">No manager</a></td><td>{{ c.unassigned }}</td><td></td><td></td></tr> }
+                </tbody>
+              </table>
+            } @else if (d.scope !== 'team') {
+              <p class="text-xs text-muted note">You manage {{ c.mine.clients }} client{{ c.mine.clients === 1 ? '' : 's' }}@if (c.mine.attention) { · {{ c.mine.attention }} need attention }.</p>
             }
-          </div>
-        </div>
+          </section>
+        }
+      </div>
+    </div>
+
+    <div class="grid-lower">
+      <section class="card activity" aria-labelledby="act-title">
+        <header class="card-head"><h2 id="act-title">Recent activity</h2><span class="text-xs text-muted">{{ d.period.label }}</span></header>
+        @for (e of d.activity; track $index) {
+          <a class="event" [routerLink]="e.link.path" [queryParams]="e.link.query">
+            <span class="ev-dot" [attr.data-kind]="e.kind" aria-hidden="true"></span>
+            <span class="ev-main"><strong>{{ e.title }}</strong> <span class="text-muted">{{ e.detail }}</span>@if (e.who) { <span class="text-muted"> · {{ e.who }}</span> }</span>
+            @if (e.amountCents !== undefined) { <span class="ev-amount">{{ e.amountCents | money: (e.currency || 'usd') }}</span> }
+            <span class="ev-when">{{ relativeDay(e.at) }}</span>
+          </a>
+        } @empty {
+          <p class="text-sm text-muted">Nothing new {{ d.period.label.toLowerCase() }} — payments, replies, new clients and completed handoffs will show here.</p>
+        }
+      </section>
+
+      @if (d.domains; as dm) {
+        <section class="card domains" aria-labelledby="dom-title">
+          <header class="card-head"><h2 id="dom-title">Domains &amp; renewals</h2><a routerLink="/app/domains">Domains →</a></header>
+          <p class="conn" [attr.data-state]="dm.connection.state">
+            <span class="dot"></span>
+            @switch (dm.connection.state) {
+              @case ('connected') { Namecheap syncing · last {{ relativeDay(dm.connection.lastSyncAt) }} }
+              @case ('attention') { {{ dm.connection.detail }} }
+              @default { Namecheap not connected — dates are entered by hand }
+            }
+          </p>
+          <dl class="mini">
+            <div><dt>Expired</dt><dd [class.bad]="dm.expired">{{ dm.expired }}</dd></div>
+            <div><dt>Auto-renew off, ≤30 days</dt><dd [class.warn]="dm.soonAutoRenewOff">{{ dm.soonAutoRenewOff }}</dd></div>
+            <div><dt>Renewing automatically</dt><dd>{{ dm.soonAutoRenewOn }}</dd></div>
+          </dl>
+          @if (dm.soonUnknown || dm.stale) {
+            <p class="text-xs text-muted">{{ dm.soonUnknown ? dm.soonUnknown + ' expiring soon with unknown auto-renew' : '' }}{{ dm.soonUnknown && dm.stale ? ' · ' : '' }}{{ dm.stale ? dm.stale + ' not synced recently' : '' }}</p>
+          }
+          @for (u of dm.upcoming; track u.id) {
+            <div class="upcoming"><span>{{ u.name }}@if (u.client) { <span class="text-muted"> · {{ u.client }}</span> }</span>
+              <span class="text-muted">{{ u.expiresOn | date: 'MMM d' }} · {{ u.autoRenew === true ? 'auto-renews' : u.autoRenew === false ? 'auto-renew off' : 'auto-renew unknown' }}</span></div>
+          }
+        </section>
       }
-
-    }
+    </div>
   }
-
 </div>

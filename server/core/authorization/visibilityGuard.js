@@ -20,11 +20,11 @@
  * anywhere else in the codebase throws immediately instead of silently
  * returning unscoped data.
  */
-function installVisibilityGuard(model) {
+function installVisibilityGuard(model, { accessModule = 'server/core/authorization/clientVisibleModels.js' } = {}) {
   const guard = (options) => {
     if (!options || options.__visibilityScoped !== true) {
       throw new Error(
-        `${model.name} must be queried through server/core/authorization/clientVisibleModels.js, `
+        `${model.name} must be queried through ${accessModule}, `
         + 'never directly — see docs/leadzaro/adr/0007-client-visibility-enforcement.md'
       );
     }

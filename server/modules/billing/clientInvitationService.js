@@ -4,6 +4,7 @@ const { Op } = require('sequelize');
 const { Contact } = require('../../models');
 const invitationService = require('../invitations/invitationService');
 const { SYSTEM_USER_ID } = require('../../core/constants/systemUser');
+const { env } = require('../../core/config/env');
 
 const CLIENT_OWNER_ROLE_KEY = 'client_owner';
 
@@ -29,6 +30,12 @@ async function triggerClientInvitationIfNew(conversionResult) {
   if (conversionResult.alreadyConverted) return { skipped: true, reason: 'already_converted' };
 
   const { conversionAttempt } = conversionResult;
+  // Leadzaro is internal-only (ADR 0011): paying clients are welcomed by the
+  // salesperson, not sent a login, unless explicitly re-enabled.
+  if (!env.CLIENT_PORTAL_AUTO_INVITE) {
+    await conversionAttempt.update({ clientInvitationStatus: 'skipped_internal' });
+    return { skipped: true, reason: 'internal_only' };
+  }
   const organizationId = conversionAttempt.resultingClientOrganizationId;
 
   const contacts = await Contact.findAll({

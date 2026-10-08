@@ -1,0 +1,24 @@
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.assign-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+
+  .form-control, .form-select {
+    width: auto;
+    flex: 1 1 170px;
+    min-width: 140px;
+  }
+}
+
+.file-input {
+  padding: 7px 10px;
+  cursor: pointer;
+}

@@ -1,0 +1,61 @@
+<div class="page">
+  <p class="tab-subtitle">What our team is working on for this project.</p>
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>Tasks</strong></div>
+
+    @if (tasks().length === 0) {
+      <app-empty-state icon="check-circle" title="No tasks yet" description="Add the first thing your team needs to do for this client." />
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th></th><th>Title</th><th>Status</th><th>Assignee</th><th>Due</th><th></th></tr></thead>
+          <tbody>
+            @for (t of tasks(); track t.id) {
+              <tr>
+                <td>
+                  <button
+                    class="priority-dot"
+                    [class]="'priority-' + t.priority"
+                    [title]="'Priority: ' + t.priority + ' (click to change)'"
+                    *hasPermission="'tasks.manage'"
+                    (click)="cyclePriority(t)"
+                  ></button>
+                </td>
+                <td>{{ t.title }}</td>
+                <td>
+                  @if (org.hasPermission('tasks.manage')) {
+                    <select [ngModel]="t.status" (ngModelChange)="updateTaskStatus(t, $event)" class="form-select">
+                      @for (s of taskStatuses; track s) { <option [value]="s">{{ s | label }}</option> }
+                    </select>
+                  } @else {
+                    <span>{{ t.status | label }}</span>
+                  }
+                </td>
+                <td>{{ t.assignee?.name || '—' }}</td>
+                <td>{{ t.dueDate ? (t.dueDate | date:'MMM d') : '—' }}</td>
+                <td>
+                  <button class="btn btn-sm" *hasPermission="'tasks.manage'" (click)="archiveTask(t)">Archive</button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <div class="card-body" *hasPermission="'tasks.manage'">
+      <div class="assign-form">
+        <input class="form-control" placeholder="New task title" [(ngModel)]="newTaskTitle" (keyup.enter)="createTask()" />
+        <select [(ngModel)]="newTaskAssigneeUserId" class="form-select">
+          <option value="">Unassigned</option>
+          @for (m of members(); track m.id) {
+            <option [value]="m.userId">{{ m.user?.name }}</option>
+          }
+        </select>
+        <input class="form-control" type="date" [(ngModel)]="newTaskDueDate" />
+        <button class="btn btn-outline" (click)="createTask()">Add Task</button>
+      </div>
+    </div>
+  </div>
+</div>

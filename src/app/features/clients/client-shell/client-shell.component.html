@@ -1,0 +1,58 @@
+<div class="client-shell">
+  <div class="client-header">
+    <a class="back-link" routerLink="/app/clients" [queryParams]="backQuery"><span aria-hidden="true">←</span> Clients</a>
+
+    @if (store.detail(); as detail) {
+      <div class="identity-row">
+        <div class="identity">
+          <div class="logo-tile">
+            @if (detail.profile.logo) {
+              <img [src]="detail.profile.logo.thumbnailUrl || detail.profile.logo.url" [alt]="detail.client.name + ' logo'" />
+            } @else {
+              <span>{{ initialsOf(detail.client.name) }}</span>
+            }
+          </div>
+          <div>
+            <h1>{{ detail.client.name }}</h1>
+            <div class="identity-meta">
+              @if (detail.profile.websiteUrl) {
+                <a [href]="detail.profile.websiteUrl" target="_blank" rel="noopener">{{ detail.profile.websiteUrl | host }} <span aria-hidden="true">↗</span></a>
+              }
+              @if (store.primaryContact(); as contact) {
+                <span>{{ contact.name }}@if (contact.phone) { · {{ contact.phone }} }</span>
+              }
+              <span>{{ detail.manager ? 'Managed by ' + detail.manager.name : 'No client manager' }}</span>
+              @if (detail.profile.clientEndedAt) { <span class="tag tag-muted">Former client</span> }
+              @else if (detail.health.flags.includes('attention')) { <span class="tag tag-warning">Needs attention</span> }
+            </div>
+          </div>
+        </div>
+        @if (org.hasPermission('projects.manage')) {
+          <button class="btn btn-outline" (click)="store.editClientOpen.set(true)">Edit Client</button>
+        }
+      </div>
+    } @else if (store.loadError()) {
+      <div class="alert alert-error">{{ store.loadError() }}</div>
+    } @else {
+      <div class="identity-row"><h1 class="text-muted">Loading…</h1></div>
+    }
+  </div>
+
+  @if (store.detail()) {
+    <nav class="client-tabs" aria-label="Client sections">
+      @for (tab of tabs(); track tab.segment) {
+        <a class="client-tab" [routerLink]="[tab.segment]" routerLinkActive="active">
+          <lz-icon [name]="tab.icon" [size]="16" />
+          <span>{{ tab.label }}</span>
+          @if (tab.count) { <span class="tab-count">{{ tab.count }}</span> }
+        </a>
+      }
+    </nav>
+
+    <div class="client-tab-content">
+      <router-outlet />
+    </div>
+  }
+</div>
+
+<app-edit-client-dialog />

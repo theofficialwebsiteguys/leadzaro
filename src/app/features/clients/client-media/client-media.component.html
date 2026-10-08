@@ -1,0 +1,84 @@
+<div class="page">
+  <p class="tab-subtitle">Logos, photos, screenshots and documents for this client — downloadable in their original form.</p>
+
+  @if (canUpload()) {
+    <section #uploadPanel class="upload-panel" [class.highlight]="highlightUpload()">
+      <div class="upload-copy">
+        <lz-icon name="import" [size]="20" />
+        <div>
+          <strong>Upload files</strong>
+          <span class="text-sm text-muted">Images get resized previews automatically; the original is always kept.</span>
+        </div>
+      </div>
+      <div class="upload-controls">
+        <label class="attach-label" for="attach-to">Attach to</label>
+        <select id="attach-to" class="form-select" [(ngModel)]="attachTo">
+          <option value="">Client-wide</option>
+          @for (project of projects(); track project.id) { <option [value]="project.id">{{ project.displayName }}</option> }
+        </select>
+        <label class="btn btn-primary btn-sm" [class.disabled]="uploading()">
+          {{ uploading() ? uploadStatus() : 'Choose files' }}
+          <input type="file" multiple class="visually-hidden" [disabled]="uploading()" (change)="onFilesSelected($event)" />
+        </label>
+      </div>
+    </section>
+  }
+
+  @if (message()) {
+    <div class="alert alert-info mb-4">{{ message() }}</div>
+  }
+
+  @if ((store.detail()?.files?.length ?? 0) > 0) {
+    <div class="filters" role="tablist" aria-label="Filter files">
+      <button type="button" class="filter-chip" [class.active]="filter() === 'all'" (click)="filter.set('all')">All</button>
+      <button type="button" class="filter-chip" [class.active]="filter() === 'client'" (click)="filter.set('client')">Client-wide</button>
+      @for (project of projects(); track project.id) {
+        <button type="button" class="filter-chip" [class.active]="filter() === project.id" (click)="filter.set(project.id)">{{ project.displayName }}</button>
+      }
+    </div>
+  }
+
+  @if (files().length) {
+    <div class="file-grid">
+      @for (file of files(); track file.id) {
+        <article class="file-tile">
+          <div class="file-preview">
+            @if (isImage(file)) {
+              <img [src]="file.thumbnailUrl || file.url" [alt]="file.originalName" loading="lazy" />
+            } @else {
+              <span class="file-ext">{{ extension(file) }}</span>
+            }
+            @if (roles(file).length) {
+              <div class="role-tags">
+                @for (role of roles(file); track role) { <span class="role-tag">{{ role }}</span> }
+              </div>
+            }
+            @if (canDelete()) {
+              <button type="button" class="delete-button" (click)="remove(file)" [attr.aria-label]="'Delete ' + file.originalName" title="Delete">
+                <lz-icon name="x" [size]="14" />
+              </button>
+            }
+          </div>
+          <div class="file-info">
+            <span class="file-name" [title]="file.originalName">{{ file.originalName }}</span>
+            <span class="text-sm text-muted">{{ projectName(file.projectId) }} · {{ formatBytes(file.sizeBytes) }} · {{ file.createdAt | date:'MMM d' }}</span>
+          </div>
+          <div class="file-actions">
+            <button type="button" class="action" (click)="download(file)">Download</button>
+            @if (isImage(file) && canManage()) {
+              <button type="button" class="action" (click)="setFeatured(file)">Feature</button>
+              <button type="button" class="action" (click)="setLogo(file)">Use as logo</button>
+              @if (file.projectId) {
+                <button type="button" class="action" (click)="setProjectPreview(file)">Project preview</button>
+              }
+            }
+          </div>
+        </article>
+      }
+    </div>
+  } @else if ((store.detail()?.files?.length ?? 0) > 0) {
+    <p class="text-muted">No files in this group.</p>
+  } @else {
+    <div class="compact-empty">No files yet — upload a logo, site screenshots, photos or documents above.</div>
+  }
+</div>

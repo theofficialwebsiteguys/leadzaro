@@ -36,6 +36,8 @@ module.exports = (sequelize) => {
       type: DataTypes.DATE,
       allowNull: true,
     },
+    livemode: { type: DataTypes.BOOLEAN, allowNull: true },
+    stripeCreatedAt: { type: DataTypes.DATE, allowNull: true },
   });
 
   return WebhookEvent;

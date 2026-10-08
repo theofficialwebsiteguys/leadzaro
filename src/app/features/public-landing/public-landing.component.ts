@@ -1,3 +1,4 @@
+import { PhoneInputDirective } from '../../shared/forms/formatted-inputs';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -7,7 +8,7 @@ import { InboundCampaign, getInboundCampaign } from '../../core/models/inbound.m
 @Component({
   selector: 'app-public-landing',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, PhoneInputDirective],
   templateUrl: './public-landing.component.html',
   styleUrl: './public-landing.component.scss',
 })

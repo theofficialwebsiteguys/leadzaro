@@ -444,3 +444,28 @@
   justify-content: center;
   margin-top: 28px;
 }
+
+/* Pipeline status on each result (ADR 0011). */
+.pipeline-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.save-error { color: var(--danger-text); display: block; margin-top: 4px; }
+.dup-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 12px; margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius);
+}
+.dup-actions { display: flex; gap: 6px; }
+
+// Map and expandable details (ADR 0013)
+.map-wrap { margin-bottom: 14px; }
+.map-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; strong { font-size: .9rem; } }
+.col-n { width: 36px; text-align: center; }
+.n-badge { display: inline-grid; place-items: center; min-width: 22px; height: 22px; border-radius: 11px; background: var(--primary-50); color: var(--primary-dark); font-size: .72rem; font-weight: 700; }
+.as-link { border: none; background: none; padding: 0; text-align: left; cursor: pointer; font: inherit; color: inherit; &:hover { color: var(--primary-dark); text-decoration: underline; } }
+.row-open td { background: var(--primary-50); }
+.detail-row td { background: var(--bg); padding: 14px 18px; }
+.detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; font-size: .8125rem;
+  @media (max-width: 900px) { grid-template-columns: 1fr 1fr; }
+  p { margin: 2px 0; } .eyebrow { margin-bottom: 4px; }
+  .warn { color: var(--warning-text); }
+  .signal { color: var(--text-secondary); } }
+.hours { margin: 0; padding: 0; list-style: none; font-size: .75rem; color: var(--text-secondary); li { padding: 1px 0; } }
+.detail-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }

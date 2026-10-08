@@ -1,0 +1,27 @@
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.category-chip {
+  padding: 2px 10px;
+  border-radius: var(--radius-full, 999px);
+  background: var(--bg-2, var(--border-light));
+  font-size: 0.78rem;
+  text-transform: capitalize;
+}
+
+.assign-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+
+  .form-control, .form-select {
+    width: auto;
+    flex: 1 1 170px;
+    min-width: 140px;
+  }
+}

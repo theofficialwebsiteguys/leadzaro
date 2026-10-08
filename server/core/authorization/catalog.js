@@ -38,6 +38,8 @@ const PERMISSIONS = [
   { key: 'projects.view', category: 'projects', description: "View one's own client organization's project" },
   { key: 'projects.manage', category: 'projects', description: 'Manage project assignments and settings' },
   { key: 'projects.change_stage', category: 'projects', description: 'Change a project\'s stage, including overriding an incomplete soft-gate checklist' },
+  { key: 'integrations.manage', category: 'integrations', description: 'Connect, test, sync and disconnect third-party accounts such as Namecheap' },
+  { key: 'domains.view', category: 'domains', description: 'View the Domains inventory and domain details' },
   { key: 'tasks.manage', category: 'projects', description: 'Create, update, and log time against project tasks' },
   { key: 'messages.post', category: 'projects', description: 'Post messages in a project channel visible to the requester' },
   { key: 'requests.create', category: 'projects', description: 'Submit a client request or content inbox item' },
@@ -52,6 +54,13 @@ const PERMISSIONS = [
   { key: 'builder.publish', category: 'builder', description: 'Approve and publish a pending website version' },
   { key: 'builder.manage', category: 'builder', description: 'Manage website editor assignments and the section/design-system library' },
   { key: 'builder.develop', category: 'builder', description: 'Trigger Angular code generation, merge developer branches back, and register custom components' },
+  { key: 'outreach.send', category: 'outreach', description: 'Send email and text messages and start calls from Leadzaro' },
+  { key: 'templates.manage_shared', category: 'outreach', description: 'Create and edit the team's shared message templates' },
+  { key: 'payments.create', category: 'payments', description: 'Create Stripe payment links and checkouts, and link Stripe customers' },
+  { key: 'payments.custom_offer', category: 'payments', description: 'Create payment links for a custom amount not in the Stripe catalog' },
+  { key: 'payments.record_manual', category: 'payments', description: 'Record a payment received outside Stripe (check, cash, bank transfer)' },
+  { key: 'workspace.manage', category: 'admin', description: 'Edit the company profile and workspace-wide defaults' },
+  { key: 'sales.view_team', category: 'sales', description: 'View team sales reports and set sales goals' },
   { key: 'seo.manage_entitlements', category: 'seo', description: 'Manually grant or revoke a client organization\'s SEO add-on entitlement' },
 ];
 
@@ -79,6 +88,8 @@ const SALES_PERMISSIONS = [
   'outreach.create',
   'outreach.read',
   'outreach.archive',
+  'outreach.send',
+  'payments.create',
 ];
 
 const ADMIN_ONLY_PERMISSIONS = [
@@ -110,14 +121,14 @@ const EMPLOYEE_ROLES = [
   {
     key: 'sales_manager',
     name: 'Sales Manager',
-    permissions: [...SALES_PERMISSIONS, 'leads.merge', 'audit.view'],
+    permissions: [...SALES_PERMISSIONS, 'leads.merge', 'audit.view', 'templates.manage_shared', 'payments.custom_offer', 'payments.record_manual', 'sales.view_team'],
   },
   { key: 'project_manager', name: 'Project Manager', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'projects.manage', 'projects.change_stage', 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'cancellations.request', 'cancellations.manage', 'builder.publish', 'builder.manage'] },
   { key: 'designer', name: 'Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'builder.edit'] },
   { key: 'advanced_designer', name: 'Advanced Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'builder.edit', 'builder.publish', 'builder.develop'] },
   { key: 'developer', name: 'Developer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'builder.edit', 'builder.publish', 'builder.develop'] },
   { key: 'support', name: 'Support', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage'] },
-  { key: 'billing', name: 'Billing', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'billing.manage_webhooks', 'billing.manage_service_plans', 'seo.manage_entitlements'] },
+  { key: 'billing', name: 'Billing', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'billing.manage_webhooks', 'billing.manage_service_plans', 'seo.manage_entitlements', 'payments.record_manual'] },
 ].map((role) => ({
   ...role,
   scope: 'employee',
