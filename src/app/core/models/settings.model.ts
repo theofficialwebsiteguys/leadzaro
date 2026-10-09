@@ -1,5 +1,6 @@
 // Settings and Dashboard overview (ADR 0012).
 import { SalesKit } from './sales.model';
+import { SearchPreset, SearchTerritory } from './lead.model';
 
 export interface MySettings {
   user: { id: string; name: string; email: string; phone: string | null; emailVerified: boolean; createdAt: string };
@@ -20,6 +21,7 @@ export interface WorkspaceSettings {
   };
   defaults: { timezone: string | null; defaultSearchLocation: string | null; defaultSearchKeywords: string | null; defaultFollowUpDays: number; clientGoal: number };
   salesKit: SalesKit;
+  leadSearch: { territories: SearchTerritory[]; presets: SearchPreset[]; customized: boolean };
   memberCount: number;
   canEdit: boolean;
 }

@@ -40,6 +40,7 @@ async function channelStatus(ctx) {
       replyTo: user?.email || null,
       receivesReplies: false,
       tracksDelivery: false,
+      testRedirect: isSmtpConfigured() && env.SALES_EMAIL_TEST_REDIRECT ? env.SALES_EMAIL_TEST_REDIRECT : null,
       setup: 'An administrator sets EMAIL_PROVIDER=smtp, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD and SALES_EMAIL_FROM on the server.',
       note: 'Replies go to your own inbox. Log them here with “Log a reply”.',
     },
@@ -71,16 +72,20 @@ async function sendEmail({
   if (!isSmtpConfigured()) throw invalid('Email sending is not connected. Use “Open in my email app” and log it, or ask an administrator to connect email.', 503);
   const address = salesFromAddress();
   const safeName = String(fromName || '').replace(/["<>\r\n]/g, '').trim();
+  const redirect = env.SALES_EMAIL_TEST_REDIRECT;
+  const from = safeName ? `"${safeName}" <${address}>` : address;
   const result = await getEmailAdapter().send({
-    to,
-    subject,
+    to: redirect || to,
+    subject: redirect ? `[TEST — would go to ${to}] ${subject}` : subject,
     text: body,
-    from: safeName ? `"${safeName}" <${address}>` : address,
+    from,
     replyTo: replyTo || undefined,
     headers: activityId ? { 'X-Leadzaro-Activity': activityId } : undefined,
   });
   if (!result.delivered) return { ok: false, error: result.error || 'The email server did not accept the message.' };
-  return { ok: true, providerMessageId: result.messageId || null, status: 'sent' };
+  return {
+    ok: true, providerMessageId: result.messageId || null, status: 'sent', from: address, provider: redirect ? 'smtp_test' : 'smtp',
+  };
 }
 
 // ---------------------------------------------------------------- twilio
@@ -157,6 +162,7 @@ function verifyTwilioSignature(path, params, signature) {
 
 module.exports = {
   channelStatus,
+  emailConnected: isSmtpConfigured,
   twilioConfigured,
   sendEmail,
   sendSms,

@@ -42,6 +42,10 @@
       <option value="none">No next step</option>
       <option value="stalled">Stalled (no recent activity)</option>
     </select>
+    <select class="form-select" [(ngModel)]="filters.contact" (ngModelChange)="apply({})" aria-label="Contact info">
+      <option value="">Any contact info</option>
+      <option value="missing_email">Missing email</option>
+    </select>
     <select class="form-select" [(ngModel)]="filters.view" (ngModelChange)="apply({})" aria-label="Show">
       <option value="active">Active</option>
       <option value="dnc">Do not contact</option>
@@ -75,7 +79,7 @@
       <p>Try “Everyone’s leads” or a different stage — or find new businesses to contact.</p>
       <div class="flex gap-2 mt-2">
         <a routerLink="/app/search" class="btn btn-primary btn-sm">Find leads</a>
-        <button class="btn btn-ghost btn-sm" (click)="apply({ q: '', stage: 'open', owner: 'all', due: '', view: 'active' })">Clear filters</button>
+        <button class="btn btn-ghost btn-sm" (click)="apply({ q: '', stage: 'open', owner: 'all', due: '', contact: '', view: 'active' })">Clear filters</button>
       </div>
     </div>
   } @else if (filters.layout === 'list') {
@@ -98,7 +102,7 @@
               <tr (click)="open(row)" tabindex="0" (keydown.enter)="open(row)" [class.reply]="row.replyNeededSince">
                 <td>
                   <div class="biz">
-                    <strong>{{ row.businessName }}</strong>
+                    <strong>{{ row.businessName }} <lz-google-search [name]="row.businessName" [city]="row.city" [state]="row.state" /></strong>
                     <span class="biz-sub">
                       @if (row.title) { {{ row.title }} · }
                       {{ row.city || row.category || '—' }}
@@ -108,7 +112,7 @@
                     </span>
                     <span class="methods" aria-label="Contact details on file">
                       <span [class.on]="row.hasPhone" title="Phone"><lz-icon name="phone" [size]="12" /></span>
-                      <span [class.on]="row.hasEmail" title="Email"><lz-icon name="mail" [size]="12" /></span>
+                      <span [class.on]="row.hasEmail" [title]="row.hasEmail ? 'Email' : 'No email — ' + (row.emailStatus ? discoveryLabels[row.emailStatus] : 'not checked')"><lz-icon name="mail" [size]="12" /></span>
                       <span [class.on]="!!row.website" title="Website"><lz-icon name="globe" [size]="12" /></span>
                     </span>
                   </div>
@@ -176,7 +180,7 @@
           <header><span [class]="'stage-chip stage-' + col.stage">{{ col.label }}</span><span class="col-count">{{ col.items.length }}</span></header>
           @for (row of col.items; track row.opportunityId) {
             <a class="board-card" [routerLink]="['/app/leads', row.opportunityId]" [class.reply]="row.replyNeededSince">
-              <strong>{{ row.businessName }}</strong>
+              <strong>{{ row.businessName }} <lz-google-search [name]="row.businessName" [city]="row.city" [state]="row.state" /></strong>
               @if (row.valueCents) { <span class="value">{{ row.valueCents | money: row.currency }}</span> }
               <span class="card-next" [class.overdue]="isOverdue(row.nextActionAt)">
                 @if (row.replyNeededSince) { Reply needed }

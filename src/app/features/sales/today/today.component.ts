@@ -8,6 +8,7 @@ import { AuthService } from '../../../core/services/auth.service';
 import { OrganizationContextService } from '../../../core/services/organization-context.service';
 import { LeadCard, OPEN_STAGES, STAGE_LABELS, TodayData } from '../../../core/models/sales.model';
 import { IconComponent } from '../../../shared/icon/icon.component';
+import { GoogleSearchComponent } from '../../../shared/google-search/google-search.component';
 import { DialogComponent } from '../../../shared/dialog/dialog.component';
 import {
   MoneyPipe, RelativeDayPipe, isOverdue, nextActionLabel,
@@ -49,7 +50,7 @@ const REASONS = [
 @Component({
   selector: 'app-today',
   standalone: true,
-  imports: [RouterLink, FormsModule, DatePipe, IconComponent, DialogComponent, MoneyPipe, RelativeDayPipe],
+  imports: [GoogleSearchComponent, RouterLink, FormsModule, DatePipe, IconComponent, DialogComponent, MoneyPipe, RelativeDayPipe],
   templateUrl: './today.component.html',
   styleUrl: './today.component.scss',
 })

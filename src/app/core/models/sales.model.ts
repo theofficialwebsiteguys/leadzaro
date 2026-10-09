@@ -45,6 +45,8 @@ export interface StallInfo { days: number; limit: number; label: string }
 export interface LeadCard {
   opportunityId: string;
   businessName: string;
+  city?: string | null;
+  state?: string | null;
   title?: string | null;
   stage: SalesStage;
   stageLabel: string;
@@ -93,6 +95,8 @@ export interface TodayData {
 export interface QueueItem {
   opportunityId: string;
   businessName: string;
+  city?: string | null;
+  state?: string | null;
   stage: SalesStage;
   stageLabel: string;
   reason: string;
@@ -106,6 +110,7 @@ export interface LeadRow {
   businessName: string;
   title: string | null;
   city: string | null;
+  state?: string | null;
   category: string | null;
   isClient: boolean;
   stage: SalesStage;
@@ -125,6 +130,8 @@ export interface LeadRow {
   hasPhone: boolean;
   hasEmail: boolean;
   website: string | null;
+  facebookUrl?: string | null;
+  emailStatus?: DiscoveryStatus | null;
   paymentStatus: string | null;
   stall: StallInfo | null;
 }
@@ -160,6 +167,8 @@ export interface Business {
   rating: number | null;
   reviewCount: number | null;
   listingSource: string | null;
+  facebookUrl: string | null;
+  contactResearch: ContactResearch;
 }
 
 export interface Activity {
@@ -174,6 +183,9 @@ export interface Activity {
   body: string | null;
   note: string | null;
   toAddress: string | null;
+  fromAddress?: string | null;
+  provider?: string | null;
+  providerMessageId?: string | null;
   errorMessage: string | null;
   durationSeconds: number | null;
   occurredAt: string;
@@ -324,6 +336,7 @@ export interface ChannelState {
   replyTo?: string | null;
   receivesReplies?: boolean;
   tracksDelivery?: boolean;
+  testRedirect?: string | null;
   needsYourPhone?: boolean;
   yourPhone?: string | null;
   setup: string;
@@ -332,7 +345,7 @@ export interface ChannelState {
 
 export interface Channels { email: ChannelState; sms: ChannelState; call: ChannelState }
 
-export type RecommendationAction = 'call' | 'email' | 'sms' | 'log' | 'offer' | 'check_payment' | 'handoff' | 'client' | 'schedule' | 'edit_business';
+export type RecommendationAction = 'call' | 'email' | 'sms' | 'log' | 'offer' | 'check_payment' | 'handoff' | 'client' | 'schedule' | 'edit_business' | 'find_email' | 'intro_email';
 
 export interface Recommendation {
   key: string;
@@ -427,6 +440,9 @@ export interface Workspace {
     stageChangedAt: string | null;
     closeReasonCode: string | null;
     closeReasonLabel: string | null;
+    outreachReason: string | null;
+    outreachEvidence: string | null;
+    emailDraft: EmailDraft | null;
     qualification: Qualification;
     stall: StallInfo | null;
   };
@@ -443,6 +459,7 @@ export interface Workspace {
   clientId: string | null;
   recommendation: Recommendation;
   channels: Channels;
+  outreach: { observations: OutreachObservation[]; previousEmails: PreviousEmail[] };
   pipeline: PipelineGuide;
   salesKit: SalesKit;
   ownership: { mine: boolean; unassigned: boolean };
@@ -475,6 +492,8 @@ export interface RenderedMessage { templateId: string | null; channel: string | 
 export interface Conversation {
   opportunityId: string;
   businessName: string;
+  city?: string | null;
+  state?: string | null;
   stage: SalesStage;
   stageLabel: string;
   assignedTo: UserRef | null;
@@ -566,4 +585,46 @@ export interface BillingSummary {
   }[];
   invoices: { id: string; number: string | null; status: string; amountDue: number; amountPaid: number; currency: string; created: string; hostedInvoiceUrl: string | null; invoicePdf: string | null }[] | null;
   liveError: string | null;
+}
+
+// ---- Contact research and the introduction email (ADR 0014)
+
+/** Email discovery — separate from the lead's stage and from message delivery. */
+export type DiscoveryStatus = 'not_checked' | 'checking' | 'found' | 'none_found' | 'failed' | 'needs_review';
+
+export interface DiscoveryCandidate { email: string; sourceUrl: string; via: string; sameDomain: boolean; freeProvider: boolean }
+
+export interface ContactResearch {
+  status: DiscoveryStatus;
+  statusLabel: string;
+  summary: string | null;
+  email: string | null;
+  emailSource: string | null;
+  emailSourceUrl: string | null;
+  checkedAt: string | null;
+  checkedBy: string | null;
+  candidates: DiscoveryCandidate[];
+  pages: { url: string; ok: boolean; status: number | null; error: string | null }[];
+  website: { url: string; finalUrl?: string | null; reachable?: boolean | null; secure?: boolean | null; error?: string | null; checkedAt: string; standalone: boolean } | null;
+  facebookUrl: string | null;
+  facebookMatch: 'linked_from_website' | 'google_listing' | 'manual' | 'on_record' | 'uncertain' | null;
+  facebookSuggestion: { url: string; match: string; sourceUrl?: string } | null;
+  markedNoEmail: { by: string; at: string; note: string | null } | null;
+}
+
+export interface OutreachObservation { key: string; observation: string; reason: string; evidence: string }
+export interface PreviousEmail { id?: string; at: string; subject: string | null; to: string | null; status: string | null; origin?: string; user: UserRef | null }
+export interface EmailDraft { subject: string; body: string; to: string | null; savedAt: string; savedBy: UserRef | null }
+export interface IntroDraft { subject: string; body: string; evidence: { label: string; value: string; source?: string }[]; warnings: string[]; contactId: string | null }
+
+export const DISCOVERY_LABELS: Record<DiscoveryStatus, string> = {
+  not_checked: 'Not checked', checking: 'Checking…', found: 'Email found', none_found: 'No public email found', failed: 'Couldn’t check', needs_review: 'Needs manual review',
+};
+export const DISCOVERY_TONES: Record<DiscoveryStatus, string> = {
+  not_checked: 'tag-muted', checking: 'tag-info', found: 'tag-success', none_found: 'tag-muted', failed: 'tag-danger', needs_review: 'tag-warning',
+};
+
+/** A Facebook search for the business, when no page is on record. */
+export function facebookSearchUrl(name: string, place?: string | null): string {
+  return 'https://www.facebook.com/search/pages/?q=' + encodeURIComponent([name, place].filter(Boolean).join(' '));
 }

@@ -48,7 +48,7 @@ export class SettingsService {
     return this.unwrap(this.http.get<{ data: WorkspaceSettings }>(`${API}/workspace`));
   }
 
-  updateWorkspace(body: { company?: Record<string, unknown>; defaults?: Record<string, unknown>; salesKit?: unknown }): Observable<WorkspaceSettings> {
+  updateWorkspace(body: { company?: Record<string, unknown>; defaults?: Record<string, unknown>; salesKit?: unknown; leadSearch?: unknown }): Observable<WorkspaceSettings> {
     return this.unwrap(this.http.put<{ data: WorkspaceSettings }>(`${API}/workspace`, body));
   }
 

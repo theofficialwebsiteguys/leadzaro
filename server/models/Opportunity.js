@@ -93,6 +93,10 @@ module.exports = (sequelize) => {
     qualTiming: { type: DataTypes.STRING(200), allowNull: true },
     qualBudget: { type: DataTypes.STRING(200), allowNull: true },
     closeReasonCode: { type: DataTypes.STRING(30), allowNull: true },
+    // Why we're reaching out, and what supports it (ADR 0014); the unsent email draft.
+    outreachReason: { type: DataTypes.TEXT, allowNull: true },
+    outreachEvidence: { type: DataTypes.TEXT, allowNull: true },
+    emailDraft: { type: DataTypes.JSONB, allowNull: true },
   }, {
     indexes: [
       {

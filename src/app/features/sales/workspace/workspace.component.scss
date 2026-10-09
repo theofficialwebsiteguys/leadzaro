@@ -12,7 +12,7 @@
 
 .back-link { display: inline-block; margin-bottom: 12px; }
 
-.ws-head { display: flex; flex-direction: column; gap: 14px; padding: 18px 22px; }
+.ws-head { display: flex; flex-direction: column; gap: 12px; padding: 16px 20px; }
 .head-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 .head-id { min-width: 0; flex: 1 1 320px; }
 .title-row {
@@ -26,18 +26,28 @@
 .sub { margin: 6px 0 0; color: var(--text-muted); font-size: .875rem; strong { color: var(--text-primary); } }
 .contact-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
 
-.head-facts {
-  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin: 0; border-top: 1px solid var(--border-light); padding-top: 12px;
-  @media (max-width: 1000px) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
-  > div { padding: 0 14px; border-left: 1px solid var(--border-light); &:first-child { padding-left: 0; border-left: none; }
-    @media (max-width: 1000px) { padding: 0; border-left: none; } }
-  .warn { color: var(--warning-text); }
-  dt { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 600; margin-bottom: 3px; }
-  dd { margin: 0; font-size: .875rem; line-height: 1.45; color: var(--text-primary); min-width: 0; overflow-wrap: anywhere; }
-  .line { display: block; }
+// One line of key facts under the name.
+.facts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 8px 0 0; font-size: .8125rem; color: var(--text-primary);
+  .k { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 600; margin-right: 5px; }
   .muted { color: var(--text-muted); }
-  .overdue { color: var(--danger-text); font-weight: 600; }
-}
+  .warn { color: var(--warning-text); }
+  .overdue { color: var(--danger-text); font-weight: 600; } }
+
+// Main column (next step + tabs) and a sidebar (contact, reason, what we know).
+.ws-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; margin-top: 16px; align-items: start;
+  @media (max-width: 1080px) { grid-template-columns: 1fr; } }
+.ws-main { min-width: 0; }
+.ws-side { display: flex; flex-direction: column; gap: 14px; min-width: 0;
+  @media (min-width: 1081px) { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; padding-bottom: 4px; }
+  .qual-grid { grid-template-columns: 1fr; }
+  .qual-form { grid-template-columns: 1fr; } }
+
+// Messages float bottom-right so they're seen wherever you are on the page.
+.toast { position: fixed; right: 20px; bottom: 20px; z-index: 300; max-width: min(420px, calc(100vw - 32px)); margin: 0; box-shadow: var(--shadow-lg);
+  display: flex; gap: 10px; align-items: flex-start; }
+.toast-x { border: none; background: none; color: inherit; font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0 2px; margin-left: auto; }
+.owner-warn { margin-top: 12px; }
+.ac-form { display: flex; flex-direction: column; gap: 10px; .eyebrow { margin: 4px 0 0; } }
 .link-btn {
   border: none; background: none; padding: 0; text-align: left; cursor: pointer; color: inherit; font: inherit;
   &:hover { color: var(--primary-dark); }
@@ -46,12 +56,11 @@
   &:focus-visible { outline: 2px solid var(--primary-light); }
 }
 
-.flash { margin-top: 12px; }
 
 .next-step {
   --tone: var(--primary); --tone-bg: var(--primary-50);
   display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;
-  margin: 14px 0 18px; padding: 16px 20px; border-radius: var(--radius-lg);
+  margin: 0 0 16px; padding: 14px 18px; border-radius: var(--radius-lg); align-items: flex-start;
   background: var(--tone-bg); border: 1px solid color-mix(in srgb, var(--tone) 25%, transparent);
   h2 { margin: 2px 0; font-size: 1.1rem; font-family: var(--font-display); }
   p { margin: 0; font-size: .8125rem; color: var(--text-secondary); }
@@ -115,9 +124,6 @@
 .closed-line { margin: 0; font-size: .85rem; color: var(--text-secondary); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .owner-warn { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-.guide-row { display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); gap: 14px; margin: 14px 0 18px; align-items: stretch;
-  @media (max-width: 1000px) { grid-template-columns: 1fr; }
-  .next-step { margin: 0; align-items: flex-start; } }
 .ns-main { flex: 1 1 280px; min-width: 0; }
 .why { margin: 8px 0 0; padding-left: 18px; font-size: .8125rem; color: var(--text-secondary); li { margin: 2px 0; } }
 .ask { margin-top: 8px !important; font-size: .8125rem; strong { color: var(--text-primary); } }

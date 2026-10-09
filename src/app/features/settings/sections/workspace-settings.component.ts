@@ -2,6 +2,8 @@ import { PhoneInputDirective, ZipInputDirective } from '../../../shared/forms/fo
 import { Component, HostListener, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SettingsService } from '../../../core/services/settings.service';
+import { LeadService } from '../../../core/services/lead.service';
+import { SearchCategory } from '../../../core/models/lead.model';
 import { WorkspaceSettings } from '../../../core/models/settings.model';
 import { HasUnsavedChanges, Snapshot } from '../unsaved-changes.guard';
 
@@ -16,6 +18,10 @@ function allZones(): string[] {
 interface WorkspaceForm {
   company: { name: string; phone: string; email: string; website: string; addressLine1: string; city: string; state: string; postalCode: string };
   defaults: { timezone: string; defaultSearchLocation: string; defaultSearchKeywords: string; defaultFollowUpDays: number | null };
+  leadSearch: {
+    territories: { key: string; name: string; areasText: string }[];
+    presets: { key: string; name: string; categories: string[]; subcategories: string[]; territory: string }[];
+  };
 }
 
 /**
@@ -72,6 +78,53 @@ interface WorkspaceForm {
               <input id="w-kw" class="form-control" name="kw" [(ngModel)]="form.defaults.defaultSearchKeywords" placeholder="e.g. plumbers" /></div>
           </fieldset>
 
+          <div class="set-card-head sub-head"><div><h3>Lead search territories &amp; presets</h3>
+            <p>Starting points on Find businesses — employees can still search anywhere. Each area is something Google can locate: a county, city or ZIP.</p></div></div>
+          <fieldset class="set-card-body" [disabled]="!data()!.canEdit">
+            <p class="eyebrow">Territories</p>
+            @for (t of form.leadSearch.territories; track $index; let i = $index) {
+              <div class="ls-row">
+                <input class="form-control" [name]="'tn' + i" [(ngModel)]="t.name" placeholder="Name, e.g. Rockland County" aria-label="Territory name" />
+                <textarea class="form-control" rows="2" [name]="'ta' + i" [(ngModel)]="t.areasText" placeholder="One area per line, e.g. Rockland County, NY" aria-label="Areas"></textarea>
+                <button type="button" class="btn btn-ghost btn-sm" (click)="removeTerritory(i)">Remove</button>
+              </div>
+            }
+            <div><button type="button" class="btn btn-outline btn-sm" (click)="addTerritory()">Add territory</button></div>
+
+            <p class="eyebrow">Preset searches</p>
+            @for (p of form.leadSearch.presets; track $index; let i = $index) {
+              <div class="ls-preset">
+                <div class="ls-row">
+                  <input class="form-control" [name]="'pn' + i" [(ngModel)]="p.name" placeholder="Name, e.g. Contractors in Rockland County" aria-label="Preset name" />
+                  <select class="form-select" [name]="'pt' + i" [(ngModel)]="p.territory" aria-label="Territory">
+                    <option value="">Choose a territory</option>
+                    @for (t of form.leadSearch.territories; track $index) { <option [value]="territoryKey(t)">{{ t.name || 'Unnamed' }}</option> }
+                  </select>
+                  <button type="button" class="btn btn-ghost btn-sm" (click)="removePreset(i)">Remove</button>
+                </div>
+                <div class="ls-cats">
+                  @for (c of categories(); track c.key) {
+                    <label class="ls-check"><input type="checkbox" [name]="'pc' + i + c.key" [ngModel]="p.categories.includes(c.key)" (ngModelChange)="toggle(p.categories, c.key)" /> {{ c.label }}</label>
+                  }
+                </div>
+                @for (c of categories(); track c.key) {
+                  @if (p.categories.includes(c.key)) {
+                    <div class="ls-cats sub"><span class="text-xs text-muted">{{ c.label }}:</span>
+                      @for (s of c.subcategories; track s.key) {
+                        <label class="ls-check"><input type="checkbox" [name]="'ps' + i + s.key" [ngModel]="p.subcategories.includes(s.key)" (ngModelChange)="toggle(p.subcategories, s.key)" /> {{ s.label }}</label>
+                      }
+                      <span class="text-xs text-muted">(none ticked = all)</span>
+                    </div>
+                  }
+                }
+              </div>
+            }
+            <div class="ls-actions">
+              <button type="button" class="btn btn-outline btn-sm" (click)="addPreset()">Add preset</button>
+              @if (data()!.leadSearch.customized) { <button type="button" class="btn btn-ghost btn-sm" (click)="resetLeadSearch = true; save()">Restore the starting territories &amp; presets</button> }
+            </div>
+          </fieldset>
+
           @if (data()!.canEdit) {
             <div class="set-actions">
               @if (dirty()) { <span class="dirty">Unsaved changes</span> } @else if (message()) { <span class="saved" role="status">{{ message() }}</span> }
@@ -88,11 +141,19 @@ interface WorkspaceForm {
     fieldset { border: none; margin: 0; min-width: 0; }
     .sub-head { border-top: 1px solid var(--border-light); padding-top: 16px; }
     .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; div { display: flex; flex-direction: column; gap: 6px; } }
+    .ls-row { display: grid; grid-template-columns: 1fr 1.4fr auto; gap: 8px; align-items: start; @media (max-width: 640px) { grid-template-columns: 1fr; } }
+    .ls-preset { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .ls-cats { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; &.sub { padding-left: 8px; } }
+    .ls-check { display: inline-flex; gap: 5px; align-items: center; font-size: .8rem; color: var(--text-secondary); }
+    .ls-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     code { font-size: .75rem; background: var(--bg-2); padding: 1px 5px; border-radius: 4px; }
   `],
 })
 export class WorkspaceSettingsComponent implements OnInit, HasUnsavedChanges {
   private readonly settings = inject(SettingsService);
+  private readonly leads = inject(LeadService);
+  readonly categories = signal<SearchCategory[]>([]);
+  resetLeadSearch = false;
 
   readonly zones = allZones();
   readonly companyPlaceholder = '{{my_company}}';
@@ -106,7 +167,22 @@ export class WorkspaceSettingsComponent implements OnInit, HasUnsavedChanges {
 
   ngOnInit(): void {
     this.load();
+    this.leads.searchOptions().subscribe({ next: (res) => this.categories.set(res.data.categories), error: () => undefined });
   }
+
+  territoryKey(t: { key: string; name: string }): string {
+    return t.key || t.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
+  }
+
+  toggle(list: string[], key: string): void {
+    const i = list.indexOf(key);
+    if (i >= 0) list.splice(i, 1); else list.push(key);
+  }
+
+  addTerritory(): void { this.form.leadSearch.territories.push({ key: '', name: '', areasText: '' }); }
+  removeTerritory(i: number): void { this.form.leadSearch.territories.splice(i, 1); }
+  addPreset(): void { this.form.leadSearch.presets.push({ key: '', name: '', categories: [], subcategories: [], territory: '' }); }
+  removePreset(i: number): void { this.form.leadSearch.presets.splice(i, 1); }
 
   load(): void {
     this.loadError.set('');
@@ -124,6 +200,7 @@ export class WorkspaceSettingsComponent implements OnInit, HasUnsavedChanges {
       defaults: {
         timezone: '', defaultSearchLocation: '', defaultSearchKeywords: '', defaultFollowUpDays: 2,
       },
+      leadSearch: { territories: [], presets: [] },
     };
   }
 
@@ -136,6 +213,10 @@ export class WorkspaceSettingsComponent implements OnInit, HasUnsavedChanges {
       },
       defaults: {
         timezone: d.defaults.timezone ?? '', defaultSearchLocation: d.defaults.defaultSearchLocation ?? '', defaultSearchKeywords: d.defaults.defaultSearchKeywords ?? '', defaultFollowUpDays: d.defaults.defaultFollowUpDays ?? 2,
+      },
+      leadSearch: {
+        territories: (d.leadSearch?.territories ?? []).map((t) => ({ key: t.key, name: t.name, areasText: t.areas.join('\n') })),
+        presets: (d.leadSearch?.presets ?? []).map((p) => ({ ...p, categories: [...p.categories], subcategories: [...p.subcategories] })),
       },
     };
     this.snapshot.set(this.form);
@@ -166,7 +247,10 @@ export class WorkspaceSettingsComponent implements OnInit, HasUnsavedChanges {
       && !confirm('Changing the timezone changes when “today” and “overdue” start for everyone. Continue?')) return;
     this.saving.set(true);
     this.error.set('');
-    this.settings.updateWorkspace(this.form).subscribe({
+    const territories = this.form.leadSearch.territories.map((t) => ({ key: this.territoryKey(t), name: t.name, areas: t.areasText.split(/\n|;/).map((a) => a.trim()).filter(Boolean) }));
+    const leadSearch = this.resetLeadSearch ? null : { territories, presets: this.form.leadSearch.presets };
+    this.resetLeadSearch = false;
+    this.settings.updateWorkspace({ company: this.form.company, defaults: this.form.defaults, leadSearch }).subscribe({
       next: (res) => { this.saving.set(false); this.apply(res); this.message.set('Workspace saved.'); },
       error: (err) => { this.saving.set(false); this.error.set(err.error?.message || 'Not saved — your changes are still here.'); },
     });

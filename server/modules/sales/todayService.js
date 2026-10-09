@@ -44,7 +44,7 @@ function ownerWhere(ctx, scope, userId) {
 }
 
 const OPP_INCLUDE = [
-  { model: Organization, as: 'organization', attributes: ['id', 'name', 'type', 'phone', 'email'] },
+  { model: Organization, as: 'organization', attributes: ['id', 'name', 'type', 'phone', 'email', 'city', 'state'] },
   { model: User, as: 'assignedTo', attributes: ['id', 'name'] },
 ];
 
@@ -52,6 +52,8 @@ function card(o, extra = {}) {
   return {
     opportunityId: o.id,
     businessName: o.organization?.name,
+    city: o.organization?.city || null,
+    state: o.organization?.state || null,
     title: o.title,
     stage: o.stage,
     stageLabel: STAGE_LABELS[o.stage],
@@ -224,6 +226,8 @@ async function buildQueue(ctx, { scope = 'mine', userId, tzOffset, reasons, stag
     entries.push({
       opportunityId: o.id,
       businessName: o.organization?.name,
+      city: o.organization?.city || null,
+      state: o.organization?.state || null,
       stage: o.stage,
       stageLabel: STAGE_LABELS[o.stage],
       reason,

@@ -16,6 +16,8 @@ const handoffService = require('./handoffService');
 const stripeService = require('./stripeService');
 const paymentRequestService = require('./paymentRequestService');
 const channels = require('./channelService');
+const contactDiscovery = require('./contactDiscoveryService');
+const introEmail = require('./introEmailService');
 const {
   invalid, isUniqueViolation, assertNoSecrets, isEmail,
 } = require('./salesCommon');
@@ -150,20 +152,36 @@ function recommend({
       tip: 'Answer their question first, then agree one concrete next step and log it.',
     });
   }
+  // Email first (ADR 0014): a personal introduction email is the default
+  // first touch, so a lead without an email needs contact research next.
+  if (!methods.email && !outbound.length) {
+    const research = business.contactResearch || {};
+    const checking = research.status === 'checking';
+    return result({
+      key: 'find_email',
+      label: checking ? 'Finding their email…' : 'Find their email',
+      detail: research.summary || (business.website ? 'Check their website and Facebook page for a public email.' : 'No website listed — their Facebook page is the most likely place to find an email.'),
+      tone: 'warning',
+      action: { type: 'find_email', label: checking ? 'View progress' : 'Find email' },
+      tip: methods.phone ? 'A phone number is on file as a backup, but start with a personal email once you have an address.' : null,
+    });
+  }
   if (!methods.phone && !methods.email) {
     return result({
-      key: 'add_contact', label: 'Add contact info', detail: 'There is no phone number or email for this business yet.', tone: 'warning', action: { type: 'edit_business', label: 'Add phone or email' },
-      tip: business.website ? 'Their website’s contact page usually lists a phone number or email.' : 'Check their Google listing for a phone number.',
+      key: 'add_contact', label: 'Add contact info', detail: 'There is no phone number or email for this business yet.', tone: 'warning', action: { type: 'find_email', label: 'Find email' },
+      tip: business.website ? 'Their website’s contact page usually lists an email.' : 'Their Facebook page often lists an email.',
     });
   }
   if (!outbound.length) {
     return result({
       key: 'first_contact',
-      label: 'Make first contact',
-      detail: methods.phone ? 'Call first — a conversation qualifies faster than email. Log how it went straight after.' : 'No phone number, so start with the first-email template.',
+      label: 'Send an introduction email',
+      detail: opportunity.outreachReason
+        ? 'Your reason for reaching out is saved — draft a short, personal email, review it and send.'
+        : 'Note one specific, supported reason to reach out, then draft a short personal email.',
       tone: 'primary',
-      action: { type: firstChoice, label: firstChoice === 'call' ? 'Call now' : 'Write the first email' },
-      tip: business.website ? 'Open with one specific thing you noticed on their current website.' : 'They have no website listed — lead with how customers find them online today.',
+      action: { type: 'intro_email', label: 'Draft email' },
+      tip: 'Mention only what you actually checked — for example that no website turned up on their Google listing.',
     });
   }
   if (problemRequest && !openRequest && !hasSale) {
@@ -273,6 +291,9 @@ function presentActivity(a) {
     body: json.body,
     note: json.note,
     toAddress: json.toAddress,
+    fromAddress: json.fromAddress,
+    provider: json.provider,
+    providerMessageId: json.providerMessageId,
     errorMessage: json.errorMessage,
     durationSeconds: json.durationSeconds,
     occurredAt: json.occurredAt || json.createdAt,
@@ -300,6 +321,8 @@ function presentBusiness(organization, lead) {
     rating: lead?.rating ? Number(lead.rating) : null,
     reviewCount: lead?.reviewCount ?? null,
     listingSource: lead?.source || null,
+    facebookUrl: organization.facebookUrl || null,
+    contactResearch: contactDiscovery.present(organization),
   };
 }
 
@@ -424,6 +447,9 @@ async function getWorkspace(ctx, opportunityId) {
       createdAt: opportunity.createdAt,
       stageChangedAt: opportunity.stageChangedAt,
       closeReasonCode: opportunity.closeReasonCode,
+      outreachReason: opportunity.outreachReason || null,
+      outreachEvidence: opportunity.outreachEvidence || null,
+      emailDraft: opportunity.emailDraft || null,
       closeReasonLabel: opportunity.closeReasonCode ? CLOSE_REASONS[opportunity.closeReasonCode] || null : null,
       qualification: Object.fromEntries(Object.keys(QUALIFICATION_FIELDS).map((key) => [key, opportunity[key] || null])),
       stall: stallInfo(opportunity),
@@ -445,6 +471,7 @@ async function getWorkspace(ctx, opportunityId) {
       opportunity, business, contacts, activities: presentedActivities, requests, handoff, hasSale,
     }),
     channels: await channels.channelStatus(ctx),
+    outreach: await introEmail.outreachContext(ctx, opportunity, organization),
     pipeline: pipelineGuide(),
     salesKit: salesKitFor(ctx),
     ownership: {
@@ -493,6 +520,8 @@ async function updateBusiness(ctx, opportunityId, input) {
     if (['phone', 'email', 'website', 'address'].includes(key) && (organization[key === 'address' ? 'addressLine1' : key])) detailsSource[key] = 'verified';
   }
   if (updates.website && !/^https?:\/\//i.test(updates.website)) updates.website = `https://${updates.website}`;
+  // A hand-edited email is the email; the discovery record follows it (ADR 0014).
+  if (updates.email !== undefined && updates.email !== organization.email) updates.emailDiscovery = contactDiscovery.discoveryAfterManualEmail(organization, updates.email, ctx.userId);
   await organization.update({ ...updates, detailsSource });
   await recordAudit({
     organizationId: ctx.agencyId, actorUserId: ctx.userId, action: 'sales.business_updated', targetType: 'Organization', targetId: organization.id, metadata: { fields: Object.keys(updates) }, req: ctx.req,

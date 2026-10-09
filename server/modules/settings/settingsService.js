@@ -11,6 +11,7 @@ const stripeService = require('../sales/stripeService');
 const channelService = require('../sales/channelService');
 const namecheapConnectionService = require('../integrations/namecheapConnectionService');
 const { invalid, isEmail, assertNoSecrets } = require('../sales/salesCommon');
+const { CATEGORIES, cleanAreaList, searchSettingsOf } = require('../../core/crm/searchCatalog');
 
 /**
  * Settings (ADR 0012). One place for each kind of setting, each stored
@@ -128,6 +129,36 @@ function cleanSalesKit(input) {
   };
 }
 
+/**
+ * Lead search territories and preset searches (ADR 0014). Territories are
+ * named lists of areas Google can locate (counties, cities, ZIPs);
+ * presets name a set of categories and a territory. Starting points, not
+ * restrictions — employees can still search anywhere.
+ */
+function cleanLeadSearch(input) {
+  const slug = (text) => String(text).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
+  const territories = (Array.isArray(input.territories) ? input.territories : []).slice(0, 20).map((t, i) => {
+    const name = textField(t?.name, `Territory ${i + 1} name`, 60, { required: true });
+    const areas = cleanAreaList(t?.areas);
+    if (!areas.length) throw invalid(`${name}: add at least one county, city or ZIP`);
+    return { key: slug(t?.key || name) || `territory_${i + 1}`, name, areas };
+  });
+  const categoryKeys = new Set(CATEGORIES.map((c) => c.key));
+  const subKeys = new Set(CATEGORIES.flatMap((c) => c.subcategories.map((s) => s.key)));
+  const presets = (Array.isArray(input.presets) ? input.presets : []).slice(0, 20).map((p, i) => {
+    const name = textField(p?.name, `Preset ${i + 1} name`, 80, { required: true });
+    const categories = (Array.isArray(p?.categories) ? p.categories : []).filter((k) => categoryKeys.has(k));
+    const subcategories = (Array.isArray(p?.subcategories) ? p.subcategories : []).filter((k) => subKeys.has(k));
+    if (!categories.length && !subcategories.length) throw invalid(`${name}: choose at least one business type`);
+    const territory = territories.some((t) => t.key === p?.territory) ? p.territory : null;
+    if (!territory) throw invalid(`${name}: choose one of the territories`);
+    return {
+      key: slug(p?.key || name) || `preset_${i + 1}`, name, categories, subcategories, territory,
+    };
+  });
+  return { territories, presets };
+}
+
 // ---------------------------------------------------------------- my account
 
 async function getMe(ctx) {
@@ -225,6 +256,7 @@ async function getWorkspace(ctx) {
     company: Object.fromEntries(Object.keys(COMPANY_FIELDS).map((k) => [k, org[k] ?? null])),
     defaults: workspaceDefaults(org),
     salesKit: salesKitOf(org),
+    leadSearch: searchSettingsOf(org),
     memberCount,
     canEdit: ctx.can('workspace.manage'),
   };
@@ -252,6 +284,7 @@ async function updateWorkspace(ctx, input) {
   if (d.defaultFollowUpDays !== undefined) settings.defaultFollowUpDays = intField(d.defaultFollowUpDays, 'Default follow-up days', 1, 30);
   if (d.clientGoal !== undefined) settings.clientGoal = intField(d.clientGoal, 'Client goal', 1, 100000);
   if (input.salesKit !== undefined) settings.salesKit = cleanSalesKit(input.salesKit || {});
+  if (input.leadSearch !== undefined) settings.leadSearch = input.leadSearch === null ? null : cleanLeadSearch(input.leadSearch);
   for (const key of Object.keys(settings)) if (settings[key] === null) delete settings[key];
 
   await org.update({ ...updates, settings });

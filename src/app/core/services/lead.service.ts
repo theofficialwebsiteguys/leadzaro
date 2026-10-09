@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
-  Lead, LeadSearchParams, LeadSearchResult, PaginatedResponse, PlaceDetails,
+  GuidedSearchParams, Lead, LeadSearchParams, LeadSearchResult, PaginatedResponse, PlaceDetails, SearchDiscovery, SearchOptions,
 } from '../models/lead.model';
 
 @Injectable({ providedIn: 'root' })
@@ -17,6 +17,23 @@ export class LeadService {
       }
     });
     return this.http.get<{ data: LeadSearchResult }>('/api/leads/search', { params: httpParams });
+  }
+
+  /** Categories, territories and presets for the guided search (ADR 0014). */
+  searchOptions(): Observable<{ data: SearchOptions }> {
+    return this.http.get<{ data: SearchOptions }>('/api/leads/search-options');
+  }
+
+  /** Runs the guided search. Only called when the employee presses “Find businesses”. */
+  guidedSearch(params: GuidedSearchParams): Observable<{ data: LeadSearchResult }> {
+    return this.http.post<{ data: LeadSearchResult }>('/api/leads/search/guided', params);
+  }
+
+  /** Checks one search result's website for a public email (cached per listing on the server). */
+  discoverEmail(lead: Lead, force = false): Observable<{ data: { discovery: SearchDiscovery } }> {
+    return this.http.post<{ data: { discovery: SearchDiscovery } }>('/api/leads/discover-email', {
+      placeId: lead.googlePlaceId || lead.id, website: lead.website || null, name: lead.name, force,
+    });
   }
 
   getById(id: string): Observable<{ data: { lead: Lead } }> {

@@ -1,3 +1,5 @@
+import type { ContactResearch, DiscoveryStatus } from './sales.model';
+
 export type LeadStatus = 'New' | 'Saved' | 'Contacted' | 'Follow Up' | 'Interested' | 'Not Interested' | 'Closed' | 'Archived';
 export type LeadPriority = 'Low' | 'Medium' | 'High';
 export type OutreachType = 'email' | 'call' | 'visit' | 'message' | 'linkedin' | 'other';
@@ -37,15 +39,72 @@ export interface Lead {
     lastInteractionAt: string | null;
     doNotContact: boolean;
     archived: boolean;
+    contact?: ContactResearch | null;
   } | null;
   possibleMatch?: { organizationId: string; name: string; isClient: boolean; reasons: string[] } | null;
+  /** Guided search (ADR 0014): which selections found it, and an email check already run on it. */
+  matchedQueries?: string[];
+  searchArea?: string;
+  discovery?: SearchDiscovery | null;
+}
+
+/** Email discovery run on an unsaved search result. */
+export interface SearchDiscovery {
+  status: DiscoveryStatus;
+  statusLabel?: string;
+  summary: string;
+  email: string | null;
+  emailSourceUrl: string | null;
+  checkedAt: string;
+  candidates: { email: string; sourceUrl: string }[];
+  website: { url: string; reachable?: boolean | null; secure?: boolean | null; error?: string | null; standalone: boolean } | null;
+  facebook: { url: string; match: string } | null;
+}
+
+export interface SearchCategory {
+  key: string;
+  label: string;
+  queries: string[];
+  subcategories: { key: string; label: string; query: string }[];
+}
+export interface SearchTerritory { key: string; name: string; areas: string[] }
+export interface SearchPreset { key: string; name: string; categories: string[]; subcategories: string[]; territory: string }
+export interface SearchOptions {
+  categories: SearchCategory[];
+  territories: SearchTerritory[];
+  presets: SearchPreset[];
+  maxQueries: number;
+  canEditPresets: boolean;
+}
+
+export interface GuidedSearchParams {
+  categories: string[];
+  subcategories: string[];
+  keywords: string;
+  mode: 'radius' | 'area';
+  location: string;
+  areas: string[];
+  radius: number;
+  minRating?: number | null;
+  minReviews?: number | null;
+  demo?: boolean;
+}
+
+export interface SearchPlan {
+  mode: 'radius' | 'area';
+  queries: { query: string; label: string; area: string; count: number; error: string | null }[];
+  skipped: { query: string; area: string }[];
+  notes: string[];
+  failed: number;
 }
 
 /** A search response: the results plus the searched area (for the map and distances). */
 export type LeadSearchResult = PaginatedResponse<Lead> & {
   source: string;
   center?: { lat: number; lng: number } | null;
-  radiusMiles?: number;
+  radiusMiles?: number | null;
+  plan?: SearchPlan;
+  hiddenOutsideRadius?: number;
 };
 
 export interface PlaceDetails {

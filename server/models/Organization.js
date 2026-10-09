@@ -67,6 +67,10 @@ module.exports = (sequelize) => {
     postalCode: { type: DataTypes.STRING(20), allowNull: true },
     category: { type: DataTypes.STRING(150), allowNull: true },
     detailsSource: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    // Contact research (ADR 0014): the business's Facebook page and the
+    // email-discovery record (status, sources checked, what was found where).
+    facebookUrl: { type: DataTypes.STRING(500), allowNull: true },
+    emailDiscovery: { type: DataTypes.JSONB, allowNull: true },
     // Workspace-wide defaults for an agency (ADR 0012): timezone, default
     // search location/keywords, default follow-up days.
     settings: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },

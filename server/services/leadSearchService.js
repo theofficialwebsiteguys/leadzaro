@@ -106,15 +106,19 @@ async function geocodeLocation(location) {
 
   const key = location.toLowerCase().trim();
   const hit  = geocodeCache.get(key);
-  if (hit && Date.now() < hit.expiresAt) return { lat: hit.lat, lng: hit.lng };
+  if (hit && Date.now() < hit.expiresAt) return { lat: hit.lat, lng: hit.lng, viewport: hit.viewport, label: hit.label };
 
   try {
     const url  = `${GEOCODE_URL}?address=${encodeURIComponent(location)}&key=${API_KEY}`;
     const data = await httpRequest(url);
-    const loc  = data.results?.[0]?.geometry?.location;
+    const geometry = data.results?.[0]?.geometry;
+    const loc  = geometry?.location;
     if (loc) {
-      geocodeCache.set(key, { lat: loc.lat, lng: loc.lng, expiresAt: Date.now() + GEOCODE_TTL });
-      return { lat: loc.lat, lng: loc.lng };
+      // The bounds (or viewport) let a county/region search be limited to that area.
+      const viewport = geometry.bounds || geometry.viewport || null;
+      const label = data.results[0].formatted_address || location;
+      geocodeCache.set(key, { lat: loc.lat, lng: loc.lng, viewport, label, expiresAt: Date.now() + GEOCODE_TTL });
+      return { lat: loc.lat, lng: loc.lng, viewport, label };
     }
     return null;
   } catch {
@@ -434,6 +438,167 @@ function searchDemo({ keyword, location, minRating, minReviews, page = 1, limit 
   };
 }
 
+// ── Guided search (ADR 0014) ──────────────────────────────────────────────────
+// Category and territory selections become a bounded set of Text Search
+// queries (one per business type per area), merged and de-duplicated by
+// Google listing id. Provider limits are reported, never papered over.
+
+function guidedError(message) {
+  const err = new Error(message);
+  err.statusCode = 422;
+  return err;
+}
+
+function milesBetween(a, b) {
+  const rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 3958.8 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+async function runTextQuery({ textQuery, bias, restriction }) {
+  const cacheKey = `guided:${JSON.stringify({ textQuery: textQuery.toLowerCase(), bias, restriction })}`;
+  const hit = searchCache.get(cacheKey);
+  if (hit && Date.now() < hit.expiresAt) return hit.data;
+  const body = { textQuery, pageSize: 20, languageCode: 'en' };
+  if (restriction) body.locationRestriction = { rectangle: restriction };
+  else if (bias) body.locationBias = { circle: bias };
+  const data = await httpRequest(PLACES_TEXT_SEARCH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': API_KEY, 'X-Goog-FieldMask': PLACES_FIELD_MASK },
+    body: JSON.stringify(body),
+  });
+  const items = (data.places || []).filter((p) => p.businessStatus !== 'CLOSED_PERMANENTLY').map(mapPlaceToLead);
+  searchCache.set(cacheKey, { data: items, expiresAt: Date.now() + SEARCH_TTL });
+  return items;
+}
+
+/** A listing key for catching the same storefront listed twice — never name alone. */
+function storefrontKey(item) {
+  const name = String(item.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const street = String(item.address || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return name.length >= 4 && street.length >= 4 ? `${name}|${street}|${String(item.zip || '').slice(0, 5)}` : null;
+}
+
+/**
+ * params: { queries: [{query,label}], mode: 'radius'|'area', location,
+ * radius, areas: [], minRating, minReviews, demo, maxQueries }
+ */
+async function searchGuided(params) {
+  const {
+    queries, mode = 'radius', location, radius, areas = [], minRating, minReviews, demo, maxQueries = 8,
+  } = params;
+  if (!queries.length) throw guidedError('Choose at least one business type, or add a keyword.');
+  const useDemo = GLOBAL_DEMO || demo === true || demo === 'true' || !API_KEY || API_KEY === 'your_google_places_api_key_here';
+  const radiusMiles = Math.min(Math.max(Number(radius) || 10, 1), 50);
+  const targets = mode === 'area' ? (areas.length ? areas : [location]).filter(Boolean) : [location].filter(Boolean);
+  if (!targets.length) throw guidedError('Choose a territory, or enter a city, ZIP or county.');
+
+  const combos = [];
+  for (const area of targets) for (const q of queries) combos.push({ ...q, area });
+  const toRun = combos.slice(0, maxQueries);
+  const skipped = combos.slice(maxQueries).map((c) => ({ query: c.query, area: c.area }));
+  const notes = [];
+  if (skipped.length) notes.push(`Only the first ${maxQueries} searches ran (${skipped.length} skipped) to keep each click within Google’s per-query cost. Narrow the business types or areas to cover the rest.`);
+
+  const byId = new Map();
+  const byStorefront = new Map();
+  const ran = [];
+  let center = null;
+  let hiddenOutsideRadius = 0;
+
+  const add = (item, combo) => {
+    const existing = byId.get(item.id) || (storefrontKey(item) && byStorefront.get(storefrontKey(item)));
+    if (existing) {
+      if (!existing.matchedQueries.includes(combo.label)) existing.matchedQueries.push(combo.label);
+      return;
+    }
+    const entry = { ...item, matchedQueries: [combo.label], searchArea: combo.area };
+    byId.set(item.id, entry);
+    const key = storefrontKey(item);
+    if (key) byStorefront.set(key, entry);
+  };
+
+  if (useDemo) {
+    for (const combo of toRun) {
+      const items = generateDemoBusinesses(combo.label, combo.area, 6).map((b, i) => ({ ...b, id: `${b.id}_${ran.length}_${i}`, googlePlaceId: `${b.googlePlaceId}_${ran.length}_${i}` }));
+      items.forEach((item) => add(item, combo));
+      ran.push({ query: combo.query, label: combo.label, area: combo.area, count: items.length, error: null });
+    }
+    center = { lat: 25.7617, lng: -80.1918 };
+  } else {
+    // Geocode each area once.
+    const places = new Map();
+    for (const area of targets) {
+      // eslint-disable-next-line no-await-in-loop
+      places.set(area, await geocodeLocation(area));
+    }
+    const first = places.get(targets[0]);
+    if (first) center = { lat: first.lat, lng: first.lng };
+    for (const area of targets) if (!places.get(area)) notes.push(`Google couldn’t locate “${area}”, so that search used the place name only and may include results elsewhere.`);
+    if (mode === 'area') notes.push('Area searches use the map boundary of each county or region as a rectangle, so results just over a border can appear. Google returns at most 20 businesses per search.');
+
+    const runOne = async (combo) => {
+      const geo = places.get(combo.area);
+      let request;
+      if (mode === 'area') {
+        const v = geo?.viewport;
+        request = {
+          textQuery: `${combo.query} in ${combo.area}`,
+          restriction: v ? { low: { latitude: v.southwest.lat, longitude: v.southwest.lng }, high: { latitude: v.northeast.lat, longitude: v.northeast.lng } } : null,
+          bias: !v && geo ? { center: { latitude: geo.lat, longitude: geo.lng }, radius: 40000 } : null,
+        };
+      } else {
+        request = {
+          textQuery: `${combo.query} near ${combo.area}`,
+          bias: geo ? { center: { latitude: geo.lat, longitude: geo.lng }, radius: Math.min(Math.round(radiusMiles * 1609.34), 50000) } : null,
+        };
+      }
+      try {
+        const items = await runTextQuery(request);
+        let kept = items;
+        if (mode !== 'area' && geo) {
+          kept = items.filter((i) => typeof i.latitude !== 'number' || milesBetween(geo, { lat: i.latitude, lng: i.longitude }) <= radiusMiles);
+          hiddenOutsideRadius += items.length - kept.length;
+        }
+        kept.forEach((item) => add(item, combo));
+        ran.push({ query: combo.query, label: combo.label, area: combo.area, count: kept.length, error: null });
+      } catch (err) {
+        ran.push({ query: combo.query, label: combo.label, area: combo.area, count: 0, error: /timeout/i.test(err.message) ? 'Google timed out' : 'Google returned an error' });
+      }
+    };
+    // A few at a time — keeps latency down without hammering the API.
+    for (let i = 0; i < toRun.length; i += 4) {
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.all(toRun.slice(i, i + 4).map(runOne));
+    }
+    if (mode !== 'area') notes.push(`Google treats the radius as a preference, so results farther than ${radiusMiles} miles were removed${hiddenOutsideRadius ? ` (${hiddenOutsideRadius} hidden)` : ''}.`);
+    if (ran.length && ran.every((r) => r.error)) {
+      const err = new Error('Places API error: every search failed');
+      throw err;
+    }
+  }
+
+  let items = [...byId.values()];
+  if (minRating) items = items.filter((l) => (l.rating ?? 0) >= Number.parseFloat(minRating));
+  if (minReviews) items = items.filter((l) => (l.reviewCount ?? 0) >= Number.parseInt(minReviews, 10));
+
+  return {
+    items,
+    pagination: {
+      total: items.length, page: 1, limit: items.length, totalPages: 1, hasNext: false, hasPrev: false,
+    },
+    source: useDemo ? 'demo' : 'google',
+    center,
+    radiusMiles: mode === 'area' ? null : radiusMiles,
+    plan: {
+      mode, queries: ran, skipped, notes, failed: ran.filter((r) => r.error).length,
+    },
+    hiddenOutsideRadius,
+  };
+}
+
 // ── Public entry point ─────────────────────────────────────────────────────────
 async function searchLeads(params) {
   const { demo } = params;
@@ -447,5 +612,5 @@ async function searchLeads(params) {
 }
 
 module.exports = {
-  searchLeads, getPlaceDetails, getPlaceFullDetails, getStaticMap,
+  searchLeads, searchGuided, getPlaceDetails, getPlaceFullDetails, getStaticMap,
 };

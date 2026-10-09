@@ -469,3 +469,63 @@
   .signal { color: var(--text-secondary); } }
 .hours { margin: 0; padding: 0; list-style: none; font-size: .75rem; color: var(--text-secondary); li { padding: 1px 0; } }
 .detail-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+
+/* ── Guided search (ADR 0014) ─────────────────────────────────────────────── */
+.detail-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.presets {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px;
+  .eyebrow { margin-right: 4px; }
+}
+.preset {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; max-width: 280px;
+  padding: 7px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card);
+  cursor: pointer; text-align: left; font: inherit;
+  strong { font-size: .8125rem; color: var(--text-primary); }
+  span { font-size: .7rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 256px; }
+  &:hover { border-color: var(--primary-light); background: var(--primary-50); }
+  &:focus-visible { outline: 2px solid var(--primary-light); outline-offset: 1px; }
+}
+.edit-presets { font-size: .75rem; margin-left: auto; }
+.sf { display: flex; flex-direction: column; gap: 16px; }
+.sf-section { display: flex; flex-direction: column; gap: 8px; }
+.sf-label { font-size: .8125rem; font-weight: 600; color: var(--text-primary); }
+.hint { font-size: .75rem; font-weight: 400; color: var(--text-muted); margin: 0; }
+.chips, .subchips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.subchips { padding-left: 4px; }
+.sub-label { font-size: .75rem; color: var(--text-secondary); font-weight: 600; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: var(--radius-full);
+  border: 1px solid var(--border); background: var(--card); color: var(--text-secondary);
+  font: inherit; font-size: .8125rem; font-weight: 500; cursor: pointer;
+  &:hover { border-color: var(--primary-light); color: var(--text-primary); }
+  &.on { background: var(--primary-50); border-color: var(--primary); color: var(--primary-dark); }
+  &:focus-visible { outline: 2px solid var(--primary-light); outline-offset: 1px; }
+}
+.chip-sm { padding: 3px 10px; font-size: .75rem; }
+.where-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.where-input { flex: 1; min-width: 220px; max-width: 420px; }
+.radius { width: auto; min-width: 110px; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: .8125rem; color: var(--text-secondary); cursor: pointer; }
+.more summary { cursor: pointer; font-size: .8125rem; color: var(--text-secondary); }
+.more-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px; margin-top: 10px; align-items: start;
+  @media (max-width: 760px) { grid-template-columns: 1fr 1fr; } }
+.sf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.plan { font-size: .75rem; color: var(--text-muted); flex: 1; min-width: 220px; .warn { color: var(--warning-text); } }
+.how { margin-bottom: 10px; font-size: .8125rem; color: var(--text-secondary);
+  summary { cursor: pointer; }
+  ul { margin: 6px 0; padding-left: 18px; } .muted { color: var(--text-muted); } .warn { color: var(--warning-text); } }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+.bulk-notice { color: var(--text-secondary); }
+.col-check { width: 34px; text-align: center; }
+.saved-icon { color: var(--success); }
+.observation { margin-top: 4px; font-size: .75rem; color: var(--text-secondary); }
+.col-online { min-width: 150px; display: table-cell;
+  .website-link { display: inline-flex; } }
+.fb-link { display: block; font-size: .75rem; margin-top: 3px; }
+.muted-link { color: var(--text-muted); }
+.col-email { min-width: 180px;
+  .email { font-size: .8125rem; word-break: break-all; } }
+.checking { display: inline-flex; align-items: center; gap: 6px; font-size: .75rem; color: var(--text-muted); }
+.link-btn { border: none; background: none; color: var(--primary-dark); cursor: pointer; padding: 0 4px; font: inherit; font-size: .75rem; &:hover { text-decoration: underline; } }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

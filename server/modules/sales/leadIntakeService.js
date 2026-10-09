@@ -6,6 +6,7 @@ const {
 } = require('../../models');
 const { recordAudit } = require('../../core/audit/auditService');
 const opportunityService = require('../crm/opportunityService');
+const contactDiscovery = require('./contactDiscoveryService');
 const { STAGE_LABELS } = require('../../core/crm/pipelineCatalog');
 const {
   invalid, phoneKey, registrableDomain, FREE_EMAIL_DOMAINS, isEmail, nameKey,
@@ -188,6 +189,19 @@ async function createLead(ctx, input) {
     return { opportunityId: created.id, created: true };
   }
 
+  // Two people saving the same listing at once must not create two leads:
+  // the check-then-create below runs under a per-agency, per-listing lock
+  // (held by this transaction until the lead exists).
+  if (leadData.googlePlaceId) {
+    return sequelize.transaction(async (transaction) => {
+      await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', { replacements: { key: `lead:${ctx.agencyId}:${leadData.googlePlaceId}` }, transaction });
+      return createNewLead(ctx, input, leadData, email);
+    });
+  }
+  return createNewLead(ctx, input, leadData, email);
+}
+
+async function createNewLead(ctx, input, leadData, email) {
   if (leadData.googlePlaceId) {
     const lead = await Lead.findOne({ where: { googlePlaceId: leadData.googlePlaceId } });
     if (lead) {
@@ -246,7 +260,17 @@ async function createLead(ctx, input) {
   await recordAudit({
     organizationId: ctx.agencyId, actorUserId: ctx.userId, action: 'opportunity.created', targetType: 'Opportunity', targetId: opportunity.id, metadata: { source: leadData.source }, req: ctx.req,
   });
-  return { opportunityId: opportunity.id, created: true };
+  // Saving starts the email search (or reuses one run from the search
+  // results). It never sends anything, and a failure here never blocks the save.
+  let discovery = null;
+  try {
+    const updated = await contactDiscovery.afterLeadSaved(organization, { googlePlaceId: leadData.googlePlaceId, userId: ctx.userId });
+    discovery = contactDiscovery.present(updated || await organization.reload());
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[sales] email discovery could not start: ${err.name}`);
+  }
+  return { opportunityId: opportunity.id, created: true, discovery };
 }
 
 /**
@@ -258,7 +282,7 @@ async function annotateSearchResults(agencyId, items) {
   const leads = placeIds.length ? await Lead.findAll({ where: { googlePlaceId: placeIds }, attributes: ['id', 'googlePlaceId'] }) : [];
   const opportunities = leads.length ? await Opportunity.findAll({
     where: { agencyOrganizationId: agencyId, sourceLeadId: leads.map((l) => l.id), deletedAt: null },
-    include: [{ model: User, as: 'assignedTo', attributes: ['id', 'name'] }, { model: Organization, as: 'organization', attributes: ['id', 'type'] }],
+    include: [{ model: User, as: 'assignedTo', attributes: ['id', 'name'] }, { model: Organization, as: 'organization', attributes: ['id', 'type', 'email', 'website', 'facebookUrl', 'emailDiscovery', 'detailsSource'] }],
     order: [['archivedAt', 'DESC NULLS FIRST'], ['createdAt', 'DESC']],
   }) : [];
   const businesses = await agencyBusinesses(agencyId);
@@ -278,6 +302,7 @@ async function annotateSearchResults(agencyId, items) {
         lastInteractionAt: opp.lastInteractionAt,
         doNotContact: opp.doNotContact,
         archived: Boolean(opp.archivedAt),
+        contact: opp.organization ? contactDiscovery.present(opp.organization) : null,
       };
     }
     let possibleMatch = null;
@@ -287,7 +312,12 @@ async function annotateSearchResults(agencyId, items) {
       if (match) possibleMatch = { organizationId: match.id, name: match.name, isClient: match.type === 'client', reasons: matchReasons(match, facts) };
     }
     return {
-      ...item, isSaved: Boolean(pipeline && !pipeline.archived), pipeline, possibleMatch,
+      ...item,
+      isSaved: Boolean(pipeline && !pipeline.archived),
+      pipeline,
+      possibleMatch,
+      // An email check already run on this result (from the search screen).
+      discovery: pipeline ? null : (contactDiscovery.cachedForPlace(item.googlePlaceId || item.id) || null),
     };
   });
 }

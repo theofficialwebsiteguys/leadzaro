@@ -83,6 +83,16 @@ const publicAnalyticsLimiter = rateLimit({
   message: { success: false, message: 'Too many events, please try again later.' },
 });
 
+// Email discovery (ADR 0014) fetches businesses' public websites; each call
+// is bounded server-side, this caps how many a person can start per minute.
+const discoveryLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many email checks at once — wait a minute and try again.' },
+});
+
 module.exports = {
-  rateLimiter, authLimiter, searchLimiter, publicFormLimiter, publicWebsiteFormLimiter, publicAnalyticsLimiter, fileContentLimiter,
+  rateLimiter, authLimiter, searchLimiter, publicFormLimiter, publicWebsiteFormLimiter, publicAnalyticsLimiter, fileContentLimiter, discoveryLimiter,
 };

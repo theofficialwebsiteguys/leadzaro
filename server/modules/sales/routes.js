@@ -21,6 +21,9 @@ const paymentRequests = require('./paymentRequestService');
 const paymentEvents = require('./paymentEventsService');
 const handoff = require('./handoffService');
 const reports = require('./reportService');
+const contactDiscovery = require('./contactDiscoveryService');
+const introEmail = require('./introEmailService');
+const { discoveryLimiter } = require('../../middleware/rateLimiter');
 
 /**
  * Sales workflow API (ADR 0011), mounted at /api/v1/sales. Every route
@@ -29,7 +32,7 @@ const reports = require('./reportService');
  * custom offers, team scope, reassignment).
  */
 
-const PASSTHROUGH = ['existingOpportunityId', 'possibleDuplicates', 'candidates', 'unresolved', 'activityId', 'code', 'owner', 'missing'];
+const PASSTHROUGH = ['existingOpportunityId', 'possibleDuplicates', 'candidates', 'unresolved', 'activityId', 'code', 'owner', 'missing', 'previous'];
 
 function handle(fn) {
   return async (req, res, next) => {
@@ -91,6 +94,7 @@ router.get('/team', read, handle(async (ctx) => {
 router.get('/leads', read, handle((ctx, req) => leadList.listLeads(ctx, req.query)));
 router.get('/leads/stage-counts', read, handle((ctx, req) => reports.stageCounts(ctx, { mine: req.query.owner === 'me' })));
 router.post('/leads', requirePermission('leads.save'), handle((ctx, req) => intake.createLead(ctx, req.body || {})));
+router.get('/leads/contact-status', read, handle((ctx, req) => contactDiscovery.statusForLeads(ctx, req.query.ids)));
 router.get('/leads/resolve-saved/:savedLeadId', read, handle((ctx, req) => intake.resolveSavedLead(ctx, req.params.savedLeadId)));
 router.get('/leads/:id', read, handle((ctx, req) => workspace.getWorkspace(ctx, req.params.id)));
 router.patch('/leads/:id/business', update, handle((ctx, req) => workspace.updateBusiness(ctx, req.params.id, req.body || {})));
@@ -115,6 +119,13 @@ router.post('/leads/:id/restore', requireAnyPermission(['leads.archive', 'crm.ma
   return workspace.getWorkspace(ctx, req.params.id);
 }));
 router.post('/leads/:id/opportunities', requirePermission('leads.save'), handle((ctx, req) => workspace.createAdditionalOpportunity(ctx, req.params.id, req.body || {})));
+
+// ---- Contact research and the introduction email (ADR 0014)
+router.post('/leads/:id/discover-email', discoveryLimiter, update, handle((ctx, req) => contactDiscovery.requestForLead(ctx, req.params.id, { force: Boolean(req.body?.force) })));
+router.put('/leads/:id/contact-research', update, handle((ctx, req) => contactDiscovery.updateResearch(ctx, req.params.id, req.body || {})));
+router.put('/leads/:id/outreach-reason', update, handle((ctx, req) => introEmail.updateReason(ctx, req.params.id, req.body || {})));
+router.post('/leads/:id/draft-intro', requirePermission('outreach.read'), handle((ctx, req) => introEmail.draftIntro(ctx, req.params.id, req.body || {})));
+router.put('/leads/:id/email-draft', requirePermission('outreach.create'), handle((ctx, req) => introEmail.saveDraft(ctx, req.params.id, req.body || {})));
 
 // ---- Outreach from the workspace
 router.post('/leads/:id/render', requirePermission('outreach.read'), handle((ctx, req) => templates.render(ctx, req.params.id, req.body || {})));

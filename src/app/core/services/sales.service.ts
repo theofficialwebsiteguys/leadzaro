@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
 import {
-  BillingSummary, CatalogProduct, Channels, Conversation, Handoff, HandoffData, LeadList, LeadNote, MessageTemplate, PaymentRequest,
+  BillingSummary, CatalogProduct, Channels, ContactResearch, Conversation, EmailDraft, IntroDraft, Handoff, HandoffData, LeadList, LeadNote, MessageTemplate, PaymentRequest,
   Qualification, QueueItem, RenderedMessage, SalesPayment, SalesReport, StripeClientMatches, StripeCustomer, StripeCustomerLink, StripeStatus, TodayData, UserRef, Workspace,
 } from '../models/sales.model';
 
@@ -55,7 +55,7 @@ export class SalesService {
   // Leads
   leads(filters: Record<string, unknown>) { return this.get<LeadList>('/leads', { ...filters, tzOffset: tzOffset() }); }
   stageCounts(owner?: string) { return this.get<{ stage: string; label: string; count: number }[]>('/leads/stage-counts', { owner }); }
-  createLead(body: unknown) { return this.send<{ opportunityId: string }>('post', '/leads', body); }
+  createLead(body: unknown) { return this.send<{ opportunityId: string; discovery?: ContactResearch | null }>('post', '/leads', body); }
   resolveSavedLead(savedLeadId: string) { return this.get<{ opportunityId: string }>(`/leads/resolve-saved/${savedLeadId}`); }
   workspace(id: string) { return this.get<Workspace>(`/leads/${id}`); }
   updateQualification(id: string, body: Partial<Qualification>) { return this.send<Workspace>('patch', `/leads/${id}/qualification`, body); }
@@ -74,6 +74,16 @@ export class SalesService {
   archive(id: string) { return this.send<Workspace>('post', `/leads/${id}/archive`); }
   restore(id: string) { return this.send<Workspace>('post', `/leads/${id}/restore`); }
   newDeal(id: string, title: string) { return this.send<{ opportunityId: string }>('post', `/leads/${id}/opportunities`, { title }); }
+
+  // Contact research and the introduction email (ADR 0014)
+  contactStatus(ids: string[]) { return this.get<Record<string, ContactResearch>>('/leads/contact-status', { ids: ids.join(',') }); }
+  discoverEmail(id: string, force = false) { return this.send<ContactResearch>('post', `/leads/${id}/discover-email`, { force }); }
+  updateResearch(id: string, body: { email?: string | null; sourceUrl?: string | null; facebookUrl?: string | null; markNoEmail?: boolean; note?: string }) {
+    return this.send<ContactResearch>('put', `/leads/${id}/contact-research`, body);
+  }
+  updateOutreachReason(id: string, body: { reason: string; evidence: string }) { return this.send<{ outreachReason: string | null; outreachEvidence: string | null }>('put', `/leads/${id}/outreach-reason`, body); }
+  draftIntro(id: string, contactId: string | null = null) { return this.send<IntroDraft>('post', `/leads/${id}/draft-intro`, { contactId }); }
+  saveEmailDraft(id: string, body: { subject?: string; body?: string; to?: string | null; clear?: boolean }) { return this.send<{ emailDraft: EmailDraft | null }>('put', `/leads/${id}/email-draft`, body); }
 
   // Outreach
   render(id: string | null, body: { templateId?: string; subject?: string | null; body?: string; contactId?: string | null; paymentRequestId?: string | null; channel?: string }) {

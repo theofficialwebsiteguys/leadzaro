@@ -9,6 +9,7 @@ const {
 } = require('../../core/crm/pipelineCatalog');
 const { dayBounds } = require('./todayService');
 const { effectiveOffset } = require('../../core/workspace/timezone');
+const contactDiscovery = require('./contactDiscoveryService');
 
 /**
  * The Leads list and pipeline board (ADR 0011): one row per deal with
@@ -38,6 +39,10 @@ async function listLeads(ctx, query = {}) {
   if (query.due === 'reply') where.replyNeededSince = { [Op.ne]: null };
   if (query.due === 'stalled') where[Op.and] = [sequelize.literal(stalledSql('Opportunity'))];
   if (query.includeTest !== 'true') where.isTest = false;
+  // Leads still waiting on contact research (ADR 0014): no business or contact email.
+  if (query.contact === 'missing_email') {
+    where[Op.and] = [...(where[Op.and] || []), sequelize.literal(`"organization"."email" IS NULL AND NOT EXISTS (SELECT 1 FROM "Contacts" c WHERE c."organizationId" = "Opportunity"."organizationId" AND c.email IS NOT NULL AND c."archivedAt" IS NULL AND c."deletedAt" IS NULL)`)];
+  }
 
   const orgWhere = {};
   if (query.q) {
@@ -60,7 +65,7 @@ async function listLeads(ctx, query = {}) {
     where,
     include: [
       {
-        model: Organization, as: 'organization', attributes: ['id', 'name', 'type', 'phone', 'email', 'website', 'city', 'state', 'category'], where: query.q ? orgWhere : undefined,
+        model: Organization, as: 'organization', attributes: ['id', 'name', 'type', 'phone', 'email', 'website', 'city', 'state', 'category', 'facebookUrl', 'emailDiscovery', 'detailsSource'], where: query.q ? orgWhere : undefined,
       },
       { model: User, as: 'assignedTo', attributes: ['id', 'name'] },
     ],
@@ -92,6 +97,7 @@ async function listLeads(ctx, query = {}) {
       businessName: o.organization?.name,
       title: o.title,
       city: o.organization?.city,
+      state: o.organization?.state || null,
       category: o.organization?.category,
       isClient: o.organization?.type === 'client',
       stage: o.stage,
@@ -111,6 +117,8 @@ async function listLeads(ctx, query = {}) {
       hasPhone: Boolean(o.organization?.phone || contacts.some((c) => c.phone)),
       hasEmail: Boolean(o.organization?.email || contacts.some((c) => c.email)),
       website: o.organization?.website || null,
+      facebookUrl: o.organization?.facebookUrl || null,
+      emailStatus: o.organization ? contactDiscovery.present(o.organization).status : null,
       paymentStatus: request?.status || null,
       stall: stallInfo(o),
     };

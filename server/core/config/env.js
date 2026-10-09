@@ -203,6 +203,10 @@ const env = {
   SMTP_USER: process.env.SMTP_USER || '',
   SMTP_PASSWORD: process.env.SMTP_PASSWORD || '',
   SALES_EMAIL_FROM: process.env.SALES_EMAIL_FROM || '',
+  // Safe test path for outreach (ADR 0014): when set, every sales email is
+  // delivered to this address instead of the lead, with the intended
+  // recipient shown in the subject.
+  SALES_EMAIL_TEST_REDIRECT: process.env.SALES_EMAIL_TEST_REDIRECT || '',
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',
   TWILIO_FROM_NUMBER: process.env.TWILIO_FROM_NUMBER || '',

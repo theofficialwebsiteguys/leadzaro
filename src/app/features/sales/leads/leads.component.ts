@@ -7,21 +7,22 @@ import { CrmService } from '../../../core/services/crm.service';
 import { OrganizationContextService } from '../../../core/services/organization-context.service';
 import { AuthService } from '../../../core/services/auth.service';
 import {
-  LeadRow, PossibleDuplicate, SALES_STAGES, STAGE_LABELS, SalesStage, UserRef,
+  DISCOVERY_LABELS, LeadRow, PossibleDuplicate, SALES_STAGES, STAGE_LABELS, SalesStage, UserRef,
 } from '../../../core/models/sales.model';
 import { DuplicateGroup } from '../../../core/models/crm.model';
 import { IconComponent } from '../../../shared/icon/icon.component';
+import { GoogleSearchComponent } from '../../../shared/google-search/google-search.component';
 import { DialogComponent } from '../../../shared/dialog/dialog.component';
 import {
   MoneyPipe, RelativeDayPipe, isOverdue, nextActionLabel,
 } from '../shared/sales-format';
 
 interface Filters {
-  q: string; stage: string; owner: string; due: string; view: string; sort: string; layout: 'list' | 'board'; page: number;
+  q: string; stage: string; owner: string; due: string; contact: string; view: string; sort: string; layout: 'list' | 'board'; page: number;
 }
 
 const DEFAULTS: Filters = {
-  q: '', stage: 'open', owner: 'me', due: '', view: 'active', sort: 'next', layout: 'list', page: 1,
+  q: '', stage: 'open', owner: 'me', due: '', contact: '', view: 'active', sort: 'next', layout: 'list', page: 1,
 };
 
 /**
@@ -32,7 +33,7 @@ const DEFAULTS: Filters = {
 @Component({
   selector: 'app-leads',
   standalone: true,
-  imports: [RouterLink, FormsModule, IconComponent, DialogComponent, MoneyPipe, RelativeDayPipe, PhoneInputDirective],
+  imports: [GoogleSearchComponent, RouterLink, FormsModule, IconComponent, DialogComponent, MoneyPipe, RelativeDayPipe, PhoneInputDirective],
   templateUrl: './leads.component.html',
   styleUrl: './leads.component.scss',
 })
@@ -49,6 +50,7 @@ export class LeadsComponent implements OnInit {
   readonly boardStages: SalesStage[] = ['new', 'contacting', 'qualified', 'proposal', 'awaiting_payment', 'won'];
   readonly nextActionLabel = nextActionLabel;
   readonly isOverdue = isOverdue;
+  readonly discoveryLabels = DISCOVERY_LABELS;
 
   filters: Filters = { ...DEFAULTS };
   readonly rows = signal<LeadRow[]>([]);
@@ -88,6 +90,7 @@ export class LeadsComponent implements OnInit {
       stage: q.get('stage') ?? (q.get('view') === 'board' ? '' : DEFAULTS.stage),
       owner: q.get('owner') ?? DEFAULTS.owner,
       due: q.get('due') ?? DEFAULTS.due,
+      contact: q.get('contact') ?? DEFAULTS.contact,
       view: q.get('show') ?? DEFAULTS.view,
       sort: q.get('sort') ?? DEFAULTS.sort,
       layout: (q.get('view') === 'board' || q.get('layout') === 'board') ? 'board' : 'list',
@@ -108,12 +111,12 @@ export class LeadsComponent implements OnInit {
     const board = f.layout === 'board';
     this.router.navigate([], {
       queryParams: {
-        q: f.q || null, stage: f.stage || null, owner: f.owner, due: f.due || null, show: f.view === 'active' ? null : f.view, sort: f.sort === 'next' ? null : f.sort, layout: board ? 'board' : null, page: f.page > 1 ? f.page : null,
+        q: f.q || null, stage: f.stage || null, owner: f.owner, due: f.due || null, contact: f.contact || null, show: f.view === 'active' ? null : f.view, sort: f.sort === 'next' ? null : f.sort, layout: board ? 'board' : null, page: f.page > 1 ? f.page : null,
       },
       replaceUrl: true,
     });
     this.sales.leads({
-      q: f.q, stage: board ? '' : f.stage, owner: f.owner, due: f.due, view: f.view, sort: f.sort, layout: f.layout, page: f.page,
+      q: f.q, stage: board ? '' : f.stage, owner: f.owner, due: f.due, contact: f.contact, view: f.view, sort: f.sort, layout: f.layout, page: f.page,
     }).subscribe({
       next: (res) => {
         this.rows.set(res.items);

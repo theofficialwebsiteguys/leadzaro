@@ -1,9 +1,9 @@
 import { PhoneInputDirective, PhonePipe, ZipInputDirective } from '../../../shared/forms/formatted-inputs';
-import { Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
-import { Observable } from 'rxjs';
+import { Observable, concat, toArray } from 'rxjs';
 import { SalesService, actionKey } from '../../../core/services/sales.service';
 import { SettingsService } from '../../../core/services/settings.service';
 import { CrmService } from '../../../core/services/crm.service';
@@ -14,9 +14,11 @@ import {
 } from '../../../core/models/sales.model';
 import { Enrichment, WebsiteAudit } from '../../../core/models/crm.model';
 import { IconComponent } from '../../../shared/icon/icon.component';
+import { GoogleSearchComponent } from '../../../shared/google-search/google-search.component';
 import { DialogComponent } from '../../../shared/dialog/dialog.component';
 import { OutcomeFormComponent } from './outcome-form.component';
 import { ComposerComponent } from './composer.component';
+import { ContactResearchComponent } from './contact-research.component';
 import { OffersComponent } from './offers.component';
 import { HandoffComponent } from './handoff.component';
 import {
@@ -40,7 +42,8 @@ interface TimelineEntry { at: string; activity?: Activity; note?: LeadNote }
   selector: 'app-lead-workspace',
   standalone: true,
   imports: [
-    RouterLink, FormsModule, DatePipe, IconComponent, DialogComponent, OutcomeFormComponent, ComposerComponent, OffersComponent, HandoffComponent,
+    GoogleSearchComponent,
+    RouterLink, FormsModule, DatePipe, IconComponent, DialogComponent, OutcomeFormComponent, ComposerComponent, ContactResearchComponent, OffersComponent, HandoffComponent,
     MoneyPipe, RelativeDayPipe, PhoneInputDirective, ZipInputDirective, PhonePipe,
   ],
   templateUrl: './workspace.component.html',
@@ -67,6 +70,15 @@ export class WorkspaceComponent implements OnInit {
   readonly loading = signal(true);
   readonly error = signal('');
   readonly notice = signal('');
+  /** Success messages are toasts — they clear themselves. */
+  private readonly noticeTimer = effect((onCleanup) => {
+    if (!this.notice()) return;
+    const timer = setTimeout(() => this.notice.set(''), 4000);
+    onCleanup(() => clearTimeout(timer));
+  });
+  readonly addContactOpen = signal(false);
+  readonly acError = signal('');
+  ac = { email: '', phone: '', source: '', name: '', title: '', personEmail: '', personPhone: '' };
   readonly tab = signal<Tab>('activity');
   readonly queueMode = signal(false);
   readonly menuOpen = signal(false);
@@ -75,7 +87,7 @@ export class WorkspaceComponent implements OnInit {
 
   // Dialogs
   readonly outcomeDialog = signal<{ channel: string; activityId: string | null } | null>(null);
-  readonly composerDialog = signal<{ channel: 'email' | 'sms'; category: string | null } | null>(null);
+  readonly composerDialog = signal<{ channel: 'email' | 'sms'; category: string | null; intro?: boolean } | null>(null);
   readonly stageDialog = signal(false);
   readonly dncDialog = signal(false);
   readonly dealDialog = signal(false);
@@ -168,6 +180,7 @@ export class WorkspaceComponent implements OnInit {
       const contact = ['call', 'email', 'sms'].includes(action.type);
       if (contact && (!this.canContact() || (!this.phone() && !this.email()))) return null;
       if (action.type === 'log' && !w.permissions.logOutreach) return null;
+      if (action.type === 'intro_email' && (!this.canContact() || !this.email())) return null;
       return action.label;
     }
     return this.primaryActionLabel() && this.canContact() ? this.primaryActionLabel() : null;
@@ -282,6 +295,16 @@ export class WorkspaceComponent implements OnInit {
     this.composerDialog.set({ channel, category });
   }
 
+  /** The introduction email (ADR 0014): an editable draft from facts on file; nothing sends until Send. */
+  composeIntro(): void {
+    this.composerDialog.set({ channel: 'email', category: 'intro', intro: true });
+  }
+
+  /** Brings the contact research panel into view. */
+  showResearch(): void {
+    document.getElementById('contact-research')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
   logOutcome(channel = 'call'): void {
     this.outcomeDialog.set({ channel, activityId: null });
   }
@@ -304,10 +327,12 @@ export class WorkspaceComponent implements OnInit {
       case 'client': if (w.clientId) this.router.navigate(['/app/clients', w.clientId]); return;
       case 'schedule': this.openNext(); return;
       case 'edit_business': this.setTab('details'); this.startEditBusiness(); return;
+      case 'find_email': this.showResearch(); return;
+      case 'intro_email': if (this.email()) this.composeIntro(); else this.showResearch(); return;
       default: break;
     }
     switch (w.recommendation.key) {
-      case 'add_contact': this.setTab('details'); this.openContact(null); break;
+      case 'add_contact': this.openAddContact(); break;
       case 'first_contact': if (this.phone()) this.callViaLink(); else this.compose('email', 'intro'); break;
       case 'reply': this.compose(w.activities.find((a) => a.direction === 'inbound')?.channel === 'sms' ? 'sms' : 'email'); break;
       case 'schedule': this.openNext(); break;
@@ -540,6 +565,40 @@ export class WorkspaceComponent implements OnInit {
     this.apply(this.sales.updateBusiness(this.id, { verified: [field] }), 'Marked as verified.');
   }
 
+  /** One place to add a business email/phone and, optionally, a person. */
+  openAddContact(): void {
+    const b = this.ws()?.business;
+    this.ac = {
+      email: b?.email ?? '', phone: b?.phone ?? '', source: '', name: '', title: '', personEmail: '', personPhone: '',
+    };
+    this.acError.set('');
+    this.addContactOpen.set(true);
+  }
+
+  saveAddContact(): void {
+    const w = this.ws();
+    if (!w || this.busy()) return;
+    const a = this.ac;
+    const email = a.email.trim();
+    const phone = a.phone.trim();
+    const name = a.name.trim();
+    const personDetails = a.title.trim() || a.personEmail.trim() || a.personPhone.trim();
+    if (!email && !phone && !name) { this.acError.set('Add an email, a phone number or a person.'); return; }
+    if (personDetails && !name) { this.acError.set('Add the person’s name — or put the email or phone in the business fields.'); return; }
+    const steps: Observable<unknown>[] = [];
+    if (email !== (w.business.email ?? '')) steps.push(this.sales.updateResearch(this.id, { email: email || null, sourceUrl: a.source.trim() || null }));
+    if (phone !== (w.business.phone ?? '')) steps.push(this.sales.updateBusiness(this.id, { phone }));
+    if (name) steps.push(this.sales.addContact(this.id, { name, title: a.title, email: a.personEmail, phone: a.personPhone }));
+    if (!steps.length) { this.addContactOpen.set(false); return; }
+    this.busy.set(true);
+    this.acError.set('');
+    concat(...steps).pipe(toArray()).subscribe({
+      next: () => { this.busy.set(false); this.addContactOpen.set(false); this.notice.set('Contact info saved.'); this.load(); },
+      // Earlier steps may have saved — reload so the page shows what actually stuck.
+      error: (err) => { this.busy.set(false); this.acError.set(err.error?.message || 'Not saved — try again.'); this.load(); },
+    });
+  }
+
   openContact(c: Contact | null): void {
     this.contact = { name: c?.name ?? '', title: c?.title ?? '', email: c?.email ?? '', phone: c?.phone ?? '' };
     this.contactForm.set({ id: c?.id ?? null });
@@ -548,6 +607,10 @@ export class WorkspaceComponent implements OnInit {
   saveContact(): void {
     const form = this.contactForm();
     if (!form) return;
+    if (!this.contact.name.trim()) {
+      this.error.set('Add the person’s name. For just a business email or phone, use “Add contact info”.');
+      return;
+    }
     const request = form.id ? this.sales.updateContact(this.id, form.id, this.contact) : this.sales.addContact(this.id, this.contact);
     this.apply(request, 'Contact saved.', () => this.contactForm.set(null));
   }

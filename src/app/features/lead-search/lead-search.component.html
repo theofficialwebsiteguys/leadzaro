@@ -1,397 +1,329 @@
 <div class="page">
 
-  <!-- Header -->
   <div class="page-header">
     <div>
-      <h1>Search Leads</h1>
-      <p>Find local businesses by keyword and location using Google Maps data.</p>
+      <h1>Find businesses</h1>
+      <p>Pick business types and an area, then save the ones worth emailing. Nothing is saved or sent automatically.</p>
     </div>
     @if (demoMode()) {
-      <div class="demo-banner">
-        <lz-icon name="zap" [size]="14" />
-        Demo mode — showing sample data
-      </div>
+      <div class="demo-banner"><lz-icon name="zap" [size]="14" /> Demo mode — sample data, no Google charges</div>
     }
   </div>
 
-  <!-- Search Card -->
-  <div class="card search-card">
-    <div class="card-body">
-      <form [formGroup]="form" (ngSubmit)="search()" class="search-form" autocomplete="off">
+  @if (optionsError()) { <div class="alert alert-error">{{ optionsError() }}</div> }
 
-        <!-- Row 1: keyword + location -->
-        <div class="search-main-row">
-          <div class="form-group search-keyword">
-            <label class="form-label" for="s-keyword">Business Type or Keyword</label>
-            <div class="input-icon-wrap">
-              <lz-icon name="search" [size]="16" class="input-icon" />
-              <input
-                id="s-keyword"
-                type="text"
-                class="form-control input-with-icon"
-                formControlName="keyword"
-                placeholder="e.g. Roofing Contractor, Restaurant, Dentist…"
-              />
-            </div>
-          </div>
-          <div class="form-group search-location">
-            <label class="form-label" for="s-location">Location</label>
-            <div class="input-icon-wrap">
-              <lz-icon name="target" [size]="16" class="input-icon" />
-              <input
-                id="s-location"
-                type="text"
-                class="form-control input-with-icon"
-                formControlName="location"
-                placeholder="City, State or ZIP code"
-              />
-            </div>
-          </div>
-        </div>
-
-        <!-- Row 2: filters -->
-        <div class="search-filters-row">
-          <div class="form-group">
-            <label class="form-label" for="s-radius">Radius</label>
-            <select id="s-radius" class="form-select" formControlName="radius">
-              <option value="5">5 miles</option>
-              <option value="10">10 miles</option>
-              <option value="25">25 miles</option>
-              <option value="50">50 miles</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="s-rating">Min. Star Rating</label>
-            <select id="s-rating" class="form-select" formControlName="minRating">
-              <option value="">Any Rating</option>
-              <option value="3">3+ Stars</option>
-              <option value="4">4+ Stars</option>
-              <option value="4.5">4.5+ Stars</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="s-reviews">Min. Reviews</label>
-            <select id="s-reviews" class="form-select" formControlName="minReviews">
-              <option value="">Any</option>
-              <option value="10">10+ reviews</option>
-              <option value="25">25+ reviews</option>
-              <option value="50">50+ reviews</option>
-              <option value="100">100+ reviews</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Row 3: actions + demo toggle -->
-        <div class="search-actions">
-          <button type="submit" class="btn btn-primary btn-lg" [disabled]="loading()">
-            @if (loading()) {
-              <span class="spinner spinner-sm"></span> Searching…
-            } @else {
-              <lz-icon name="search" [size]="16" /> Search Leads
-            }
-          </button>
-
-          <div class="demo-toggle-wrap">
-            <button type="button" class="demo-toggle" [class.active]="demoMode()" (click)="toggleDemo()">
-              <span class="toggle-track">
-                <span class="toggle-thumb"></span>
-              </span>
-              <span class="toggle-label">Demo Mode</span>
-            </button>
-            <span class="toggle-hint">{{ demoMode() ? 'Using sample data' : 'Using Google data' }}</span>
-          </div>
-        </div>
-
-      </form>
+  @if (options(); as o) {
+    <!-- Quick starts: fill the form, never search by themselves -->
+    <div class="presets" aria-label="Preset searches">
+      <span class="eyebrow">Quick start</span>
+      @for (p of o.presets; track p.key) {
+        <button type="button" class="preset" (click)="applyPreset(p)" [title]="presetSummary(p)">
+          <strong>{{ p.name }}</strong><span>{{ presetSummary(p) }}</span>
+        </button>
+      }
+      @if (lastSearch()) {
+        <button type="button" class="preset" (click)="applyLast()" [title]="lastSummary()">
+          <strong>Repeat my last search</strong><span>{{ lastSummary() }}</span>
+        </button>
+      }
+      @if (o.canEditPresets) { <a routerLink="/app/settings/workspace" class="edit-presets">Edit territories &amp; presets</a> }
     </div>
-  </div>
+
+    <form class="card search-card" (ngSubmit)="find()" autocomplete="off">
+      <div class="card-body sf">
+        <!-- Business type -->
+        <section class="sf-section" aria-labelledby="sf-type">
+          <div class="sf-label" id="sf-type">Business type <span class="hint">choose one or more</span></div>
+          <div class="chips">
+            @for (c of o.categories; track c.key) {
+              <button type="button" class="chip" [class.on]="sel().categories.includes(c.key)" [attr.aria-pressed]="sel().categories.includes(c.key)" (click)="toggleCategory(c.key)">
+                @if (sel().categories.includes(c.key)) { <lz-icon name="check" [size]="12" /> } {{ c.label }}
+              </button>
+            }
+          </div>
+          @for (c of chosenCategories(); track c.key) {
+            <div class="subchips">
+              <span class="sub-label">{{ c.label }}:</span>
+              @for (s of c.subcategories; track s.key) {
+                <button type="button" class="chip chip-sm" [class.on]="sel().subcategories.includes(s.key)" [attr.aria-pressed]="sel().subcategories.includes(s.key)" (click)="toggleSub(s.key)">{{ s.label }}</button>
+              }
+              @if (!hasSubPicked(c)) { <span class="hint">All — searches “{{ c.queries.join('”, “') }}”</span> }
+            </div>
+          }
+        </section>
+
+        <!-- Location -->
+        <section class="sf-section" aria-labelledby="sf-where">
+          <div class="sf-label" id="sf-where">Where</div>
+          <div class="where-row">
+            <div class="seg" role="group" aria-label="Location type">
+              <button type="button" [class.active]="sel().locationType === 'territory'" (click)="patch({ locationType: 'territory' })">Saved territory</button>
+              <button type="button" [class.active]="sel().locationType === 'place'" (click)="patch({ locationType: 'place' })">City, ZIP or county</button>
+            </div>
+            @if (sel().locationType === 'territory') {
+              <select class="form-select where-input" aria-label="Territory" [ngModel]="sel().territory" (ngModelChange)="patch({ territory: $event })" name="territory">
+                @for (t of o.territories; track t.key) { <option [value]="t.key">{{ t.name }}</option> }
+              </select>
+            } @else {
+              <input class="form-control where-input" name="location" aria-label="City, ZIP or county" placeholder="e.g. Nyack, NY · 10960 · Bergen County, NJ"
+                [ngModel]="sel().location" (ngModelChange)="patch({ location: $event })" />
+              <select class="form-select radius" aria-label="Radius" name="radius" [disabled]="sel().wholeArea" [ngModel]="sel().radius" (ngModelChange)="patch({ radius: +$event })">
+                <option [ngValue]="5">5 miles</option><option [ngValue]="10">10 miles</option><option [ngValue]="25">25 miles</option><option [ngValue]="50">50 miles</option>
+              </select>
+            }
+          </div>
+          @if (sel().locationType === 'territory') {
+            @if (territory(); as t) { <p class="hint">Covers {{ t.areas.join(' · ') }} — searched by each area’s map boundary, which is approximate at the edges.</p> }
+          } @else {
+            <label class="check"><input type="checkbox" name="wholeArea" [ngModel]="sel().wholeArea" (ngModelChange)="patch({ wholeArea: $event })" /> Search the whole county or region instead of a radius</label>
+          }
+        </section>
+
+        <details class="more" [open]="showMoreOptions()" (toggle)="showMoreOptions.set($any($event.target).open)">
+          <summary>More options</summary>
+          <div class="more-grid">
+            <div class="form-group">
+              <label class="form-label" for="s-keywords">Custom keywords</label>
+              <input id="s-keywords" class="form-control" name="keywords" placeholder="e.g. dog groomer, tutoring" [ngModel]="sel().keywords" (ngModelChange)="patch({ keywords: $event })" />
+              <span class="form-hint">Comma-separated; each one is its own search.</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="s-rating">Min. Google rating</label>
+              <select id="s-rating" class="form-select" name="minRating" [ngModel]="sel().minRating" (ngModelChange)="patch({ minRating: $event })">
+                <option value="">Any</option><option value="3">3+</option><option value="4">4+</option><option value="4.5">4.5+</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="s-reviews">Min. reviews</label>
+              <select id="s-reviews" class="form-select" name="minReviews" [ngModel]="sel().minReviews" (ngModelChange)="patch({ minReviews: $event })">
+                <option value="">Any</option><option value="10">10+</option><option value="25">25+</option><option value="50">50+</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <span class="form-label">Data</span>
+              <button type="button" class="demo-toggle" [class.active]="demoMode()" (click)="toggleDemo()">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-label">Demo mode</span>
+              </button>
+            </div>
+          </div>
+        </details>
+
+        <div class="sf-actions">
+          <button type="submit" class="btn btn-primary btn-lg" [disabled]="!canSearch()">
+            @if (loading()) { <span class="spinner spinner-sm"></span> Searching… } @else { <lz-icon name="search" [size]="16" /> Find businesses }
+          </button>
+          <span class="plan">
+            @if (!plannedQueries().length) { Choose a business type to start. }
+            @else if (!plannedAreas().length) { Choose where to search. }
+            @else {
+              Runs {{ plannedCount() }} Google search{{ plannedCount() === 1 ? '' : 'es' }}: {{ searchQueryLabel() }}
+              @if (plannedCount() > o.maxQueries) { <span class="warn"> — only the first {{ o.maxQueries }} will run; narrow the types or area.</span> }
+            }
+          </span>
+        </div>
+      </div>
+    </form>
+  }
 
   <!-- Results -->
   @if (loading()) {
-
-    <div class="loading-state">
-      <div class="spinner"></div>
-      <span>Searching Google Maps…</span>
-    </div>
-
+    <div class="loading-state"><div class="spinner"></div><span>Searching Google…</span></div>
+  } @else if (searchError()) {
+    <div class="alert alert-error">{{ searchError() }} <button class="btn btn-ghost btn-sm" (click)="find()">Try again</button></div>
   } @else if (!searched()) {
-
-    <!-- Workflow guide -->
     <div class="workflow-guide">
-      <div class="wg-step">
-        <div class="wg-num">1</div>
-        <div class="wg-text">
-          <strong>Enter a keyword</strong>
-          <p>Business type + city or ZIP — e.g. "Plumber, Austin TX"</p>
-        </div>
-      </div>
+      <div class="wg-step"><div class="wg-num">1</div><div class="wg-text"><strong>Find businesses</strong><p>Pick types and an area, or a quick start</p></div></div>
       <div class="wg-arrow">→</div>
-      <div class="wg-step">
-        <div class="wg-num">2</div>
-        <div class="wg-text">
-          <strong>Review results</strong>
-          <p>Filter by rating, radius, and spot no-website leads</p>
-        </div>
-      </div>
+      <div class="wg-step"><div class="wg-num">2</div><div class="wg-text"><strong>Save the promising ones</strong><p>Leadzaro starts looking for their email</p></div></div>
       <div class="wg-arrow">→</div>
-      <div class="wg-step">
-        <div class="wg-num">3</div>
-        <div class="wg-text">
-          <strong>Save the best ones</strong>
-          <p>Build your pipeline with one click and start outreach</p>
-        </div>
-      </div>
+      <div class="wg-step"><div class="wg-num">3</div><div class="wg-text"><strong>Draft a personal email</strong><p>Review it, then send from the lead</p></div></div>
     </div>
+  } @else if (results()) {
+    @let r = results()!;
+    @if (r.plan; as plan) {
+      @if (plan.failed) { <div class="alert alert-warning">{{ plan.failed }} of {{ plan.queries.length }} searches failed — these are partial results. Try again later for the rest.</div> }
+      <details class="how">
+        <summary>How this search worked ({{ plan.queries.length }} search{{ plan.queries.length === 1 ? '' : 'es' }})</summary>
+        <ul>
+          @for (q of plan.queries; track $index) { <li>“{{ q.query }}” in {{ q.area }} — @if (q.error) { <span class="warn">{{ q.error }}</span> } @else { {{ q.count }} found } </li> }
+          @for (s of plan.skipped; track $index) { <li class="muted">“{{ s.query }}” in {{ s.area }} — skipped (limit)</li> }
+        </ul>
+        @for (n of plan.notes; track n) { <p class="hint">{{ n }}</p> }
+      </details>
+    }
 
-  } @else if (results()?.items?.length === 0) {
-
-    <div class="empty-state">
-      <div class="empty-icon"><lz-icon name="search" [size]="20" /></div>
-      <h3>No results found</h3>
-      <p>Try a broader keyword, different location, or reduce your filter requirements.</p>
-    </div>
-
-  } @else {
-
-    <!-- Results header -->
     <div class="results-header">
       <div class="results-meta">
-        <span class="results-count">{{ totalLabel() }}</span>
-        @if (noWebsiteCount() > 0) {
-          <span class="opp-badge">
-            <lz-icon name="globe" [size]="12" /> {{ noWebsiteCount() }} no website
-          </span>
-        }
-        @if (isGoogleSource()) {
-          <span class="source-badge source-google">
-            <lz-icon name="globe" [size]="12" /> Live Google Data
-          </span>
-        }
-        @if (isDemoSource()) {
-          <span class="source-badge source-demo">
-            <lz-icon name="zap" [size]="12" /> Demo Data
-          </span>
-        }
+        <span class="results-count">{{ visible().length }} business{{ visible().length === 1 ? '' : 'es' }}</span>
+        @if (r.source === 'google') { <span class="source-badge source-google"><lz-icon name="globe" [size]="12" /> Live Google data</span> }
+        @if (r.source === 'demo') { <span class="source-badge source-demo"><lz-icon name="zap" [size]="12" /> Demo data</span> }
+      </div>
+      <div class="filters">
+        <label class="check"><input type="checkbox" [ngModel]="showExisting()" (ngModelChange)="showExisting.set($event)" /> Show ones already in Leads ({{ existingCount() }})</label>
+        <label class="check"><input type="checkbox" [ngModel]="noWebsiteOnly()" (ngModelChange)="noWebsiteOnly.set($event)" /> No website listed only</label>
+        @if (mapPoints().length) { <button type="button" class="btn btn-ghost btn-sm" (click)="showMap.set(!showMap())">{{ showMap() ? 'Hide map' : 'Show map' }}</button> }
       </div>
     </div>
 
-    @if (mapPoints().length) {
+    @if (showMap() && mapPoints().length) {
       <div class="map-wrap">
-        <div class="map-head">
-          <strong>Map</strong>
-          <button type="button" class="btn btn-ghost btn-sm" (click)="showMap.set(!showMap())">{{ showMap() ? 'Hide map' : 'Show map' }}</button>
-        </div>
-        @if (showMap()) {
-          <app-lead-map [points]="mapPoints()" [center]="results()!.center ?? null" [radiusMiles]="results()!.radiusMiles ?? null"
-            [selectedId]="expandedId()" [searchQuery]="lastQuery" (pick)="pickFromMap($event)" />
-        }
+        <app-lead-map [points]="mapPoints()" [center]="r.center ?? null" [radiusMiles]="r.radiusMiles ?? null" [selectedId]="expandedId()" [searchQuery]="searchQueryLabel()" (pick)="pickFromMap($event)" />
       </div>
     }
 
-    <!-- Results table -->
-    <div class="card results-card">
-      <div class="table-wrap">
-        <table class="results-table">
-          <thead>
-            <tr>
-              <th class="col-n">#</th>
-              <th>Business</th>
-              <th>Location</th>
-              <th>Phone</th>
-              <th>Rating</th>
-              <th>Website</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (lead of results()!.items; track lead.id; let i = $index) {
-              <tr class="result-row" [id]="'row-' + lead.id"
-                [class.row-saved]="savedIds().has(lead.id)"
-                [class.row-open]="expandedId() === lead.id"
-                [class.row-no-website]="!lead.website && !savedIds().has(lead.id)">
+    @if (!visible().length) {
+      <div class="empty-state">
+        <div class="empty-icon"><lz-icon name="search" [size]="20" /></div>
+        @if (items().length) {
+          <h3>Everything here is already in Leads</h3>
+          <p>{{ existingCount() }} result{{ existingCount() === 1 ? ' is' : 's are' }} already a lead or client. <button class="btn btn-ghost btn-sm" (click)="showExisting.set(true)">Show them</button></p>
+        } @else {
+          <h3>No businesses found</h3>
+          <p>Try more business types, a larger radius or another area.</p>
+        }
+      </div>
+    } @else {
+      <div class="bulk-bar">
+        <label class="check"><input type="checkbox" [checked]="allSelected()" (change)="toggleAll()" [disabled]="!selectable().length" /> Select all</label>
+        <span class="text-sm text-muted">{{ selectedCount() }} selected</span>
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="!selectedCount() || !!bulkBusy()" (click)="saveSelected()">
+          @if (bulkBusy() === 'save') { <span class="spinner spinner-sm"></span> Saving… } @else { <lz-icon name="plus" [size]="14" /> Save selected }
+        </button>
+        <button type="button" class="btn btn-outline btn-sm" [disabled]="!selectedCount() || !!bulkBusy()" (click)="findEmailsForSelected()" title="Checks each selected business’s website for a public email">
+          @if (bulkBusy() === 'email') { <span class="spinner spinner-sm"></span> Checking… } @else { <lz-icon name="mail" [size]="14" /> Find emails }
+        </button>
+        @if (bulkNotice()) { <span class="text-sm bulk-notice" role="status">{{ bulkNotice() }}</span> }
+      </div>
 
-                <td class="col-n"><span class="n-badge">{{ i + 1 }}</span></td>
-                <td class="col-name">
-                  <button type="button" class="biz-name as-link" (click)="toggleDetails(lead)" [attr.aria-expanded]="expandedId() === lead.id">{{ lead.name }}</button>
-                  @if (lead.category) {
-                    <div class="biz-category">{{ lead.category }}</div>
-                  }
-                  @let m = lead.possibleMatch;
-                  @if (lead.pipeline; as p) {
-                    <div class="pipeline-status">
-                      @if (p.isClient) { <span class="tag tag-success">Existing client</span> }
-                      <span [class]="'stage-chip stage-' + p.stage">{{ p.stageLabel }}</span>
-                      <span class="text-xs text-muted">{{ p.assignedTo ? p.assignedTo.name : 'Unclaimed' }} · {{ p.contacted ? 'contacted' : 'not contacted yet' }}</span>
-                      @if (p.doNotContact) { <span class="tag tag-danger">Do not contact</span> }
-                      @if (p.archived) { <span class="tag tag-muted">Archived</span> }
-                    </div>
-                  } @else if (m) {
-                    <div class="pipeline-status"><span class="tag tag-warning">Possible match</span> <span class="text-xs text-muted">{{ m.name }}{{ m.isClient ? ' (client)' : '' }} — {{ m.reasons.join(', ') }}</span></div>
-                  }
-                </td>
-
-                <td class="col-location">
-                  @if (lead.city || lead.state) {
-                    <span>{{ lead.city }}{{ lead.city && lead.state ? ', ' : '' }}{{ lead.state }}</span>
-                  } @else {
-                    <span class="text-muted">—</span>
-                  }
-                  @if (distance(lead)) { <div class="text-xs text-muted">{{ distance(lead) }} away</div> }
-                </td>
-
-                <td class="col-phone">
-                  @if (lead.source === 'google' && !revealedPhone().has(lead.googlePlaceId || lead.id)) {
-                    @if (revealingPhone().has(lead.googlePlaceId || lead.id)) {
-                      <span class="spinner spinner-sm"></span>
-                    } @else {
-                      <button class="reveal-btn" (click)="revealPhone(lead)" title="Load phone number">
-                        <lz-icon name="phone" [size]="12" /> Reveal
-                      </button>
-                    }
-                  } @else if (resolvedPhone(lead)) {
-                    <div class="phone-cell">
-                      <a [href]="'tel:' + resolvedPhone(lead)" class="phone-link">{{ resolvedPhone(lead) }}</a>
-                      <button
-                        class="copy-btn"
-                        [class.copied]="copiedPhone() === lead.id"
-                        (click)="copyPhone(resolvedPhone(lead)!, lead.id)"
-                        title="Copy phone number"
-                      >
-                        <lz-icon [name]="copiedPhone() === lead.id ? 'check' : 'phone'" [size]="12" />
-                      </button>
-                    </div>
-                  } @else {
-                    <span class="text-muted">—</span>
-                  }
-                </td>
-
-                <td class="col-rating">
-                  @if (lead.rating) {
-                    <div class="rating-wrap">
-                      <span class="rating-num">{{ formatRating(lead.rating) }}</span>
-                      <div class="stars-row">
-                        @for (s of ratingStars(lead.rating); track $index) {
-                          <span class="star-fill"></span>
-                        }
-                      </div>
-                      <span class="review-count">({{ lead.reviewCount }})</span>
-                    </div>
-                  } @else {
-                    <span class="text-muted">—</span>
-                  }
-                </td>
-
-                <td class="col-website">
-                  @if (lead.website) {
-                    <a [href]="lead.website" target="_blank" rel="noopener" class="website-link">
-                      <lz-icon name="globe" [size]="14" />
-                      <span class="website-text">View</span>
-                    </a>
-                  } @else {
-                    <span class="no-website-badge">No Website</span>
-                  }
-                </td>
-
-                <td class="col-actions">
-                  <div class="row-actions">
-                    <button type="button" class="btn btn-ghost btn-sm action-btn" (click)="toggleDetails(lead)" [attr.aria-expanded]="expandedId() === lead.id" title="More details before adding">
-                      {{ expandedId() === lead.id ? 'Less' : 'Details' }}
-                    </button>
-                    @if (lead.googleMapsUrl) {
-                      <a [href]="lead.googleMapsUrl" target="_blank" rel="noopener" class="btn btn-ghost btn-sm action-btn" title="View on Google Maps">
-                        <lz-icon name="target" [size]="14" />
-                      </a>
-                    }
-                    @if (opportunityFor()[lead.id]) {
-                      <button class="btn btn-sm btn-outline action-btn" (click)="openLead(lead)" title="Open this lead">
-                        <lz-icon name="arrow-right" [size]="14" /> Open
-                      </button>
-                    } @else {
-                      <button
-                        class="btn btn-sm btn-primary action-btn"
-                        [disabled]="saving() === lead.id"
-                        (click)="saveLead(lead)"
-                        title="Add to Leads"
-                      >
-                        @if (saving() === lead.id) {
-                          <span class="spinner spinner-sm"></span>
-                        } @else {
-                          <lz-icon name="plus" [size]="14" />
-                          Add to leads
-                        }
-                      </button>
-                    }
-                    @if (saveErrors()[lead.id]) { <span class="text-xs save-error">{{ saveErrors()[lead.id] }}</span> }
-                  </div>
-                </td>
-
+      <div class="card results-card">
+        <div class="table-wrap">
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th class="col-check"><span class="sr-only">Select</span></th>
+                <th>Business</th>
+                <th>Online</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th></th>
               </tr>
-              @if (expandedId() === lead.id) {
-                <tr class="detail-row">
-                  <td colspan="7">
-                    @let det = detailsFor(lead);
-                    <div class="detail-grid">
-                      <div>
-                        <p class="eyebrow">Business</p>
-                        <p>{{ loadedDetails(lead)?.address || addressLine(lead) }}</p>
-                        <p>{{ lead.category || 'Category unknown' }}@if (lead.rating) { · {{ formatRating(lead.rating) }}★ from {{ lead.reviewCount }} reviews }</p>
-                        @if (loadedDetails(lead)?.businessStatus && loadedDetails(lead)?.businessStatus !== 'OPERATIONAL') { <p class="warn">Google status: {{ loadedDetails(lead)?.businessStatus }}</p> }
+            </thead>
+            <tbody>
+              @for (lead of visible(); track lead.id; let i = $index) {
+                @let saved = !!opportunityFor()[lead.id];
+                @let c = contactFor(lead);
+                <tr class="result-row" [id]="'row-' + lead.id" [class.row-saved]="saved" [class.row-open]="expandedId() === lead.id">
+                  <td class="col-check">
+                    @if (!saved) { <input type="checkbox" [checked]="selected().has(lead.id)" (change)="toggleSelect(lead)" [attr.aria-label]="'Select ' + lead.name" /> }
+                    @else { <lz-icon name="check" [size]="14" class="saved-icon" /> }
+                  </td>
+                  <td class="col-name">
+                    <button type="button" class="biz-name as-link" (click)="toggleDetails(lead)" [attr.aria-expanded]="expandedId() === lead.id">{{ i + 1 }}. {{ lead.name }}</button>
+                    <lz-google-search [name]="lead.name" [city]="lead.city" [state]="lead.state" />
+                    <div class="biz-category">{{ lead.category || 'Business' }}@if (place(lead)) { · {{ place(lead) }} }@if (lead.rating) { · {{ formatRating(lead.rating) }}★ ({{ lead.reviewCount }}) }</div>
+                    @if (lead.pipeline; as p) {
+                      <div class="pipeline-status">
+                        @if (p.isClient) { <span class="tag tag-success">Client</span> }
+                        <span [class]="'stage-chip stage-' + p.stage">{{ p.stageLabel }}</span>
+                        <span class="text-xs text-muted">{{ p.assignedTo ? p.assignedTo.name : 'Unclaimed' }} · {{ p.contacted ? 'contacted' : 'not contacted yet' }}</span>
+                        @if (p.doNotContact) { <span class="tag tag-danger">Do not contact</span> }
+                        @if (p.archived) { <span class="tag tag-muted">Archived</span> }
                       </div>
-                      <div>
-                        <p class="eyebrow">Contact</p>
-                        @if (det === 'loading') { <p class="text-muted">Loading from Google…</p> }
-                        @else if (det === 'error') { <p class="warn">Google couldn’t load the details right now. Try again later.</p> }
-                        @else {
-                          <p>@if (resolvedPhone(lead)) { <a [href]="'tel:' + resolvedPhone(lead)">{{ resolvedPhone(lead) }}</a> } @else { <span class="text-muted">No phone listed</span> }</p>
-                          <p>@if (loadedDetails(lead)?.website || lead.website) { <a [href]="loadedDetails(lead)?.website || lead.website" target="_blank" rel="noopener">{{ loadedDetails(lead)?.website || lead.website }}</a> } @else { <span class="no-website-badge">No website</span> }</p>
-                        }
-                      </div>
-                      <div>
-                        <p class="eyebrow">Hours</p>
-                        @if (loadedDetails(lead)?.hours?.length) {
-                          <ul class="hours">@for (line of loadedDetails(lead)!.hours; track line) { <li>{{ line }}</li> }</ul>
-                        } @else if (lead.source === 'demo') { <p class="text-muted">Not available for demo data</p> }
-                        @else if (det !== 'loading') { <p class="text-muted">Not listed</p> }
-                      </div>
-                      <div>
-                        <p class="eyebrow">Why they might need us</p>
-                        @for (s of signals(lead); track s) { <p class="signal">• {{ s }}</p> } @empty { <p class="text-muted">Nothing obvious — check their site and reviews.</p> }
-                      </div>
-                    </div>
-                    <div class="detail-actions">
-                      @if (loadedDetails(lead)?.googleMapsUrl || lead.googleMapsUrl) { <a class="btn btn-ghost btn-sm" [href]="loadedDetails(lead)?.googleMapsUrl || lead.googleMapsUrl" target="_blank" rel="noopener">Open in Google Maps ↗</a> }
-                      @if (opportunityFor()[lead.id]) {
-                        <button class="btn btn-outline btn-sm" (click)="openLead(lead)">Open lead</button>
+                    } @else if (lead.possibleMatch) {
+                      @let m = lead.possibleMatch!;
+                      <div class="pipeline-status"><span class="tag tag-warning">Possible match</span> <span class="text-xs text-muted">{{ m.name }}{{ m.isClient ? ' (client)' : '' }} — {{ m.reasons.join(', ') }}</span></div>
+                    }
+                    @if (observation(lead); as obs) { <div class="observation">{{ obs }}</div> }
+                  </td>
+
+                  <td class="col-online">
+                    @if (lead.website) { <a [href]="lead.website" target="_blank" rel="noopener" class="website-link"><lz-icon name="globe" [size]="13" /> {{ host(lead.website) }}</a> }
+                    @else { <span class="no-website-badge">No website listed</span> }
+                    @if (c?.facebookUrl) { <a [href]="c!.facebookUrl" target="_blank" rel="noopener" class="fb-link">Facebook ↗</a> }
+                    @else { <a [href]="facebookSearchUrl(lead.name, lead.city)" target="_blank" rel="noopener" class="fb-link muted-link" title="Search Facebook for this business">Search Facebook ↗</a> }
+                  </td>
+
+                  <td class="col-email">
+                    @if (c) {
+                      @if (c.status === 'checking') { <span class="checking"><span class="spinner spinner-sm"></span> Checking…</span> }
+                      @else if (c.email) {
+                        <a [href]="'mailto:' + c.email" class="email">{{ c.email }}</a>
+                        @if (c.sourceUrl) { <a class="source-note" [href]="c.sourceUrl" target="_blank" rel="noopener" title="Where it was found">source ↗</a> }
                       } @else {
-                        <button class="btn btn-primary btn-sm" [disabled]="saving() === lead.id" (click)="saveLead(lead)">{{ saving() === lead.id ? 'Adding…' : 'Add to leads' }}</button>
+                        <span [class]="'tag ' + discoveryTones[c.status]" [title]="c.summary || ''">{{ discoveryLabels[c.status] }}</span>
+                        @if (!saved && c.status === 'failed') { <button type="button" class="link-btn small" (click)="findEmail(lead, true)">Retry</button> }
+                      }
+                    } @else if (discoveryFailed(lead)) {
+                      <span class="tag tag-danger">Couldn’t check</span> <button type="button" class="link-btn small" (click)="findEmail(lead, true)">Retry</button>
+                    } @else if (lead.website && !isSocial(lead)) {
+                      <button type="button" class="btn btn-ghost btn-sm" (click)="findEmail(lead)"><lz-icon name="mail" [size]="12" /> Find email</button>
+                    } @else {
+                      <span class="tag tag-muted" title="No website to check — look on Facebook after saving">Not checked</span>
+                    }
+                  </td>
+
+                  <td class="col-phone">
+                    @if (lead.source === 'google' && !revealedPhone().has(lead.googlePlaceId || lead.id)) {
+                      @if (revealingPhone().has(lead.googlePlaceId || lead.id)) { <span class="spinner spinner-sm"></span> }
+                      @else { <button class="reveal-btn" (click)="revealPhone(lead)" title="Load phone number"><lz-icon name="phone" [size]="12" /> Show</button> }
+                    } @else if (resolvedPhone(lead)) {
+                      <a [href]="'tel:' + resolvedPhone(lead)" class="phone-link">{{ resolvedPhone(lead) }}</a>
+                    } @else { <span class="text-muted">—</span> }
+                  </td>
+
+                  <td class="col-actions">
+                    <div class="row-actions">
+                      @if (saved) {
+                        <button class="btn btn-sm btn-outline action-btn" (click)="openLead(lead)"><lz-icon name="arrow-right" [size]="14" /> Open</button>
+                      } @else if (needsReview()[lead.id]) {
+                        <button class="btn btn-sm btn-outline action-btn" (click)="openReview(lead)">Review match</button>
+                      } @else {
+                        <button class="btn btn-sm btn-primary action-btn" [disabled]="saving().has(lead.id)" (click)="saveLead(lead)">
+                          @if (saving().has(lead.id)) { <span class="spinner spinner-sm"></span> } @else { <lz-icon name="plus" [size]="14" /> Save }
+                        </button>
                       }
                     </div>
+                    @if (saveErrors()[lead.id]) { <div class="text-xs save-error">{{ saveErrors()[lead.id] }}</div> }
                   </td>
                 </tr>
+                @if (expandedId() === lead.id) {
+                  <tr class="detail-row">
+                    <td colspan="6">
+                      @let det = detailsFor(lead);
+                      <div class="detail-grid">
+                        <div>
+                          <p class="eyebrow">Business</p>
+                          <p>{{ loadedDetails(lead)?.address || addressLine(lead) }}</p>
+                          @if (lead.matchedQueries?.length) { <p class="text-muted">Found by: {{ lead.matchedQueries!.join(', ') }}</p> }
+                          @if (loadedDetails(lead)?.businessStatus && loadedDetails(lead)?.businessStatus !== 'OPERATIONAL') { <p class="warn">Google status: {{ loadedDetails(lead)?.businessStatus }}</p> }
+                        </div>
+                        <div>
+                          <p class="eyebrow">Email check</p>
+                          @if (c?.summary) { <p>{{ c!.summary }}</p> } @else { <p class="text-muted">Not checked yet.</p> }
+                          <p class="text-muted text-xs">A listed email isn’t verified as deliverable.</p>
+                        </div>
+                        <div>
+                          <p class="eyebrow">Hours</p>
+                          @if (det === 'loading') { <p class="text-muted">Loading from Google…</p> }
+                          @else if (det === 'error') { <p class="warn">Google couldn’t load the details right now.</p> }
+                          @else if (loadedDetails(lead)?.hours?.length) { <ul class="hours">@for (line of loadedDetails(lead)!.hours; track line) { <li>{{ line }}</li> }</ul> }
+                          @else { <p class="text-muted">Not listed</p> }
+                        </div>
+                      </div>
+                      <div class="detail-actions">
+                        @if (loadedDetails(lead)?.googleMapsUrl || lead.googleMapsUrl) { <a class="btn btn-ghost btn-sm" [href]="loadedDetails(lead)?.googleMapsUrl || lead.googleMapsUrl" target="_blank" rel="noopener">Open in Google Maps ↗</a> }
+                      </div>
+                    </td>
+                  </tr>
+                }
               }
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Pagination -->
-    @if (results()!.pagination.totalPages > 1) {
-      <div class="pagination">
-        <button class="btn btn-ghost btn-sm" [disabled]="!results()!.pagination.hasPrev" (click)="goPage(results()!.pagination.page - 1)">
-          <lz-icon name="arrow-right" [size]="14" style="transform:rotate(180deg)" /> Prev
-        </button>
-        <span class="page-info text-sm text-muted">
-          Page {{ results()!.pagination.page }} of {{ results()!.pagination.totalPages }}
-        </span>
-        <button class="btn btn-ghost btn-sm" [disabled]="!results()!.pagination.hasNext" (click)="goPage(results()!.pagination.page + 1)">
-          Next <lz-icon name="arrow-right" [size]="14" />
-        </button>
+            </tbody>
+          </table>
+        </div>
       </div>
     }
-
   }
-
 </div>
 
 <app-dialog [open]="!!review()" title="Is this a business you already have?" [wide]="true" (closed)="review.set(null)">

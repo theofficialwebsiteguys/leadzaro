@@ -1,8 +1,9 @@
 import { Component, ElementRef, OnInit, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { DatePipe } from '@angular/common';
 import { SalesService, actionKey } from '../../../core/services/sales.service';
 import { SettingsService } from '../../../core/services/settings.service';
-import { MessageTemplate, TEMPLATE_CATEGORIES, UserRef, Workspace } from '../../../core/models/sales.model';
+import { IntroDraft, MessageTemplate, PreviousEmail, TEMPLATE_CATEGORIES, UserRef, Workspace } from '../../../core/models/sales.model';
 import { suggestDate, toLocalInput } from '../shared/sales-format';
 
 const PLACEHOLDER = /\{\{\s*([a-z_]+)\s*\}\}/g;
@@ -24,9 +25,22 @@ function price(cents: number | null, billing: string | null): string {
 @Component({
   selector: 'app-composer',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, DatePipe],
   template: `
     <div class="composer">
+      @if (channel() === 'email' && ws().channels.email.testRedirect) {
+        <div class="alert alert-info">Test mode: emails go to {{ ws().channels.email.testRedirect }}, not to the lead.</div>
+      }
+      @if (intro()) {
+        @if (ws().outreach.previousEmails.length) {
+          <div class="alert alert-warning prev"><strong>This business was already emailed</strong>
+            @for (p of ws().outreach.previousEmails; track $index) { <span>{{ p.at | date: 'MMM d, y' }} · {{ p.user?.name || 'Someone' }} · “{{ p.subject || '(no subject)' }}”</span> }
+          </div>
+        }
+        @if (drafting()) { <p class="form-hint"><span class="spinner spinner-sm"></span> Writing a draft from the facts on file…</p> }
+        @if (draftInfo()) { <p class="form-hint">{{ draftInfo() }}</p> }
+        @for (w of warnings(); track w) { <div class="alert alert-warning">{{ w }}</div> }
+      }
       <div class="row2">
         <div class="form-group">
           <label class="form-label" for="cm-template">Template</label>
@@ -79,6 +93,16 @@ function price(cents: number | null, billing: string | null): string {
         </div>
       }
 
+      @if (intro() && evidence().length) {
+        <details class="evidence" open>
+          <summary>What this draft is based on</summary>
+          <dl>
+            @for (e of evidence(); track e.label) { <dt>{{ e.label }}</dt><dd>{{ e.value }}@if (e.source) { <span class="src"> — {{ e.source }}</span> }</dd> }
+          </dl>
+          <p class="form-hint">Edit anything that isn’t right, and don’t add claims you haven’t checked.</p>
+        </details>
+      }
+
       <details class="next">
         <summary>Schedule the follow-up ({{ nextLabel() }})</summary>
         <div class="row2">
@@ -93,6 +117,13 @@ function price(cents: number | null, billing: string | null): string {
           <button type="button" class="btn btn-outline btn-sm" (click)="confirmOwner = true; ownerRetry()">{{ connected() && canSend() ? 'Send anyway' : 'Record anyway' }}</button>
         </div>
       }
+      @if (repeat(); as rp) {
+        <div class="alert alert-warning owner" role="alert">
+          <span>{{ rp.message }}
+            @for (p of rp.previous; track $index) { <br />{{ p.at | date: 'MMM d, y' }} · {{ p.user?.name || 'Someone' }} · “{{ p.subject || '(no subject)' }}” }</span>
+          <button type="button" class="btn btn-outline btn-sm" (click)="confirmRecent = true; send()">Send anyway</button>
+        </div>
+      }
       @if (error()) { <div class="alert alert-error">{{ error() }}</div> }
       @if (sentNotice()) { <div class="alert alert-success" role="status">{{ sentNotice() }}</div> }
 
@@ -102,6 +133,10 @@ function price(cents: number | null, billing: string | null): string {
           @else { {{ channel() === 'email' ? 'Email' : 'Texting' }} isn’t connected in Leadzaro — open it in your own app, then confirm. }
         </span>
         <button type="button" class="btn btn-ghost" (click)="closed.emit()">Close</button>
+        @if (intro()) {
+          <button type="button" class="btn btn-ghost" (click)="generateDraft()" [disabled]="drafting()" title="Replaces the text with a fresh draft from the facts on file">Start over</button>
+          <button type="button" class="btn btn-outline" (click)="saveServerDraft()" [disabled]="savingDraft() || !body.trim()">{{ savingDraft() ? 'Saving…' : 'Save draft' }}</button>
+        }
         @if (connected() && canSend()) {
           <button type="button" class="btn btn-primary" (click)="send()" [disabled]="sending() || !ready()">{{ sending() ? 'Sending…' : 'Send' }}</button>
         } @else {
@@ -121,6 +156,9 @@ function price(cents: number | null, billing: string | null): string {
     a.disabled { opacity: .5; pointer-events: none; }
     .inserts { display: inline-flex; gap: 6px; align-items: center; }
     .kit { width: auto; max-width: 260px; padding-top: 5px; padding-bottom: 5px; font-size: .8rem; }
+    .prev { display: flex; flex-direction: column; gap: 2px; font-size: .8rem; }
+    .evidence { font-size: .8rem; summary { cursor: pointer; color: var(--text-secondary); }
+      dl { display: grid; grid-template-columns: 140px 1fr; gap: 4px 10px; margin: 8px 0 4px; } dt { color: var(--text-muted); } dd { margin: 0; overflow-wrap: anywhere; } .src { color: var(--text-muted); } }
     .owner { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
   `],
 })
@@ -131,6 +169,8 @@ export class ComposerComponent implements OnInit {
   readonly ws = input.required<Workspace>();
   readonly channel = input<'email' | 'sms'>('email');
   readonly category = input<string | null>(null);
+  /** Introduction mode (ADR 0014): drafted from facts on file, with the evidence shown. */
+  readonly intro = input(false);
   readonly sent = output<Workspace | null>();
   readonly closed = output<void>();
 
@@ -142,6 +182,13 @@ export class ComposerComponent implements OnInit {
   readonly owner = signal<UserRef | null>(null);
   private readonly bodyEl = viewChild<ElementRef<HTMLTextAreaElement>>('bodyEl');
   confirmOwner = false;
+  confirmRecent = false;
+  readonly drafting = signal(false);
+  readonly savingDraft = signal(false);
+  readonly draftInfo = signal('');
+  readonly evidence = signal<IntroDraft['evidence']>([]);
+  readonly warnings = signal<string[]>([]);
+  readonly repeat = signal<{ message: string; previous: PreviousEmail[] } | null>(null);
   kitChoice = '';
   private lastAction: 'send' | 'external' = 'send';
   private readonly bodySignal = signal('');
@@ -206,6 +253,19 @@ export class ComposerComponent implements OnInit {
 
   ngOnInit(): void {
     this.recipient = this.recipients()[0]?.value ?? '';
+    if (this.intro()) {
+      this.sales.templates({ channel: 'email' }).subscribe({ next: (list) => this.templates.set(list), error: () => undefined });
+      const saved = this.ws().opportunity.emailDraft;
+      if (saved?.body) {
+        this.subject = saved.subject;
+        this.body = saved.body;
+        if (saved.to && this.recipients().some((r) => r.value === saved.to)) this.recipient = saved.to;
+        this.draftInfo.set(`Saved draft by ${saved.savedBy?.name || 'a teammate'} · ${new Date(saved.savedAt).toLocaleString()} — not sent.`);
+      } else if (!this.restoreDraft()) {
+        this.generateDraft();
+      }
+      return;
+    }
     this.sales.templates({ channel: this.channel() }).subscribe({
       next: (list) => {
         this.templates.set(list);
@@ -253,6 +313,37 @@ export class ComposerComponent implements OnInit {
     setTimeout(() => { this.kitChoice = ''; });
   }
 
+  /** A fresh, editable draft built only from facts on file. */
+  generateDraft(): void {
+    this.drafting.set(true);
+    this.error.set('');
+    const contactId = this.recipients().find((r) => r.value === this.recipient)?.contactId ?? null;
+    this.sales.draftIntro(this.ws().opportunity.id, contactId).subscribe({
+      next: (draft) => {
+        this.drafting.set(false);
+        this.subject = draft.subject;
+        this.body = draft.body;
+        this.evidence.set(draft.evidence);
+        this.warnings.set(draft.warnings);
+        this.draftInfo.set('');
+        this.saveDraft();
+      },
+      error: (err) => { this.drafting.set(false); this.error.set(err.error?.message || 'The draft couldn’t be prepared — write it yourself or try again.'); },
+    });
+  }
+
+  /** Keeps the draft on the lead so a teammate sees it. Never sends. */
+  saveServerDraft(): void {
+    this.savingDraft.set(true);
+    this.sales.saveEmailDraft(this.ws().opportunity.id, { subject: this.subject, body: this.body, to: this.recipient }).subscribe({
+      next: (res) => {
+        this.savingDraft.set(false);
+        if (res.emailDraft) this.draftInfo.set(`Draft saved ${new Date(res.emailDraft.savedAt).toLocaleTimeString()} — not sent.`);
+      },
+      error: (err) => { this.savingDraft.set(false); this.error.set(err.error?.message || 'The draft wasn’t saved.'); },
+    });
+  }
+
   ownerRetry(): void {
     if (this.lastAction === 'send') this.send();
     else this.confirmExternal();
@@ -290,6 +381,7 @@ export class ComposerComponent implements OnInit {
     this.sending.set(true);
     this.error.set('');
     this.owner.set(null);
+    this.repeat.set(null);
     const contactId = this.recipients().find((r) => r.value === this.recipient)?.contactId ?? null;
     this.sales.sendMessage(this.ws().opportunity.id, {
       channel: this.channel(),
@@ -301,6 +393,8 @@ export class ComposerComponent implements OnInit {
       paymentRequestId: this.body.includes(this.openLink()?.url ?? '\u0000') ? this.openLink()?.id : null,
       idempotencyKey: this.key,
       confirmOwner: this.confirmOwner,
+      confirmRecent: this.confirmRecent,
+      intent: this.intro() ? 'intro' : null,
       nextAction: this.nextAt ? { at: new Date(this.nextAt).toISOString(), type: 'follow_up', note: this.nextNote || null } : null,
     }).subscribe({
       next: () => {
@@ -313,6 +407,10 @@ export class ComposerComponent implements OnInit {
       error: (err) => {
         this.sending.set(false);
         if (this.ownerBlocked(err)) return;
+        if (err.status === 409 && ['previous_outreach', 'duplicate_send'].includes(err.error?.code)) {
+          this.repeat.set({ message: err.error.message, previous: err.error.previous || [] });
+          return;
+        }
         // A retry of the same message after a failure is a new attempt.
         this.key = actionKey();
         this.error.set(err.error?.message || 'Not sent. Your message is saved here — try again.');

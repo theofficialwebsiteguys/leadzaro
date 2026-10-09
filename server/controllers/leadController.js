@@ -1,6 +1,10 @@
 const {
-  searchLeads, getPlaceDetails, getPlaceFullDetails, getStaticMap,
+  searchLeads, searchGuided, getPlaceDetails, getPlaceFullDetails, getStaticMap,
 } = require('../services/leadSearchService');
+const {
+  CATEGORIES, MAX_QUERIES, queriesFor, cleanAreaList, searchSettingsOf,
+} = require('../core/crm/searchCatalog');
+const contactDiscovery = require('../modules/sales/contactDiscoveryService');
 const { Lead, SavedLead } = require('../models');
 const { annotateSearchResults } = require('../modules/sales/leadIntakeService');
 const { success, notFound } = require('../utils/response');
@@ -21,6 +25,67 @@ async function search(req, res, next) {
     return success(res, { ...results, items: enriched });
   } catch (err) {
     next(err);
+  }
+}
+
+/** Categories, territories and presets for the guided search form (ADR 0014). */
+async function searchOptions(req, res, next) {
+  try {
+    const { territories, presets } = searchSettingsOf(req.context.organization);
+    return success(res, {
+      categories: CATEGORIES.map((c) => ({
+        key: c.key, label: c.label, queries: c.queries, subcategories: c.subcategories,
+      })),
+      territories,
+      presets,
+      maxQueries: MAX_QUERIES,
+      canEditPresets: req.context.permissionKeys.has('workspace.manage'),
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/** Runs the guided search: selections → bounded Google queries → merged, annotated results. */
+async function guidedSearch(req, res, next) {
+  try {
+    const b = req.body || {};
+    const list = (v) => (Array.isArray(v) ? v.map(String).slice(0, 40) : []);
+    const queries = queriesFor({ categories: list(b.categories), subcategories: list(b.subcategories), keywords: String(b.keywords || '').slice(0, 400) });
+    const results = await searchGuided({
+      queries,
+      mode: b.mode === 'area' ? 'area' : 'radius',
+      location: String(b.location || '').trim().slice(0, 200),
+      areas: cleanAreaList(b.areas),
+      radius: b.radius,
+      minRating: b.minRating,
+      minReviews: b.minReviews,
+      demo: b.demo,
+      maxQueries: MAX_QUERIES,
+    });
+    const enriched = await annotateSearchResults(req.context.organization.id, results.items);
+    return success(res, { ...results, items: enriched });
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });
+    if (/Places API error|timeout/i.test(err.message)) return res.status(502).json({ success: false, message: 'Google search isn’t responding right now. Try again in a minute.' });
+    return next(err);
+  }
+}
+
+/** Email discovery for one employee-selected search result (bounded, cached per listing). */
+async function discoverEmail(req, res, next) {
+  try {
+    const b = req.body || {};
+    const result = await contactDiscovery.discoverForSearchResult({
+      placeId: String(b.placeId || ''),
+      website: b.website ? String(b.website).slice(0, 500) : null,
+      name: String(b.name || '').slice(0, 255),
+      force: Boolean(b.force),
+    });
+    return success(res, { discovery: { ...result, statusLabel: contactDiscovery.STATUS_LABELS[result.status] } });
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });
+    return next(err);
   }
 }
 
@@ -101,5 +166,5 @@ async function getMapImage(req, res, next) {
 }
 
 module.exports = {
-  search, getById, getAll, getContactDetails, getFullDetails, getMapImage,
+  search, searchOptions, guidedSearch, discoverEmail, getById, getAll, getContactDetails, getFullDetails, getMapImage,
 };

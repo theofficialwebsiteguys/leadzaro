@@ -47,7 +47,7 @@
           <a class="convo" [routerLink]="['/app/leads', c.opportunityId]" [class.reply]="c.replyNeededSince">
             <div class="convo-main">
               <div class="convo-top">
-                <strong>{{ c.businessName }}</strong>
+                <strong>{{ c.businessName }}</strong> <lz-google-search [name]="c.businessName" [city]="c.city" [state]="c.state" />
                 <span [class]="'stage-chip stage-' + c.stage">{{ c.stageLabel }}</span>
                 @if (c.replyNeededSince) { <span class="tag tag-danger">Needs reply</span> }
                 @if (c.doNotContact) { <span class="tag tag-muted">Do not contact</span> }

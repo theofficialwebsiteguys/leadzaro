@@ -8,6 +8,7 @@ import {
   CHANNEL_LABELS, Channels, Conversation, MessageTemplate, RenderedMessage, TEMPLATE_CATEGORIES,
 } from '../../../core/models/sales.model';
 import { IconComponent } from '../../../shared/icon/icon.component';
+import { GoogleSearchComponent } from '../../../shared/google-search/google-search.component';
 import { DialogComponent } from '../../../shared/dialog/dialog.component';
 import { RelativeDayPipe } from '../shared/sales-format';
 
@@ -21,7 +22,7 @@ type Tab = 'conversations' | 'templates';
 @Component({
   selector: 'app-outreach-page',
   standalone: true,
-  imports: [RouterLink, FormsModule, KeyValuePipe, IconComponent, DialogComponent, RelativeDayPipe],
+  imports: [GoogleSearchComponent, RouterLink, FormsModule, KeyValuePipe, IconComponent, DialogComponent, RelativeDayPipe],
   templateUrl: './outreach-page.component.html',
   styleUrl: './outreach-page.component.scss',
 })

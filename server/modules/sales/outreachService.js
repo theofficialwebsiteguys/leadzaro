@@ -12,6 +12,7 @@ const channels = require('./channelService');
 const workspaceService = require('./workspaceService');
 const paymentRequestService = require('./paymentRequestService');
 const { unresolvedIn } = require('./templateService');
+const introEmail = require('./introEmailService');
 const {
   invalid, isUniqueViolation, isEmail, toE164, phoneKey, assertNoSecrets,
 } = require('./salesCommon');
@@ -61,6 +62,52 @@ async function afterSend(ctx, opportunity, activity, { channel, paymentRequestId
   }
 }
 
+/**
+ * An address marked do-not-contact anywhere in the agency (on any
+ * business or contact) can't be emailed from any lead (ADR 0014).
+ */
+async function assertNotSuppressed(ctx, to) {
+  const lower = String(to).toLowerCase();
+  const byEmail = (column) => sequelize.where(sequelize.fn('lower', sequelize.col(column)), lower);
+  const contact = await Contact.findOne({
+    where: {
+      agencyOrganizationId: ctx.agencyId, doNotContact: true, deletedAt: null, [Op.and]: [byEmail('email')],
+    },
+    attributes: ['id'],
+  });
+  const organizations = await Organization.findAll({
+    where: { managingAgencyOrganizationId: ctx.agencyId, [Op.and]: [byEmail('email')] },
+    attributes: ['id'],
+  });
+  const optedOut = organizations.length ? await Opportunity.findOne({
+    where: {
+      agencyOrganizationId: ctx.agencyId, organizationId: organizations.map((o) => o.id), doNotContact: true, deletedAt: null,
+    },
+    attributes: ['id'],
+  }) : null;
+  if (contact || optedOut) throw invalid(`${to} is marked do not contact. It can’t be emailed from Leadzaro.`, 409, { code: 'suppressed' });
+}
+
+/**
+ * Guards against accidental repeats: the identical email to the same
+ * address within a day, or an introduction to a business someone already
+ * emailed. Either can be sent anyway once the employee has seen it.
+ */
+async function assertNotRepeat(ctx, organization, to, { subject, body, intro }) {
+  const previous = await introEmail.previousEmails(ctx.agencyId, organization.id, to, { limit: 10 });
+  const dayAgo = Date.now() - 24 * 3600 * 1000;
+  const identical = previous.find((p) => p.subject === subject && p.body === body && new Date(p.at).getTime() > dayAgo);
+  const strip = (p) => ({
+    at: p.at, subject: p.subject, to: p.to, status: p.status, user: p.user,
+  });
+  if (identical) {
+    throw invalid(`This exact email was already sent to ${identical.to} by ${identical.user?.name || 'a teammate'} in the last day.`, 409, { code: 'duplicate_send', previous: [strip(identical)] });
+  }
+  if (intro && previous.length) {
+    throw invalid(`${previous[0].user?.name || 'Someone'} already emailed this business — review before sending another introduction.`, 409, { code: 'previous_outreach', previous: previous.map(strip) });
+  }
+}
+
 async function send(ctx, opportunityId, input) {
   const channel = input.channel === 'sms' ? 'sms' : 'email';
   const idempotencyKey = checkKey(input);
@@ -83,11 +130,15 @@ async function send(ctx, opportunityId, input) {
   if (channel === 'email') {
     to = String(input.to || contact?.email || organization.email || '').trim();
     if (!isEmail(to)) throw invalid('Add a valid email address for this lead first.');
+    await assertNotSuppressed(ctx, to);
+    if (!input.confirmRecent) await assertNotRepeat(ctx, organization, to, { subject, body, intro: input.intent === 'intro' });
   } else {
     to = toE164(input.to || contact?.phone || organization.phone);
     if (!to || to.replace(/\D/g, '').length < 10) throw invalid('Add a valid mobile number for this lead first.');
   }
 
+  // Refuse before recording anything, so an unconnected channel never leaves a "sending" message behind.
+  if (channel === 'email' && !channels.emailConnected()) throw invalid('Email sending is not connected. Use “Open in my email app” and log it, or ask an administrator to connect email.', 503);
   const user = await User.findByPk(ctx.userId, { attributes: ['id', 'name', 'email'] });
   let activity;
   try {
@@ -131,7 +182,11 @@ async function send(ctx, opportunityId, input) {
     throw invalid(`Not sent: ${result.error}`, 502, { activityId: activity.id });
   }
 
-  await activity.update({ status: result.status, providerMessageId: result.providerMessageId || null });
+  // "sent" means the provider accepted it; delivery, bounces and replies are only recorded from real events.
+  await activity.update({
+    status: result.status, providerMessageId: result.providerMessageId || null, fromAddress: result.from || null, provider: result.provider || activity.provider,
+  });
+  if (channel === 'email' && opportunity.emailDraft) await opportunity.update({ emailDraft: null });
   await afterSend(ctx, opportunity, activity, { channel, paymentRequestId: input.paymentRequestId, body });
   if (input.nextAction?.at) await workspaceService.setNextAction(ctx, opportunity.id, input.nextAction);
   await recordAudit({
@@ -204,7 +259,7 @@ async function listConversations(ctx, { filter = 'all', scope = 'mine', q, page 
     where,
     include: [
       {
-        model: Organization, as: 'organization', attributes: ['id', 'name', 'type'], where: orgWhere, required: Boolean(orgWhere),
+        model: Organization, as: 'organization', attributes: ['id', 'name', 'type', 'city', 'state'], where: orgWhere, required: Boolean(orgWhere),
       },
       { model: User, as: 'assignedTo', attributes: ['id', 'name'] },
     ],
@@ -224,6 +279,8 @@ async function listConversations(ctx, { filter = 'all', scope = 'mine', q, page 
       return {
         opportunityId: o.id,
         businessName: o.organization?.name,
+        city: o.organization?.city || null,
+        state: o.organization?.state || null,
         stage: o.stage,
         stageLabel: STAGE_LABELS[o.stage],
         assignedTo: o.assignedTo,

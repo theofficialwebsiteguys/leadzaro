@@ -59,7 +59,7 @@
                   <li>
                     <a [routerLink]="['/app/leads', item.opportunityId]" class="lead-row">
                       <div class="lead-main">
-                        <strong>{{ item.businessName }}</strong>
+                        <strong>{{ item.businessName }} <lz-google-search [name]="item.businessName" [city]="item.city" [state]="item.state" /></strong>
                         <span class="lead-meta">
                           @switch (section.key) {
                             @case ('replies') { Replied {{ item.replyNeededSince | relativeDay }} · {{ item.lastInteractionSummary }} }
