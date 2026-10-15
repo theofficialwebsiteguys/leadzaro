@@ -52,6 +52,7 @@ const CancellationRequest = require('./CancellationRequest')(sequelize);
 const ClientProfile = require('./ClientProfile')(sequelize);
 const ClientNote = require('./ClientNote')(sequelize);
 const IntegrationConnection = require('./IntegrationConnection')(sequelize);
+const UserMailboxConnection = require('./UserMailboxConnection')(sequelize);
 const DomainRecord = require('./DomainRecord')(sequelize);
 const ClientDomainLink = require('./ClientDomainLink')(sequelize);
 const HostingPlan = require('./HostingPlan')(sequelize);
@@ -132,6 +133,7 @@ const models = {
   ClientProfile,
   ClientNote,
   IntegrationConnection,
+  UserMailboxConnection,
   DomainRecord,
   ClientDomainLink,
   HostingPlan,

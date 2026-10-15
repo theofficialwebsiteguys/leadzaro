@@ -138,7 +138,10 @@ async function send(ctx, opportunityId, input) {
   }
 
   // Refuse before recording anything, so an unconnected channel never leaves a "sending" message behind.
-  if (channel === 'email' && !channels.emailConnected()) throw invalid('Email sending is not connected. Use “Open in my email app” and log it, or ask an administrator to connect email.', 503);
+  if (channel === 'email') {
+    const ready = await channels.emailReady(ctx);
+    if (!ready.ok) throw invalid(ready.message, 503, { code: 'email_not_connected' });
+  }
   const user = await User.findByPk(ctx.userId, { attributes: ['id', 'name', 'email'] });
   let activity;
   try {
@@ -157,7 +160,7 @@ async function send(ctx, opportunityId, input) {
       subject,
       body,
       toAddress: to,
-      provider: channel === 'email' ? 'smtp' : 'twilio',
+      provider: channel === 'email' ? channels.emailProvider() : 'twilio',
       templateId: input.templateId || null,
       idempotencyKey,
       occurredAt: new Date(),
@@ -170,7 +173,7 @@ async function send(ctx, opportunityId, input) {
 
   const result = channel === 'email'
     ? await channels.sendEmail({
-      to, subject, body, fromName: user?.name, replyTo: user?.email, activityId: activity.id,
+      to, subject, body, fromName: user?.name, replyTo: user?.email, activityId: activity.id, userId: ctx.userId, agencyId: ctx.agencyId,
     })
     : await channels.sendSms({ to, body });
 

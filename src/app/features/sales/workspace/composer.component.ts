@@ -1,6 +1,7 @@
 import { Component, ElementRef, OnInit, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { SalesService, actionKey } from '../../../core/services/sales.service';
 import { SettingsService } from '../../../core/services/settings.service';
 import { IntroDraft, MessageTemplate, PreviousEmail, TEMPLATE_CATEGORIES, UserRef, Workspace } from '../../../core/models/sales.model';
@@ -25,9 +26,13 @@ function price(cents: number | null, billing: string | null): string {
 @Component({
   selector: 'app-composer',
   standalone: true,
-  imports: [FormsModule, DatePipe],
+  imports: [FormsModule, DatePipe, RouterLink],
   template: `
     <div class="composer">
+      @if (channel() === 'email' && ws().channels.email.needsConnection) {
+        <div class="alert alert-info">{{ ws().channels.email.setup }} <a routerLink="/app/settings/account" fragment="email-sending" (click)="closed.emit()">Connect my Gmail →</a>
+          <br /><span class="form-hint">Until then you can open it in your own email app and confirm it was sent.</span></div>
+      }
       @if (channel() === 'email' && ws().channels.email.testRedirect) {
         <div class="alert alert-info">Test mode: emails go to {{ ws().channels.email.testRedirect }}, not to the lead.</div>
       }

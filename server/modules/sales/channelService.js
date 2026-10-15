@@ -5,6 +5,7 @@ const { User } = require('../../models');
 const { env } = require('../../core/config/env');
 const { getEmailAdapter, isSmtpConfigured } = require('../../core/notifications/emailAdapter');
 const { invalid } = require('./salesCommon');
+const gmail = require('../mailbox/gmailConnectionService');
 
 /**
  * Outreach channels (ADR 0011). A channel is "connected" only when real
@@ -33,17 +34,7 @@ async function channelStatus(ctx) {
   const twilio = twilioConfigured();
   const callbacks = Boolean(env.PUBLIC_API_BASE_URL);
   return {
-    email: {
-      connected: isSmtpConfigured(),
-      provider: isSmtpConfigured() ? 'smtp' : null,
-      from: isSmtpConfigured() ? salesFromAddress() : null,
-      replyTo: user?.email || null,
-      receivesReplies: false,
-      tracksDelivery: false,
-      testRedirect: isSmtpConfigured() && env.SALES_EMAIL_TEST_REDIRECT ? env.SALES_EMAIL_TEST_REDIRECT : null,
-      setup: 'An administrator sets EMAIL_PROVIDER=smtp, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD and SALES_EMAIL_FROM on the server.',
-      note: 'Replies go to your own inbox. Log them here with “Log a reply”.',
-    },
+    email: await emailStatus(ctx, user),
     sms: {
       connected: twilio,
       provider: twilio ? 'twilio' : null,
@@ -66,9 +57,78 @@ async function channelStatus(ctx) {
 
 // ---------------------------------------------------------------- email
 
+/**
+ * Sales email (ADR 0015). With the Google OAuth client configured, email is
+ * sent only from the signed-in person's own connected mailbox — never a
+ * shared account. Without it, the older shared SMTP sender (ADR 0011) applies.
+ */
+async function emailStatus(ctx, user) {
+  const testRedirect = env.SALES_EMAIL_TEST_REDIRECT || null;
+  if (gmail.configured()) {
+    const mailbox = await gmail.status(ctx);
+    return {
+      connected: mailbox.connected,
+      provider: mailbox.connected ? 'gmail' : null,
+      from: mailbox.email,
+      replyTo: mailbox.email,
+      receivesReplies: false,
+      tracksDelivery: false,
+      testRedirect: mailbox.connected ? testRedirect : null,
+      perUser: true,
+      needsConnection: !mailbox.connected,
+      needsReconnect: mailbox.needsReconnect,
+      setup: mailbox.needsReconnect
+        ? 'Your Gmail connection stopped working. Reconnect it in Settings → My account.'
+        : 'Connect your Gmail in Settings → My account to send from your own address.',
+      note: 'Sent from your own mailbox — it appears in your Gmail Sent folder and replies come to you. Log replies here with “Log a reply”.',
+    };
+  }
+  return {
+    connected: isSmtpConfigured(),
+    provider: isSmtpConfigured() ? 'smtp' : null,
+    from: isSmtpConfigured() ? salesFromAddress() : null,
+    replyTo: user?.email || null,
+    receivesReplies: false,
+    tracksDelivery: false,
+    testRedirect: isSmtpConfigured() ? testRedirect : null,
+    perUser: false,
+    needsConnection: false,
+    needsReconnect: false,
+    setup: 'An administrator sets EMAIL_PROVIDER=smtp, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD and SALES_EMAIL_FROM on the server.',
+    note: 'Replies go to your own inbox. Log them here with “Log a reply”.',
+  };
+}
+
+/** Whether this person can send sales email right now, and if not, what to tell them. */
+async function emailReady(ctx) {
+  if (gmail.configured()) {
+    const mailbox = await gmail.status(ctx);
+    if (mailbox.connected) return { ok: true };
+    return { ok: false, message: mailbox.needsReconnect ? 'Your Gmail connection needs to be reconnected — Settings → My account.' : 'Connect your Gmail in Settings → My account to send from Leadzaro, or use “Open in my email app” and log it.' };
+  }
+  if (isSmtpConfigured()) return { ok: true };
+  return { ok: false, message: 'Email sending is not connected. Use “Open in my email app” and log it, or ask an administrator to connect email.' };
+}
+
 async function sendEmail({
-  to, subject, body, fromName, replyTo, activityId,
+  to, subject, body, fromName, replyTo, activityId, userId, agencyId,
 }) {
+  const redirectTo = env.SALES_EMAIL_TEST_REDIRECT;
+  if (gmail.configured()) {
+    const result = await gmail.sendAs({
+      userId,
+      agencyId,
+      fromName,
+      to: redirectTo || to,
+      subject: redirectTo ? `[TEST — would go to ${to}] ${subject}` : subject,
+      text: body,
+      headers: activityId ? { 'X-Leadzaro-Activity': activityId } : undefined,
+    });
+    if (!result.ok) return { ok: false, error: result.error };
+    return {
+      ok: true, providerMessageId: result.providerMessageId, status: 'sent', from: result.from, provider: redirectTo ? 'gmail_test' : 'gmail',
+    };
+  }
   if (!isSmtpConfigured()) throw invalid('Email sending is not connected. Use “Open in my email app” and log it, or ask an administrator to connect email.', 503);
   const address = salesFromAddress();
   const safeName = String(fromName || '').replace(/["<>\r\n]/g, '').trim();
@@ -162,7 +222,8 @@ function verifyTwilioSignature(path, params, signature) {
 
 module.exports = {
   channelStatus,
-  emailConnected: isSmtpConfigured,
+  emailReady,
+  emailProvider: () => (gmail.configured() ? 'gmail' : 'smtp'),
   twilioConfigured,
   sendEmail,
   sendSms,

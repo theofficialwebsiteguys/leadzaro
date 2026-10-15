@@ -17,6 +17,8 @@ router.use('/billing', require('../../modules/billing/routes'));
 router.use('/projects', require('../../modules/projects/routes'));
 router.use('/clients', require('../../modules/clients/routes'));
 router.use('/domains', require('../../modules/domains/routes'));
+// Personal mailbox connections must come before the admin-only integrations router.
+router.use('/integrations/gmail', require('../../modules/mailbox/routes'));
 router.use('/integrations', require('../../modules/integrations/routes'));
 router.use('/requests', require('../../modules/requests/queueRoutes'));
 router.use('/section-definitions', require('../../modules/websites/sectionDefinitionRoutes'));

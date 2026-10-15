@@ -56,6 +56,13 @@ const ICONS: Record<string, string> = {
                     <a class="btn btn-ghost btn-sm" routerLink="/app/domains">Open Domains</a>
                     @if (item.manage === 'in_app') { <button class="btn btn-outline btn-sm" (click)="toggle('namecheap')">{{ open() === 'namecheap' ? 'Close' : item.state === 'not_connected' ? 'Connect' : 'Manage' }}</button> }
                   }
+                  @case ('email') {
+                    @if (item.manage === 'in_app') {
+                      <a class="btn btn-outline btn-sm" routerLink="/app/settings/account" fragment="email-sending">{{ item.state === 'connected' ? 'Manage my Gmail' : item.state === 'attention' ? 'Reconnect my Gmail' : 'Connect my Gmail' }}</a>
+                    } @else if (d.canManage && d.setupSteps?.[item.key]) {
+                      <button class="btn btn-outline btn-sm" (click)="toggle(item.key)">{{ open() === item.key ? 'Hide setup' : item.state === 'not_connected' ? 'How to connect' : 'Setup details' }}</button>
+                    }
+                  }
                   @default {
                     @if (d.canManage && d.setupSteps?.[item.key]) {
                       <button class="btn btn-outline btn-sm" (click)="toggle(item.key)">{{ open() === item.key ? 'Hide setup' : item.state === 'not_connected' ? 'How to connect' : item.state === 'attention' ? 'Fix' : 'Setup details' }}</button>

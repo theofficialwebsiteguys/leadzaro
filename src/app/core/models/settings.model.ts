@@ -127,3 +127,14 @@ export interface Overview {
   stripe: { connected: boolean; mode: string; lastWebhookAt: string | null };
   setup: { remaining: { key: string; label: string; detail: string; link: string }[]; total: number } | null;
 }
+
+/** Your own connected mailbox for sending sales email (ADR 0015). The token never reaches the browser. */
+export interface GmailConnection {
+  configured: boolean;
+  connected: boolean;
+  needsReconnect: boolean;
+  email: string | null;
+  connectedAt: string | null;
+  lastUsedAt: string | null;
+  lastError: string | null;
+}

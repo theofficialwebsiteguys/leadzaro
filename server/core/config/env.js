@@ -207,6 +207,11 @@ const env = {
   // delivered to this address instead of the lead, with the intended
   // recipient shown in the subject.
   SALES_EMAIL_TEST_REDIRECT: process.env.SALES_EMAIL_TEST_REDIRECT || '',
+  // Per-user Gmail sending (ADR 0015). When the OAuth client is set, sales
+  // email goes out from each person's own connected Google Workspace mailbox.
+  GOOGLE_OAUTH_CLIENT_ID: process.env.GOOGLE_OAUTH_CLIENT_ID || '',
+  GOOGLE_OAUTH_CLIENT_SECRET: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '',
+  GOOGLE_OAUTH_REDIRECT_URI: process.env.GOOGLE_OAUTH_REDIRECT_URI || '',
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',
   TWILIO_FROM_NUMBER: process.env.TWILIO_FROM_NUMBER || '',

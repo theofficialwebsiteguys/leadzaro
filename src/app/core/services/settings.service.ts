@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, map, tap } from 'rxjs';
 import {
-  IntegrationsResponse, MySettings, NotificationSettings, Overview, WorkspaceSettings,
+  GmailConnection, IntegrationsResponse, MySettings, NotificationSettings, Overview, WorkspaceSettings,
 } from '../models/settings.model';
 import { AuthService } from './auth.service';
 
@@ -67,5 +67,19 @@ export class SettingsService {
   overview(scope: 'mine' | 'team', period: string): Observable<Overview> {
     const params = new HttpParams().set('scope', scope).set('period', period).set('tzOffset', String(new Date().getTimezoneOffset()));
     return this.unwrap(this.http.get<{ data: Overview }>('/api/v1/overview', { params }));
+  }
+
+  // Your own Gmail for sending sales email (ADR 0015)
+  gmailStatus(): Observable<GmailConnection> {
+    return this.unwrap(this.http.get<{ data: GmailConnection }>('/api/v1/integrations/gmail'));
+  }
+
+  /** Returns Google's consent URL; the caller sends the browser there. */
+  connectGmail(): Observable<{ url: string }> {
+    return this.unwrap(this.http.post<{ data: { url: string } }>('/api/v1/integrations/gmail/connect', {}));
+  }
+
+  disconnectGmail(): Observable<GmailConnection> {
+    return this.unwrap(this.http.delete<{ data: GmailConnection }>('/api/v1/integrations/gmail'));
   }
 }

@@ -337,6 +337,9 @@ export interface ChannelState {
   receivesReplies?: boolean;
   tracksDelivery?: boolean;
   testRedirect?: string | null;
+  perUser?: boolean;
+  needsConnection?: boolean;
+  needsReconnect?: boolean;
   needsYourPhone?: boolean;
   yourPhone?: string | null;
   setup: string;

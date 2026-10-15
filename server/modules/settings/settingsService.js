@@ -368,7 +368,23 @@ async function getIntegrations(ctx) {
     diagnostics: null,
   };
 
-  const emailCard = {
+  // Per-user Gmail (ADR 0015): each person connects their own mailbox in My account.
+  const emailCard = channels.email.perUser ? {
+    key: 'email',
+    name: 'Outreach email (your Gmail)',
+    scope: 'personal',
+    purpose: 'Sends sales emails from your own Google Workspace address. Each person connects their own mailbox.',
+    state: channels.email.connected ? 'connected' : (channels.email.needsReconnect ? 'attention' : 'not_connected'),
+    account: channels.email.from,
+    mode: null,
+    detail: channels.email.connected
+      ? 'Emails go out from your own mailbox and appear in your Gmail Sent folder.'
+      : channels.email.setup,
+    lastActivityAt: null,
+    lastActivityLabel: null,
+    manage: 'in_app',
+    diagnostics: null,
+  } : {
     key: 'email',
     name: 'Outreach email (SMTP)',
     scope: 'workspace',

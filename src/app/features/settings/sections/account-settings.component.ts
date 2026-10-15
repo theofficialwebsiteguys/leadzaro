@@ -9,12 +9,13 @@ import { SessionService } from '../../../core/services/session.service';
 import { MySettings } from '../../../core/models/settings.model';
 import { AuthSessionInfo } from '../../../core/models/organization.model';
 import { HasUnsavedChanges, Snapshot } from '../unsaved-changes.guard';
+import { GmailConnectionComponent } from './gmail-connection.component';
 
 /** My account (ADR 0012): personal profile, sign-in and security, and the access you actually have. */
 @Component({
   selector: 'app-account-settings',
   standalone: true,
-  imports: [FormsModule, DatePipe, RouterLink, PhoneInputDirective],
+  imports: [FormsModule, DatePipe, RouterLink, PhoneInputDirective, GmailConnectionComponent],
   template: `
     <section class="set-section">
       <div class="set-intro"><h2>My account</h2><p>Changes here affect only you.</p></div>
@@ -45,6 +46,8 @@ import { HasUnsavedChanges, Snapshot } from '../unsaved-changes.guard';
             <button type="submit" class="btn btn-primary btn-sm" [disabled]="!profileDirty() || saving()">{{ saving() ? 'Saving…' : 'Save profile' }}</button>
           </div>
         </form>
+
+        <app-gmail-connection />
 
         <div class="set-card">
           <div class="set-card-head"><div><h3>Sign-in &amp; security</h3><p>Your login is separate from the company’s contact email and from the address outreach is sent from.</p></div></div>
