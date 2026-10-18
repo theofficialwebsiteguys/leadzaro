@@ -42,6 +42,10 @@ async function buildInitialData(opportunity) {
   const notes = await LeadNote.findAll({ where: { opportunityId: opportunity.id }, order: [['createdAt', 'DESC']], limit: 5 });
   const owner = opportunity.creditedUserId || opportunity.assignedToUserId;
   const ownerUser = owner ? await User.findByPk(owner, { attributes: ['id', 'name'] }) : null;
+  const qualifier = opportunity.qualifiedByUserId ? await User.findByPk(opportunity.qualifiedByUserId, { attributes: ['id', 'name'] }) : null;
+  const manager = opportunity.clientManagerUserId ? await User.findByPk(opportunity.clientManagerUserId, { attributes: ['id', 'name'] }) : null;
+  const sources = opportunity.research?.sources || {};
+  const proposal = opportunity.proposal || null;
 
   return {
     businessName: organization.name,
@@ -53,13 +57,18 @@ async function buildInitialData(opportunity) {
       line1: organization.addressLine1 || null, city: organization.city || null, state: organization.state || null, postalCode: organization.postalCode || null,
     },
     contacts: contactsSnapshot(contacts),
-    agreedServices: (request?.lineItems || []).map((item) => item.name).filter(Boolean),
+    agreedServices: (request?.lineItems || []).map((item) => item.name).filter(Boolean).concat(!request && proposal?.service ? [proposal.service] : []),
     pricing: request ? {
       currency: request.currency,
       initialAmountCents: request.initialAmountCents,
       recurringAmountCents: request.recurringAmountCents,
       recurringInterval: request.recurringInterval,
-    } : null,
+    } : (proposal && (proposal.setupCents || proposal.recurringCents) ? {
+      currency: 'usd',
+      initialAmountCents: (proposal.setupCents || 0) + (proposal.recurringCents || 0),
+      recurringAmountCents: proposal.recurringCents || null,
+      recurringInterval: proposal.recurringCents ? (proposal.interval || 'month') : null,
+    } : null),
     payment: payment ? {
       source: payment.source, amountCents: payment.amountCents, currency: payment.currency, paidAt: payment.paidAt,
       paymentRequestId: request?.id || null, stripeCustomerId: payment.stripeCustomerId, stripeSubscriptionId: payment.stripeSubscriptionId,
@@ -68,14 +77,28 @@ async function buildInitialData(opportunity) {
     salesNotes: notes.map((n) => n.content).filter((text) => {
       try { assertNoSecrets(text); return true; } catch { return false; }
     }).reverse().join('\n\n').slice(0, 4000),
-    promisedWork: '',
+    promisedWork: proposal?.scope || '',
+    // Carried over from qualification and sales (ADR 0016), so onboarding starts from what's known.
+    facebookUrl: organization.facebookUrl || null,
+    googleListingUrl: sources.google?.url || null,
+    outreachReason: opportunity.outreachReason || null,
+    needs: opportunity.qualNeed || null,
+    decisionMaker: opportunity.qualDecisionMaker || null,
+    qualifierName: qualifier?.name || null,
+    approvalException: opportunity.closingException || null,
+    clientManagerUserId: manager?.id || null,
+    clientManagerName: manager?.name || null,
+    requirements: '',
+    missingInfo: '',
     targetDates: { kickoff: null, launch: null },
     registrarAccess: 'unknown',
     hostingAccess: 'unknown',
     socialLinks: {
       facebook: '', instagram: '', linkedin: '', google: '',
     },
-    checklist: { logo: false, photos: false, content: false },
+    checklist: {
+      logo: false, photos: false, content: false, businessInfo: false, extraContacts: false,
+    },
     ownerUserId: ownerUser?.id || null,
     ownerName: ownerUser?.name || null,
   };
@@ -102,6 +125,9 @@ function computeItems(data) {
     item('logo', 'Logo and brand files', false, data.checklist?.logo, 'Upload to the client’s Media tab.'),
     item('photos', 'Photos', false, data.checklist?.photos, 'Upload to the client’s Media tab.'),
     item('content', 'Website text / content', false, data.checklist?.content, 'Collected later during onboarding.'),
+    item('business_info', 'Business details confirmed with the client', false, data.checklist?.businessInfo, 'Name, address, hours and services as the client wants them shown.'),
+    item('extra_contacts', 'Additional contacts', false, data.checklist?.extraContacts, 'Anyone else who approves work or pays invoices.'),
+    item('requirements', 'Project requirements', false, data.requirements, 'Pages, features and anything the client asked for.'),
   ];
 }
 
@@ -113,6 +139,11 @@ function statusFor(handoff, items) {
 function summaryBody(data, items) {
   const lines = [`Sales handoff — ${data.businessName}`];
   if (data.ownerName) lines.push(`Sold by: ${data.ownerName}`);
+  if (data.qualifierName) lines.push(`Qualified by: ${data.qualifierName}`);
+  if (data.clientManagerName) lines.push(`Client manager: ${data.clientManagerName}`);
+  if (data.outreachReason) lines.push(`Why we reached out: ${data.outreachReason}`);
+  if (data.needs) lines.push(`What they need: ${data.needs}`);
+  if (data.approvalException) lines.push(`Approved without a confirmed payment: ${data.approvalException}`);
   if ((data.agreedServices || []).length) lines.push(`Agreed services: ${data.agreedServices.join(', ')}`);
   if (data.pricing) {
     const p = data.pricing;
@@ -129,6 +160,8 @@ function summaryBody(data, items) {
   lines.push(`Registrar access: ${ACCESS_LABELS[data.registrarAccess] || 'Not asked yet'} · Hosting access: ${ACCESS_LABELS[data.hostingAccess] || 'Not asked yet'}`);
   const social = Object.entries(data.socialLinks || {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
   if (social.length) lines.push(`Social: ${social.join(' · ')}`);
+  if (data.requirements) lines.push(`Requirements: ${data.requirements}`);
+  if (data.missingInfo) lines.push(`Still missing to start: ${data.missingInfo}`);
   if (data.salesNotes) lines.push(`Sales notes:\n${data.salesNotes}`);
   const missing = items.filter((i) => !i.done).map((i) => `${i.label}${i.essential ? ' (needed)' : ''}`);
   if (missing.length) lines.push(`Still to collect: ${missing.join(', ')}`);
@@ -183,10 +216,12 @@ async function applyToClient(handoff, authContext, actorUserId) {
     fields.services = data.agreedServices.slice(0, 20).map((name) => String(name).slice(0, 120));
   }
   if (data.promisedWork && blank('scopeNotes')) fields.scopeNotes = data.promisedWork;
-  if (data.ownerUserId && blank('accountManagerUserId')) {
+  // The client manager chosen at approval looks after the account (ADR 0016); otherwise the seller.
+  const manager = data.clientManagerUserId || data.ownerUserId;
+  if (manager && blank('accountManagerUserId')) {
     // Only someone still on the team can look after the account.
     const team = await clientService.listTeam(authContext.organization.id);
-    if (team.some((member) => member.id === data.ownerUserId)) fields.accountManagerUserId = data.ownerUserId;
+    if (team.some((member) => member.id === manager)) fields.accountManagerUserId = manager;
   }
   const launch = data.targetDates?.launch ? new Date(`${data.targetDates.launch}T12:00:00.000Z`) : null;
   // Only a sensible upcoming date becomes the client's next action; anything else stays in the handoff.
@@ -276,14 +311,18 @@ async function getForOpportunity(agencyId, opportunityId) {
   return present(await SalesHandoff.findOne({ where: { opportunityId, agencyOrganizationId: agencyId } }));
 }
 
-const TEXT_FIELDS = { promisedWork: 2000, salesNotes: 4000 };
+const TEXT_FIELDS = {
+  promisedWork: 2000, salesNotes: 4000, requirements: 4000, missingInfo: 2000,
+};
 
 function cleanUpdate(input, current) {
   const next = { ...current };
   for (const [field, max] of Object.entries(TEXT_FIELDS)) {
     if (input[field] === undefined) continue;
     const value = String(input[field] || '').trim().slice(0, max);
-    assertNoSecrets(value, field === 'promisedWork' ? 'Promised work' : 'Sales notes');
+    assertNoSecrets(value, {
+      promisedWork: 'Promised work', salesNotes: 'Sales notes', requirements: 'Requirements', missingInfo: 'Missing information',
+    }[field]);
     next[field] = value;
   }
   for (const field of ['registrarAccess', 'hostingAccess']) {
@@ -313,7 +352,7 @@ function cleanUpdate(input, current) {
   }
   if (input.checklist) {
     next.checklist = { ...(current.checklist || {}) };
-    for (const key of ['logo', 'photos', 'content']) {
+    for (const key of ['logo', 'photos', 'content', 'businessInfo', 'extraContacts']) {
       if (input.checklist[key] !== undefined) next.checklist[key] = Boolean(input.checklist[key]);
     }
   }
@@ -359,6 +398,10 @@ async function retry(ctx, opportunityId) {
   if (!opportunity) throw invalid('Lead not found', 404);
   const attempt = await ConversionAttempt.findOne({ where: { opportunityId, status: 'completed' } });
   if (!attempt) {
+    // The client is created only by an approved sale (ADR 0016); a retry never skips approval.
+    if (opportunity.closingStatus !== 'approved' && opportunity.stage !== 'won') {
+      throw invalid('This sale is waiting for closing approval — the client is created when an admin approves it.', 409);
+    }
     const payment = await SalesPayment.findOne({ where: { opportunityId, kind: 'initial' } });
     if (!payment) throw invalid('No payment has been recorded for this lead yet.', 409);
     // eslint-disable-next-line global-require

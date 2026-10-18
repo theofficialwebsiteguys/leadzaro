@@ -185,12 +185,12 @@ export class NotificationsPanelComponent implements OnInit {
     const link = str('link');
     if (link && link.startsWith('/app/')) return link;
     const opportunityId = str('opportunityId');
-    if (opportunityId) return n.type === 'sales.payment_received' ? `/app/leads/${opportunityId}?tab=handoff` : `/app/leads/${opportunityId}`;
+    if (opportunityId) return `/app/work/${opportunityId}`;
     const projectId = str('projectId');
     if (projectId) return `/app/projects/${projectId}/${PROJECT_TABS[n.type] ?? 'overview'}`;
     if (n.type === 'role_change') return '/app/settings/account';
     if (n.type === 'renewal_upcoming') return '/app/domains';
-    if (n.type === 'follow_up_due') return '/app/today';
+    if (n.type === 'follow_up_due') return '/app/my-work';
     return null;
   }
 

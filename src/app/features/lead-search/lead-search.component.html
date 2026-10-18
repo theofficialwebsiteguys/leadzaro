@@ -225,8 +225,13 @@
                     @if (lead.pipeline; as p) {
                       <div class="pipeline-status">
                         @if (p.isClient) { <span class="tag tag-success">Client</span> }
-                        <span [class]="'stage-chip stage-' + p.stage">{{ p.stageLabel }}</span>
-                        <span class="text-xs text-muted">{{ p.assignedTo ? p.assignedTo.name : 'Unclaimed' }} · {{ p.contacted ? 'contacted' : 'not contacted yet' }}</span>
+                        @if (p.qualificationLabel && p.qualificationStatus !== 'assigned') {
+                          <span class="tag tag-warning">{{ p.qualificationLabel }}</span>
+                          <span class="text-xs text-muted">{{ p.researcher ? p.researcher.name + ' is researching it' : 'Being qualified' }}</span>
+                        } @else {
+                          <span [class]="'stage-chip stage-' + p.stage">{{ p.stageLabel }}</span>
+                          <span class="text-xs text-muted">{{ p.assignedTo ? p.assignedTo.name : 'Unclaimed' }} · {{ p.contacted ? 'contacted' : 'not contacted yet' }}</span>
+                        }
                         @if (p.doNotContact) { <span class="tag tag-danger">Do not contact</span> }
                         @if (p.archived) { <span class="tag tag-muted">Archived</span> }
                       </div>
@@ -275,7 +280,7 @@
                   <td class="col-actions">
                     <div class="row-actions">
                       @if (saved) {
-                        <button class="btn btn-sm btn-outline action-btn" (click)="openLead(lead)"><lz-icon name="arrow-right" [size]="14" /> Open</button>
+                        <button class="btn btn-sm action-btn" [class.btn-primary]="inQualification(lead)" [class.btn-outline]="!inQualification(lead)" (click)="openLead(lead)"><lz-icon name="arrow-right" [size]="14" /> {{ inQualification(lead) ? 'Qualify' : 'Open' }}</button>
                       } @else if (needsReview()[lead.id]) {
                         <button class="btn btn-sm btn-outline action-btn" (click)="openReview(lead)">Review match</button>
                       } @else {
@@ -326,6 +331,7 @@
   }
 </div>
 
+
 <app-dialog [open]="!!review()" title="Is this a business you already have?" [wide]="true" (closed)="review.set(null)">
   @if (review(); as r) {
     <p class="text-sm text-muted">{{ r.lead.name }} matches businesses already in Leadzaro. Nothing has been added yet.</p>
@@ -333,11 +339,11 @@
       <div class="dup-row">
         <div>
           <strong>{{ dup.name }}</strong>@if (dup.isClient) { <span class="tag tag-success">Client</span> }
-          <div class="text-sm text-muted">Same {{ dup.reasons.join(', ').replace('same ', '') }}@if (dup.stageLabel) { · {{ dup.stageLabel }} }@if (dup.assignedTo) { · {{ dup.assignedTo.name }} }</div>
+          <div class="text-sm text-muted">Same {{ dup.reasons.join(', ').replace('same ', '') }}@if (dup.qualificationLabel && dup.qualificationLabel !== 'Assigned to sales') { · {{ dup.qualificationLabel }}@if (dup.researcher) { by {{ dup.researcher.name }} } } @else { @if (dup.stageLabel) { · {{ dup.stageLabel }} }@if (dup.assignedTo) { · {{ dup.assignedTo.name }} } }</div>
         </div>
         <div class="dup-actions">
-          @if (dup.opportunityId) { <a class="btn btn-ghost btn-sm" [routerLink]="['/app/leads', dup.opportunityId]" (click)="review.set(null)">Open</a> }
-          <button class="btn btn-outline btn-sm" (click)="saveLead(r.lead, { existingOrganizationId: dup.organizationId })">New deal for this business</button>
+          @if (dup.opportunityId && canOpenLeads()) { <a class="btn btn-ghost btn-sm" [routerLink]="['/app/leads', dup.opportunityId]" (click)="review.set(null)">Open</a> }
+          @if (canOpenLeads()) { <button class="btn btn-outline btn-sm" (click)="saveLead(r.lead, { existingOrganizationId: dup.organizationId })">New deal for this business</button> }
         </div>
       </div>
     }

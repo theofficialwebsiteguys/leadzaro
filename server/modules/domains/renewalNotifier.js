@@ -1,7 +1,7 @@
 'use strict';
 
 const { Op } = require('sequelize');
-const { Notification, NotificationPreference, OrganizationMembership } = require('../../models');
+const { Notification, NotificationPreference } = require('../../models');
 const access = require('../../core/domains/domainRegistryAccess');
 const { domainFacts, daysUntil, toDateOnly } = require('../../core/domains/domainFacts');
 
@@ -69,12 +69,9 @@ async function notifyUpcomingRenewals(agencyOrganizationId, now = new Date()) {
   const items = await dueItems(agencyOrganizationId, now);
   if (!items.length) return { notified: 0, items: 0 };
 
-  const members = await OrganizationMembership.findAll({
-    where: {
-      organizationId: agencyOrganizationId, status: 'active', membershipType: 'employee', deletedAt: null,
-    },
-    attributes: ['userId'],
-  });
+  // Only people who look after domains get renewal alerts (ADR 0016) — not qualifiers or sales.
+  // eslint-disable-next-line global-require
+  const members = (await require('../sales/teamMembers').membersWith(agencyOrganizationId, 'domains.view')).map((m) => ({ userId: m.id }));
   const title = items.length === 1
     ? `${items[0].name} ${whenPhrase(items[0].days)}`
     : `${items.length} renewals need attention`;

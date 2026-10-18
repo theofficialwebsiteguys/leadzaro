@@ -55,13 +55,18 @@ const PERMISSIONS = [
   { key: 'builder.manage', category: 'builder', description: 'Manage website editor assignments and the section/design-system library' },
   { key: 'builder.develop', category: 'builder', description: 'Trigger Angular code generation, merge developer branches back, and register custom components' },
   { key: 'outreach.send', category: 'outreach', description: 'Send email and text messages and start calls from Leadzaro' },
-  { key: 'templates.manage_shared', category: 'outreach', description: 'Create and edit the team's shared message templates' },
+  { key: 'templates.manage_shared', category: 'outreach', description: 'Create and edit the team\'s shared message templates' },
   { key: 'payments.create', category: 'payments', description: 'Create Stripe payment links and checkouts, and link Stripe customers' },
   { key: 'payments.custom_offer', category: 'payments', description: 'Create payment links for a custom amount not in the Stripe catalog' },
   { key: 'payments.record_manual', category: 'payments', description: 'Record a payment received outside Stripe (check, cash, bank transfer)' },
   { key: 'workspace.manage', category: 'admin', description: 'Edit the company profile and workspace-wide defaults' },
   { key: 'sales.view_team', category: 'sales', description: 'View team sales reports and set sales goals' },
   { key: 'seo.manage_entitlements', category: 'seo', description: 'Manually grant or revoke a client organization\'s SEO add-on entitlement' },
+  // Guided workflow (ADR 0016).
+  { key: 'qualification.work', category: 'sales', description: 'Research businesses, complete qualifications and assign them to sales' },
+  { key: 'sales.approve_close', category: 'sales', description: 'Approve a submitted sale and convert it into a client' },
+  { key: 'team.review_work', category: 'admin', description: 'Review employee work, attribution, recorded time and compensation' },
+  { key: 'clients.onboard', category: 'projects', description: 'Receive approved client handoffs and complete client onboarding' },
 ];
 
 const PERMISSION_KEYS = new Set(PERMISSIONS.map((p) => p.key));
@@ -75,8 +80,9 @@ const BASE_SELF_SERVICE_PERMISSIONS = [
   'sessions.manage',
 ];
 
+// The company dashboard (revenue, SSL and renewal alerts) is for admins and
+// managers; sales outreach works from My Work (ADR 0016).
 const SALES_PERMISSIONS = [
-  'dashboard.view',
   'leads.search',
   'leads.contact_reveal',
   'leads.save',
@@ -91,6 +97,8 @@ const SALES_PERMISSIONS = [
   'outreach.send',
   'payments.create',
 ];
+
+const QUALIFIER_PERMISSIONS = ['leads.search', 'leads.contact_reveal', 'leads.save', 'qualification.work'];
 
 const ADMIN_ONLY_PERMISSIONS = [
   'memberships.manage',
@@ -115,13 +123,13 @@ const EMPLOYEE_ROLES = [
   },
   {
     key: 'sales_representative',
-    name: 'Sales Representative',
+    name: 'Sales Outreach',
     permissions: [...SALES_PERMISSIONS],
   },
   {
     key: 'sales_manager',
     name: 'Sales Manager',
-    permissions: [...SALES_PERMISSIONS, 'leads.merge', 'audit.view', 'templates.manage_shared', 'payments.custom_offer', 'payments.record_manual', 'sales.view_team'],
+    permissions: [...SALES_PERMISSIONS, 'dashboard.view', 'leads.merge', 'audit.view', 'templates.manage_shared', 'payments.custom_offer', 'payments.record_manual', 'sales.view_team'],
   },
   { key: 'project_manager', name: 'Project Manager', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'projects.manage', 'projects.change_stage', 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'cancellations.request', 'cancellations.manage', 'builder.publish', 'builder.manage'] },
   { key: 'designer', name: 'Designer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'builder.edit'] },
@@ -129,7 +137,18 @@ const EMPLOYEE_ROLES = [
   { key: 'developer', name: 'Developer', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage', 'builder.edit', 'builder.publish', 'builder.develop'] },
   { key: 'support', name: 'Support', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage'] },
   { key: 'billing', name: 'Billing', permissions: [...PLACEHOLDER_EMPLOYEE_PERMISSIONS, 'billing.manage_webhooks', 'billing.manage_service_plans', 'seo.manage_entitlements', 'payments.record_manual'] },
-].map((role) => ({
+  // Guided workflow roles (ADR 0016). A qualifier only finds and researches
+  // businesses: no client hub, domains, revenue, payments or the full sales
+  // workspace, so it skips the project-wide grants below.
+  {
+    key: 'lead_qualifier', name: 'Lead Qualifier', permissions: QUALIFIER_PERMISSIONS, projectAccess: false,
+  },
+  {
+    key: 'client_manager',
+    name: 'Client Manager',
+    permissions: ['clients.onboard', 'projects.manage', 'domains.view', 'tasks.manage', 'requests.manage', 'meetings.manage', 'files.manage'],
+  },
+].map(({ projectAccess = true, ...role }) => ({
   ...role,
   scope: 'employee',
   // projects.view/messages.post are granted to every employee role
@@ -137,7 +156,9 @@ const EMPLOYEE_ROLES = [
   // agency can read a project's internal content") — narrower controls
   // (projects.manage, projects.change_stage, tasks.manage) are the
   // roles that actually differ.
-  permissions: Array.from(new Set([...role.permissions, ...BASE_SELF_SERVICE_PERMISSIONS, 'projects.view', 'messages.post', 'meetings.request', 'files.upload'])),
+  permissions: Array.from(new Set([
+    ...role.permissions, ...BASE_SELF_SERVICE_PERMISSIONS, ...(projectAccess ? ['projects.view', 'messages.post', 'meetings.request', 'files.upload'] : []),
+  ])),
 }));
 
 // Client roles existed since Phase 1 with no module to grant permissions

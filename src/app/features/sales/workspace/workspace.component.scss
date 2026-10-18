@@ -158,3 +158,5 @@
 .kit-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: .85rem; }
 .kit-item { padding: 6px 0; border-top: 1px solid var(--border-light); summary { cursor: pointer; font-size: .85rem; font-weight: 500; } }
 .pre { white-space: pre-wrap; font-size: .85rem; color: var(--text-secondary); }
+
+.record-top { display: flex; justify-content: space-between; align-items: center; .step-link { font-size: .8125rem; font-weight: 600; } }

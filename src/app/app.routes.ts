@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { authGuard, noAuthGuard } from './core/guards/auth.guard';
 import { unsavedChangesGuard } from './features/settings/unsaved-changes.guard';
+import { requireAnyPermissionGuard } from './core/guards/permission.guard';
 
 export const routes: Routes = [
   {
@@ -45,17 +46,50 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./layout/dashboard-layout/dashboard-layout.component').then((m) => m.DashboardLayoutComponent),
     children: [
-      { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+      // My Work is every employee's home (ADR 0016); the company dashboard is for admins and managers.
+      { path: '', redirectTo: 'my-work', pathMatch: 'full' },
+      {
+        path: 'my-work',
+        loadComponent: () => import('./features/my-work/my-work.component').then((m) => m.MyWorkComponent),
+      },
       {
         path: 'dashboard',
+        canActivate: [requireAnyPermissionGuard(['dashboard.view'])],
         loadComponent: () => import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
       },
-      // Sales workflow (ADR 0011): Today → Find Leads → Leads (list/pipeline)
-      // → one workspace per lead → Outreach → Reports.
+      // Work one lead at a time, one step at a time (ADR 0016).
       {
-        path: 'today',
-        loadComponent: () => import('./features/sales/today/today.component').then((m) => m.TodayComponent),
+        path: 'work/:id',
+        loadComponent: () => import('./features/work/work.component').then((m) => m.WorkComponent),
       },
+      // Today was folded into My Work; old links keep working.
+      { path: 'today', pathMatch: 'full', redirectTo: 'my-work' },
+      // Qualifying (ADR 0016): a session that goes through businesses one at a time.
+      {
+        path: 'qualify',
+        pathMatch: 'full',
+        loadComponent: () => import('./features/qualify/qualify-session.component').then((m) => m.QualifySessionComponent),
+      },
+      // Manual entry (/qualify/new) and leads already saved (corrections, parked research).
+      {
+        path: 'qualify/:id',
+        loadComponent: () => import('./features/qualify/qualify.component').then((m) => m.QualifyComponent),
+      },
+      {
+        path: 'onboarding/:id',
+        loadComponent: () => import('./features/onboarding/onboarding.component').then((m) => m.OnboardingComponent),
+      },
+      {
+        path: 'team-work',
+        canActivate: [requireAnyPermissionGuard(['team.review_work', 'sales.approve_close'])],
+        loadComponent: () => import('./features/team-work/team-work.component').then((m) => m.TeamWorkComponent),
+      },
+      {
+        path: 'time',
+        loadComponent: () => import('./features/my-time/my-time.component').then((m) => m.MyTimeComponent),
+      },
+      // Sales workflow (ADR 0011): Find Leads → Leads (list/pipeline)
+      // → one workspace per lead → Outreach → Reports.
       {
         path: 'search',
         loadComponent: () => import('./features/lead-search/lead-search.component').then((m) => m.LeadSearchComponent),

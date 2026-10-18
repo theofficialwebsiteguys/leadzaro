@@ -83,6 +83,9 @@ const StripeCustomerLink = require('./StripeCustomerLink')(sequelize);
 const SalesPayment = require('./SalesPayment')(sequelize);
 const SalesHandoff = require('./SalesHandoff')(sequelize);
 const SalesGoal = require('./SalesGoal')(sequelize);
+const WorkCredit = require('./WorkCredit')(sequelize);
+const WorkSession = require('./WorkSession')(sequelize);
+const ResearchClaim = require('./ResearchClaim')(sequelize);
 
 const models = {
   User,
@@ -163,6 +166,9 @@ const models = {
   SalesPayment,
   SalesHandoff,
   SalesGoal,
+  WorkCredit,
+  WorkSession,
+  ResearchClaim,
 };
 
 // Run associations

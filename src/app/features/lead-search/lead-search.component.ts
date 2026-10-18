@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
+import { OrganizationContextService } from '../../core/services/organization-context.service';
 import { Lead, LeadSearchResult, PlaceDetails, SearchCategory, SearchOptions, SearchPreset, SearchTerritory } from '../../core/models/lead.model';
 import { LeadService } from '../../core/services/lead.service';
 import { SalesService } from '../../core/services/sales.service';
@@ -45,6 +46,10 @@ export class LeadSearchComponent implements OnInit, OnDestroy {
   private readonly sales = inject(SalesService);
   private readonly settings = inject(SettingsService);
   private readonly router = inject(Router);
+  private readonly org = inject(OrganizationContextService);
+  /** Saved results that are research drafts — they open in the qualification workspace (ADR 0016). */
+  readonly drafts = signal<Set<string>>(new Set());
+  readonly canOpenLeads = computed(() => this.org.hasPermission('leads.read'));
   private readonly state = inject(LeadSearchStateService);
 
   readonly options = signal<SearchOptions | null>(null);
@@ -126,6 +131,11 @@ export class LeadSearchComponent implements OnInit, OnDestroy {
     })));
 
   ngOnInit(): void {
+    // Qualifiers work through businesses one at a time in the qualifying session (ADR 0016).
+    if (this.org.hasPermission('qualification.work') && !this.org.hasPermission('outreach.send')) {
+      this.router.navigate(['/app/qualify'], { replaceUrl: true });
+      return;
+    }
     this.leadService.searchOptions().subscribe({
       next: (res) => {
         this.options.set(res.data);
@@ -339,6 +349,7 @@ export class LeadSearchComponent implements OnInit, OnDestroy {
       const { isSaved, pipeline, possibleMatch, matchedQueries, searchArea, discovery, ...leadData } = leadToSave;
       this.sales.createLead({ leadData: { ...leadData, source: lead.source === 'demo' ? 'demo' : 'google' }, ...options }).subscribe({
         next: (res) => {
+          if (res.qualificationStatus === 'draft') this.drafts.set(new Set([...this.drafts(), res.opportunityId]));
           this.markSaved(lead, res.opportunityId);
           this.savedContact.set({ ...this.savedContact(), [lead.id]: res.discovery ?? null });
           this.review.set(null);
@@ -402,7 +413,15 @@ export class LeadSearchComponent implements OnInit, OnDestroy {
 
   openLead(lead: Lead): void {
     const id = this.opportunityFor()[lead.id];
-    if (id) this.router.navigate(['/app/leads', id]);
+    if (!id) return;
+    this.router.navigate([this.inQualification(lead) ? '/app/qualify' : '/app/leads', id]);
+  }
+
+  /** Still being researched (or the person can only qualify): open the qualification workspace. */
+  inQualification(lead: Lead): boolean {
+    const id = this.opportunityFor()[lead.id];
+    const status = lead.pipeline?.qualificationStatus;
+    return !this.canOpenLeads() || this.drafts().has(id) || ['draft', 'needs_research', 'needs_correction', 'ready'].includes(status ?? '');
   }
 
   // ---------------------------------------------------------------- email discovery

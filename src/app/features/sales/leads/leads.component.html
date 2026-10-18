@@ -179,7 +179,7 @@
         <section class="column" role="listitem" [attr.aria-label]="col.label">
           <header><span [class]="'stage-chip stage-' + col.stage">{{ col.label }}</span><span class="col-count">{{ col.items.length }}</span></header>
           @for (row of col.items; track row.opportunityId) {
-            <a class="board-card" [routerLink]="['/app/leads', row.opportunityId]" [class.reply]="row.replyNeededSince">
+            <a class="board-card" [routerLink]="['/app/work', row.opportunityId]" [class.reply]="row.replyNeededSince">
               <strong>{{ row.businessName }} <lz-google-search [name]="row.businessName" [city]="row.city" [state]="row.state" /></strong>
               @if (row.valueCents) { <span class="value">{{ row.valueCents | money: row.currency }}</span> }
               <span class="card-next" [class.overdue]="isOverdue(row.nextActionAt)">

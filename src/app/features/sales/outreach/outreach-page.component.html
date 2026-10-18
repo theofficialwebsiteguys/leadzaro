@@ -1,8 +1,8 @@
 <div class="page outreach">
   <header class="page-header">
     <div>
-      <h1>Outreach</h1>
-      <p>Conversations with your leads, and the templates you write them with.</p>
+      <h1>Conversations</h1>
+      <p>Every business you’re talking to, sorted by what needs you. Click one to see the whole thread.</p>
     </div>
   </header>
 
@@ -23,18 +23,25 @@
   @if (message()) { <div class="alert alert-info mt-4" role="status">{{ message() }}</div> }
 
   @if (tab() === 'conversations') {
+    <!-- One row per business, sorted by what needs you; the full thread opens on the right (ADR 0016). -->
+    <div class="state-tabs" role="tablist" aria-label="Conversation status">
+      @for (f of filters; track f.key) {
+        <button type="button" role="tab" class="state-tab" [attr.data-state]="f.key" [class.active]="filter === f.key" [attr.aria-selected]="filter === f.key" (click)="setFilter(f.key)">
+          <span class="st-count">{{ counts()?.[f.key] ?? '–' }}</span>
+          <span class="st-label">{{ f.label }}</span>
+          <span class="st-hint">{{ f.hint }}</span>
+        </button>
+      }
+    </div>
+
     <div class="toolbar">
-      <div class="seg" role="group" aria-label="Filter">
-        <button type="button" [class.active]="filter === 'all'" (click)="filter = 'all'; loadConversations()">All</button>
-        <button type="button" [class.active]="filter === 'needs_reply'" (click)="filter = 'needs_reply'; loadConversations()">Needs reply</button>
-        <button type="button" [class.active]="filter === 'failed'" (click)="filter = 'failed'; loadConversations()">Failed sends</button>
-      </div>
+      <input class="form-control search" type="search" [(ngModel)]="q" (keyup.enter)="loadConversations()" placeholder="Search business" aria-label="Search conversations" />
       @if (canTeam()) {
         <select class="form-select" [(ngModel)]="scope" (ngModelChange)="loadConversations()" aria-label="Whose conversations">
           <option value="mine">Mine</option><option value="team">Whole team</option>
         </select>
       }
-      <input class="form-control search" type="search" [(ngModel)]="q" (keyup.enter)="loadConversations()" placeholder="Search business" aria-label="Search conversations" />
+      @if (counts()?.failed) { <button type="button" class="btn btn-ghost btn-sm warn-btn" (click)="setFilter('failed')">{{ counts()?.failed }} failed to send</button> }
     </div>
 
     @if (loading() && !conversations().length) {
@@ -42,38 +49,81 @@
     } @else if (error()) {
       <div class="alert alert-error">{{ error() }}</div>
     } @else {
-      <div class="card list">
-        @for (c of conversations(); track c.opportunityId) {
-          <a class="convo" [routerLink]="['/app/leads', c.opportunityId]" [class.reply]="c.replyNeededSince">
-            <div class="convo-main">
-              <div class="convo-top">
-                <strong>{{ c.businessName }}</strong> <lz-google-search [name]="c.businessName" [city]="c.city" [state]="c.state" />
-                <span [class]="'stage-chip stage-' + c.stage">{{ c.stageLabel }}</span>
-                @if (c.replyNeededSince) { <span class="tag tag-danger">Needs reply</span> }
-                @if (c.doNotContact) { <span class="tag tag-muted">Do not contact</span> }
+      <div class="convo-layout" [class.with-thread]="threadId()">
+        <div class="card list">
+          <div class="list-head"><span>Business</span><span>Reached out</span><span>Last contact</span><span>Next step</span></div>
+          @for (c of conversations(); track c.opportunityId) {
+            <button type="button" class="row" [attr.data-status]="c.status" [class.open]="threadId() === c.opportunityId" (click)="openThread(c)">
+              <span class="r-biz">
+                <span class="r-name"><strong>{{ c.businessName }}</strong><span class="status-pill" [attr.data-status]="c.status">{{ statusLabels[c.status] }}</span></span>
+                <span class="r-sub">{{ c.city }}@if (c.city) { · }{{ c.stageLabel }}@if (c.interestLevel && c.interestLevel !== 'unknown') { · {{ c.interestLevel }} }@if (scope === 'team' && c.assignedTo) { · {{ c.assignedTo.name }} }</span>
+              </span>
+              <span class="r-touch">
+                <strong>{{ c.attempts }}×</strong>
+                <span>{{ channelSummary(c) || 'logged only' }}@if (c.replies) { · <em>{{ c.replies }} repl{{ c.replies === 1 ? 'y' : 'ies' }}</em> }</span>
+              </span>
+              <span class="r-last">
+                <span class="dir" [class.in]="c.last?.direction === 'inbound'">{{ c.last?.direction === 'inbound' ? '← They' : '→ You' }}</span>
+                <span>{{ c.lastInteractionAt | relativeDay }}</span>
                 @if (c.last?.status === 'failed' || c.last?.status === 'undelivered') { <span class="tag tag-danger">Not delivered</span> }
-              </div>
-              <div class="convo-last">
-                <span class="who">{{ lastLabel(c) }}:</span>
-                @if (c.last?.subject) { <strong>{{ c.last?.subject }}</strong> — }
-                {{ c.last?.preview || c.last?.outcome || '' }}
-              </div>
+              </span>
+              <span class="r-next">
+                @if (c.status === 'needs_reply') { <strong class="urgent">Reply</strong> }
+                @else if (c.nextActionAt) { <strong [class.urgent]="c.status === 'due'">{{ nextActionLabel(c.nextActionType) }}</strong> <span>{{ c.nextActionAt | relativeDay }}</span> }
+                @else if (c.status !== 'closed') { <span class="muted">None set</span> }
+              </span>
+            </button>
+          } @empty {
+            <div class="empty-state">
+              <div class="empty-icon"><lz-icon name="message" [size]="20" /></div>
+              <h3>Nothing here</h3>
+              <p>{{ filter === 'needs_reply' ? 'No one is waiting on a reply from you.' : 'No conversations match.' }}</p>
             </div>
-            <div class="convo-side">
-              <span>{{ c.lastInteractionAt | relativeDay }}</span>
-              @if (scope === 'team' && c.assignedTo) { <small>{{ c.assignedTo.name }}</small> }
-            </div>
-          </a>
-        } @empty {
-          <div class="empty-state">
-            <div class="empty-icon"><lz-icon name="message" [size]="20" /></div>
-            <h3>{{ filter === 'needs_reply' ? 'No replies waiting' : 'No conversations yet' }}</h3>
-            <p>Conversations appear here once you call, text or email a lead from its page.</p>
-            <a routerLink="/app/today" class="btn btn-primary btn-sm">Go to Today</a>
-          </div>
+          }
+          @if (total() > conversations().length) { <p class="more">Showing {{ conversations().length }} of {{ total() }}. Search to narrow it down.</p> }
+        </div>
+
+        @if (threadId()) {
+          <aside class="card thread" aria-label="Conversation">
+            @let w = thread();
+            @if (!w) {
+              <div class="loading-state"><div class="spinner"></div></div>
+            } @else {
+              <header class="t-head">
+                <div>
+                  <h3>{{ w.business.name }}</h3>
+                  <p>{{ w.business.city }} · {{ w.opportunity.stageLabel }}@if (w.business.email) { · {{ w.business.email }} }@if (w.business.phone) { · {{ w.business.phone }} }</p>
+                </div>
+                <button type="button" class="x" (click)="threadId.set(null)" aria-label="Close">×</button>
+              </header>
+              @if (w.opportunity.outreachReason) { <p class="t-why"><strong>Why them:</strong> {{ w.opportunity.outreachReason }}</p> }
+              <ol class="t-feed">
+                @for (e of threadEntries(); track $index) {
+                  @if (e.activity; as a) {
+                    <li class="msg" [class.in]="a.direction === 'inbound'" [class.failed]="a.status === 'failed' || a.status === 'undelivered'">
+                      <div class="m-meta">
+                        <span>{{ a.direction === 'inbound' ? 'They' : (a.user?.name || 'You') }} · {{ channelLabels[a.channel] || a.channel }}{{ a.origin === 'platform' ? '' : a.origin === 'external' ? ' (outside Leadzaro)' : ' (logged)' }}</span>
+                        <span>{{ e.at | date: 'MMM d, h:mm a' }}</span>
+                      </div>
+                      @if (a.subject) { <strong class="m-subj">{{ a.subject }}</strong> }
+                      @if (a.outcomeLabel) { <span class="m-outcome">{{ a.outcomeLabel }}</span> }
+                      @if (a.body || a.note) { <p class="m-body">{{ a.body || a.note }}</p> }
+                      @if (a.status === 'failed' || a.status === 'undelivered') { <span class="tag tag-danger">Not delivered{{ a.errorMessage ? ': ' + a.errorMessage : '' }}</span> }
+                    </li>
+                  } @else if (e.note) {
+                    <li class="msg note"><div class="m-meta"><span>Note · {{ e.note.user?.name }}</span><span>{{ e.at | date: 'MMM d, h:mm a' }}</span></div><p class="m-body">{{ e.note.content }}</p></li>
+                  }
+                } @empty { <li class="muted">No messages yet.</li> }
+              </ol>
+              <footer class="t-foot">
+                <span class="muted">@if (w.opportunity.nextActionAt) { Next: {{ nextActionLabel(w.opportunity.nextActionType) }} {{ w.opportunity.nextActionAt | relativeDay }} } @else { No next step set }</span>
+                <a class="btn btn-ghost btn-sm" [routerLink]="['/app/leads', w.opportunity.id]">Full record</a>
+                <a class="btn btn-primary btn-sm" [routerLink]="['/app/work', w.opportunity.id]">Work this lead →</a>
+              </footer>
+            }
+          </aside>
         }
       </div>
-      @if (total() > conversations().length) { <p class="text-sm text-muted mt-2">Showing the {{ conversations().length }} most recent of {{ total() }}.</p> }
     }
   } @else {
     <div class="toolbar">

@@ -15,6 +15,10 @@ const {
 /**
  * Everything that happens when money actually arrives (ADR 0011).
  *
+ * Since ADR 0016 the first payment marks the sale "payment confirmed";
+ * the client is created when an admin approves the submitted sale
+ * (closingService), which then calls completeSale below.
+ *
  * - A sale is Won only when an initial payment or deposit is received:
  *   a Stripe-confirmed payment, or an authorized manual payment. A verbal
  *   yes, a generated link, a checkout visit, a trial or a $0 checkout
@@ -105,7 +109,7 @@ function subscriptionDetailsFor(request, mode) {
  * as a retryable handoff and a needs-attention conversion record.
  */
 async function completeSale({
-  opportunityId, agencyOrganizationId, payment, request = null, stripeSubscriptionId = null, source, webhookEventId = null, actorUserId = null,
+  opportunityId, agencyOrganizationId, payment, request = null, stripeSubscriptionId = null, source, webhookEventId = null, actorUserId = null, notifySeller = true,
 }) {
   const opportunity = await Opportunity.findByPk(opportunityId);
   let conversion;
@@ -134,7 +138,7 @@ async function completeSale({
   await handoffService.runAfterConversion({ opportunityId, conversion, actorUserId });
 
   const recipient = payment.attributedUserId || opportunity?.assignedToUserId;
-  if (recipient && !conversion.alreadyConverted) {
+  if (notifySeller && recipient && !conversion.alreadyConverted) {
     const organization = await Organization.findByPk(opportunity.organizationId);
     await notify({
       userId: recipient,
@@ -222,8 +226,9 @@ async function recordStripePayment({
   });
 
   if (payment.kind !== 'initial') return { recorded: true, kind: payment.kind };
-  const result = await completeSale({
-    opportunityId: oppId, agencyOrganizationId: agencyId, payment, request, stripeSubscriptionId, source, webhookEventId,
+  // eslint-disable-next-line global-require
+  const result = await require('./closingService').afterInitialPayment({
+    opportunityId: oppId, payment, request, stripeSubscriptionId, source, webhookEventId,
   });
   return { recorded: true, kind: 'initial', ...result };
 }
@@ -500,8 +505,9 @@ async function recordManualPayment(ctx, opportunityId, input) {
 
   let result = { converted: false };
   if (payment.kind === 'initial') {
-    result = await completeSale({
-      opportunityId, agencyOrganizationId: ctx.agencyId, payment, source: 'manual', actorUserId: ctx.userId,
+    // eslint-disable-next-line global-require
+    result = await require('./closingService').afterInitialPayment({
+      opportunityId, payment, source: 'manual', actorUserId: ctx.userId,
     });
   }
   return { payment, ...result };

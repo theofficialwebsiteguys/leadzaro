@@ -133,7 +133,7 @@ export class AdministrationComponent implements OnInit {
       next: () => {
         this.org.load().subscribe(() => {
           this.impersonationStarting.set(false);
-          this.router.navigate(['/app/dashboard']);
+          this.router.navigate(['/app/my-work']);
         });
       },
       error: (err) => {

@@ -68,7 +68,29 @@ const OUTCOMES = {
   do_not_contact: { label: 'Do not contact', advanceTo: null, connected: true },
   sent: { label: 'Sent', advanceTo: 'contacting', connected: false },
   replied: { label: 'Replied', advanceTo: 'contacting', connected: true },
+  // Guided workflow (ADR 0016): an email sent outside Leadzaro, and "not now".
+  email_sent: { label: 'Email sent — awaiting reply', advanceTo: 'contacting', connected: false },
+  not_now: { label: 'Not now', advanceTo: null, connected: true },
 };
+
+/** How warm a lead is — tracked apart from the stage; a qualified lead is not automatically interested. */
+const INTEREST_LEVELS = ['unknown', 'cold', 'warm', 'hot'];
+
+/**
+ * Qualification progress (ADR 0016), kept apart from the sales stage. null
+ * means the lead never went through qualification (legacy or added by
+ * sales directly). Only `assigned` (and null) leads are in sales queues.
+ */
+const QUALIFICATION_STATUSES = ['draft', 'needs_research', 'needs_correction', 'ready', 'assigned', 'unsuitable'];
+const QUALIFICATION_LABELS = {
+  draft: 'Research in progress',
+  needs_research: 'Needs more information',
+  needs_correction: 'Returned for correction',
+  ready: 'Ready for assignment',
+  assigned: 'Assigned to sales',
+  unsuitable: 'Not suitable',
+};
+const IN_QUALIFICATION = ['draft', 'needs_research', 'needs_correction', 'ready'];
 
 const CHANNELS = ['email', 'sms', 'call', 'in_person', 'linkedin', 'message', 'other'];
 const NEXT_ACTION_TYPES = ['call', 'email', 'text', 'follow_up', 'meeting', 'send_offer', 'payment_follow_up', 'handoff', 'other'];
@@ -179,7 +201,19 @@ function isForward(from, to) {
   return b > a;
 }
 
+/** Sequelize condition: leads that belong in sales views (not still being qualified). */
+function inSalesWhere() {
+  // eslint-disable-next-line global-require
+  const { Op } = require('sequelize');
+  return { [Op.or]: [{ qualificationStatus: null }, { qualificationStatus: 'assigned' }] };
+}
+
 module.exports = {
+  INTEREST_LEVELS,
+  QUALIFICATION_STATUSES,
+  QUALIFICATION_LABELS,
+  IN_QUALIFICATION,
+  inSalesWhere,
   STAGES,
   STAGE_LABELS,
   CLOSED_STAGES,

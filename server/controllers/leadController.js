@@ -20,7 +20,7 @@ async function search(req, res, next) {
 
     // Each result shows whether it is already a lead (whose, which stage),
     // an existing client, or a possible match on phone/website.
-    const enriched = await annotateSearchResults(req.context.organization.id, results.items);
+    const enriched = await annotateSearchResults(req.context.organization.id, results.items, req.user.id);
 
     return success(res, { ...results, items: enriched });
   } catch (err) {
@@ -63,7 +63,7 @@ async function guidedSearch(req, res, next) {
       demo: b.demo,
       maxQueries: MAX_QUERIES,
     });
-    const enriched = await annotateSearchResults(req.context.organization.id, results.items);
+    const enriched = await annotateSearchResults(req.context.organization.id, results.items, req.user.id);
     return success(res, { ...results, items: enriched });
   } catch (err) {
     if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });

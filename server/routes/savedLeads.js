@@ -10,7 +10,7 @@ const { validate } = require('../middleware/validate');
 router.use(authenticate, resolveContext());
 
 router.get('/', requirePermission('leads.read'), getSavedLeads);
-router.post('/', requirePermission('leads.save'), [body('leadData').notEmpty(), body('leadData.name').notEmpty()], validate, saveLead);
+router.post('/', requirePermission('leads.save'), requirePermission('leads.read'), [body('leadData').notEmpty(), body('leadData.name').notEmpty()], validate, saveLead);
 router.get('/:id', requirePermission('leads.read'), getSavedLeadDetail);
 router.put('/:id', requirePermission('leads.update'), updateSavedLead);
 router.post('/:id/archive', requirePermission('leads.archive'), archiveSavedLead);

@@ -40,8 +40,14 @@ export interface Lead {
     doNotContact: boolean;
     archived: boolean;
     contact?: ContactResearch | null;
+    // Qualification (ADR 0016): who is researching it, so nobody duplicates the work.
+    qualificationStatus?: string | null;
+    qualificationLabel?: string | null;
+    researcher?: { id: string; name: string } | null;
   } | null;
   possibleMatch?: { organizationId: string; name: string; isClient: boolean; reasons: string[] } | null;
+  /** A teammate has this listing open in qualification (nothing saved yet). */
+  researching?: { name: string; mine: boolean; since: string } | null;
   /** Guided search (ADR 0014): which selections found it, and an email check already run on it. */
   matchedQueries?: string[];
   searchArea?: string;

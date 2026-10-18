@@ -31,7 +31,8 @@ router.post('/merge', requirePermission('crm.manage_pipeline'), [
 router.post('/opportunities/:id/undo-merge', requirePermission('crm.manage_pipeline'), mergeController.undoMerge);
 
 router.get('/opportunities', requirePermission('leads.read'), controller.list);
-router.post('/opportunities', requirePermission('leads.save'), [
+// Qualifiers hold leads.save for research drafts only (ADR 0016); creating or claiming sales leads here also needs leads.read.
+router.post('/opportunities', requirePermission('leads.save'), requirePermission('leads.read'), [
   body('leadData').notEmpty(),
   body('leadData.name').notEmpty(),
 ], validate, controller.create);
@@ -42,7 +43,7 @@ router.put('/opportunities/:id', requirePermission('crm.manage_pipeline'), [
   body('scoreReason').optional().isString().isLength({ max: 255 }),
 ], validate, controller.updateStage);
 router.post('/opportunities/:id/recalculate-score', requirePermission('crm.manage_pipeline'), controller.recalculateScore);
-router.post('/opportunities/:id/claim', requirePermission('leads.save'), controller.claim);
+router.post('/opportunities/:id/claim', requirePermission('leads.save'), requirePermission('leads.read'), controller.claim);
 router.post('/opportunities/:id/assign', requirePermission('leads.assign'), [
   body('userId').notEmpty(),
 ], validate, controller.assign);

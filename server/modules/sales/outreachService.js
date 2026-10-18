@@ -247,56 +247,130 @@ function completeCall(ctx, opportunityId, activityId, input) {
 // ----------------------------------------------------------- conversations
 
 /**
- * The conversations inbox: the latest interaction per lead, replies that
- * need attention first. Scoped to the caller's leads unless they can see
- * the team.
+ * Conversations, one row per business (ADR 0016): where each one stands —
+ * they replied, a follow-up is due, we're waiting on them, or several tries
+ * with no answer — and how many times and ways we've reached out. Tab
+ * counts come from the same rules so the numbers always match the list.
  */
-async function listConversations(ctx, { filter = 'all', scope = 'mine', q, page = 1, limit = 30 } = {}) {
-  const where = { agencyOrganizationId: ctx.agencyId, deletedAt: null, archivedAt: null, lastInteractionAt: { [Op.ne]: null } };
-  if (scope !== 'team' || !ctx.can('sales.view_team')) where.assignedToUserId = ctx.userId;
-  if (filter === 'needs_reply') where.replyNeededSince = { [Op.ne]: null };
-  if (filter === 'failed') where.id = { [Op.in]: sequelize.literal(`(SELECT "opportunityId" FROM "OutreachActivities" WHERE status IN ('failed','undelivered') AND "opportunityId" IS NOT NULL AND "organizationId" = ${sequelize.escape(ctx.agencyId)})`) };
+const CONVERSATION_FILTERS = ['all', 'needs_reply', 'due', 'waiting', 'no_response', 'failed'];
+const NOT_SENT_SQL = `('failed','undelivered','sending','draft')`;
+
+function conversationConditions(ctx, end) {
+  const agency = sequelize.escape(ctx.agencyId);
+  const endAt = sequelize.escape(end.toISOString());
+  return {
+    needs_reply: (o) => `${o}."replyNeededSince" IS NOT NULL`,
+    due: (o) => `${o}."replyNeededSince" IS NULL AND ${o}."nextActionAt" < ${endAt} AND ${o}.stage NOT IN ('won','lost')`,
+    waiting: (o) => `${o}."replyNeededSince" IS NULL AND (${o}."nextActionAt" IS NULL OR ${o}."nextActionAt" >= ${endAt}) AND ${o}.stage NOT IN ('won','lost')
+      AND NOT ((${`SELECT COUNT(*) FROM "OutreachActivities" a WHERE a."opportunityId" = ${o}.id AND a."deletedAt" IS NULL AND a.direction = 'outbound' AND (a.status IS NULL OR a.status NOT IN ${NOT_SENT_SQL})`}) >= 3
+        AND NOT EXISTS (SELECT 1 FROM "OutreachActivities" a WHERE a."opportunityId" = ${o}.id AND a."deletedAt" IS NULL AND a.direction = 'inbound'))`,
+    no_response: (o) => `${o}."replyNeededSince" IS NULL AND ${o}.stage NOT IN ('won','lost')
+      AND (SELECT COUNT(*) FROM "OutreachActivities" a WHERE a."opportunityId" = ${o}.id AND a."deletedAt" IS NULL AND a.direction = 'outbound' AND (a.status IS NULL OR a.status NOT IN ${NOT_SENT_SQL})) >= 3
+      AND NOT EXISTS (SELECT 1 FROM "OutreachActivities" a WHERE a."opportunityId" = ${o}.id AND a."deletedAt" IS NULL AND a.direction = 'inbound')`,
+    failed: (o) => `EXISTS (SELECT 1 FROM "OutreachActivities" a WHERE a."opportunityId" = ${o}.id AND a.status IN ('failed','undelivered') AND a."organizationId" = ${agency})`
+  };
+}
+
+async function listConversations(ctx, {
+  filter = 'all', scope = 'mine', q, page = 1, limit = 30, tzOffset,
+} = {}) {
+  const chosen = CONVERSATION_FILTERS.includes(filter) ? filter : 'all';
+  // eslint-disable-next-line global-require
+  const { dayBounds } = require('./todayService');
+  // eslint-disable-next-line global-require
+  const { effectiveOffset } = require('../../core/workspace/timezone');
+  const { end } = dayBounds(effectiveOffset(ctx.timezone, tzOffset));
+  const conditions = conversationConditions(ctx, end);
+  const team = scope === 'team' && ctx.can('sales.view_team');
+
+  const base = {
+    agencyOrganizationId: ctx.agencyId, deletedAt: null, archivedAt: null, lastInteractionAt: { [Op.ne]: null },
+  };
+  if (!team) base.assignedToUserId = ctx.userId;
   const orgWhere = q ? { name: { [Op.iLike]: `%${String(q).slice(0, 100)}%` } } : undefined;
-  const offset = (Math.max(1, Number(page) || 1) - 1) * Math.min(100, Number(limit) || 30);
+
+  // Tab counts, from the same conditions as the list.
+  const scopeSql = `o."agencyOrganizationId" = :agencyId AND o."deletedAt" IS NULL AND o."archivedAt" IS NULL AND o."lastInteractionAt" IS NOT NULL ${team ? '' : 'AND o."assignedToUserId" = :userId'}
+    ${q ? 'AND EXISTS (SELECT 1 FROM "Organizations" g WHERE g.id = o."organizationId" AND g.name ILIKE :q)' : ''}`;
+  const [[counts]] = await sequelize.query(`SELECT COUNT(*)::int AS "all",
+      ${['needs_reply', 'due', 'waiting', 'no_response', 'failed'].map((k) => `COUNT(*) FILTER (WHERE ${conditions[k]('o')})::int AS "${k}"`).join(', ')}
+    FROM "Opportunities" o WHERE ${scopeSql}`, { replacements: { agencyId: ctx.agencyId, userId: ctx.userId, q: `%${String(q || '').slice(0, 100)}%` } });
+
+  const size = Math.min(100, Number(limit) || 30);
+  const where = { ...base };
+  if (chosen !== 'all') where[Op.and] = [sequelize.literal(conditions[chosen]('"Opportunity"'))];
   const { rows, count } = await Opportunity.findAndCountAll({
     where,
     include: [
       {
-        model: Organization, as: 'organization', attributes: ['id', 'name', 'type', 'city', 'state'], where: orgWhere, required: Boolean(orgWhere),
+        model: Organization, as: 'organization', attributes: ['id', 'name', 'type', 'city', 'state', 'email', 'phone'], where: orgWhere, required: Boolean(orgWhere),
       },
       { model: User, as: 'assignedTo', attributes: ['id', 'name'] },
     ],
-    order: [[sequelize.literal('"replyNeededSince" IS NULL'), 'ASC'], ['lastInteractionAt', 'DESC']],
-    limit: Math.min(100, Number(limit) || 30),
-    offset,
+    order: [
+      [sequelize.literal('"Opportunity"."replyNeededSince" IS NULL'), 'ASC'],
+      [sequelize.literal(`("Opportunity"."nextActionAt" < ${sequelize.escape(end.toISOString())}) IS NOT TRUE`), 'ASC'],
+      ['nextActionAt', 'ASC NULLS LAST'],
+      ['lastInteractionAt', 'DESC'],
+    ],
+    limit: size,
+    offset: (Math.max(1, Number(page) || 1) - 1) * size,
   });
-  const latest = rows.length ? await OutreachActivity.findAll({
-    where: { opportunityId: rows.map((r) => r.id), deletedAt: null },
-    order: [['createdAt', 'DESC']],
-  }) : [];
-  const byOpp = new Map();
-  for (const a of latest) if (!byOpp.has(a.opportunityId)) byOpp.set(a.opportunityId, a);
-  return {
-    items: rows.map((o) => {
-      const last = byOpp.get(o.id);
-      return {
-        opportunityId: o.id,
-        businessName: o.organization?.name,
-        city: o.organization?.city || null,
-        state: o.organization?.state || null,
-        stage: o.stage,
-        stageLabel: STAGE_LABELS[o.stage],
-        assignedTo: o.assignedTo,
-        replyNeededSince: o.replyNeededSince,
-        doNotContact: o.doNotContact,
-        lastInteractionAt: o.lastInteractionAt,
-        last: last ? {
-          channel: last.channel || last.type, direction: last.direction, origin: last.origin, status: last.status, outcome: last.outcome, subject: last.subject, preview: String(last.body || last.note || '').slice(0, 140), at: last.createdAt,
-        } : null,
-      };
-    }),
-    total: count,
-  };
+
+  const ids = rows.map((r) => r.id);
+  const [activities, tallies] = ids.length ? await Promise.all([
+    OutreachActivity.findAll({ where: { opportunityId: ids, deletedAt: null }, order: [['createdAt', 'DESC']] }),
+    sequelize.query(`SELECT "opportunityId", COALESCE(channel, 'other') AS channel, direction, COUNT(*)::int AS n,
+        MAX(COALESCE("occurredAt", "createdAt")) AS last
+      FROM "OutreachActivities" WHERE "opportunityId" IN (:ids) AND "deletedAt" IS NULL AND (direction = 'inbound' OR status IS NULL OR status NOT IN ${NOT_SENT_SQL})
+      GROUP BY 1, 2, 3`, { replacements: { ids }, type: sequelize.QueryTypes.SELECT }),
+  ]) : [[], []];
+  const lastByOpp = new Map();
+  for (const a of activities) if (!lastByOpp.has(a.opportunityId)) lastByOpp.set(a.opportunityId, a);
+
+  const now = Date.now();
+  const items = rows.map((o) => {
+    const last = lastByOpp.get(o.id);
+    const mine = tallies.filter((t) => t.opportunityId === o.id);
+    const out = mine.filter((t) => t.direction === 'outbound');
+    const attempts = out.reduce((s, t) => s + t.n, 0);
+    const replies = mine.filter((t) => t.direction === 'inbound').reduce((s, t) => s + t.n, 0);
+    const lastOut = out.map((t) => new Date(t.last).getTime()).sort((a, b) => b - a)[0] || null;
+    const channels = {};
+    for (const t of out) channels[t.channel] = (channels[t.channel] || 0) + t.n;
+    let state = 'waiting';
+    if (['won', 'lost'].includes(o.stage) || o.doNotContact) state = 'closed';
+    else if (o.replyNeededSince) state = 'needs_reply';
+    else if (o.nextActionAt && new Date(o.nextActionAt) < end) state = 'due';
+    else if (attempts >= 3 && !replies) state = 'no_response';
+    return {
+      opportunityId: o.id,
+      businessName: o.organization?.name,
+      city: o.organization?.city || null,
+      state: o.organization?.state || null,
+      hasEmail: Boolean(o.organization?.email),
+      hasPhone: Boolean(o.organization?.phone),
+      stage: o.stage,
+      stageLabel: STAGE_LABELS[o.stage],
+      interestLevel: o.interestLevel,
+      assignedTo: o.assignedTo,
+      replyNeededSince: o.replyNeededSince,
+      doNotContact: o.doNotContact,
+      lastInteractionAt: o.lastInteractionAt,
+      nextActionAt: o.nextActionAt,
+      nextActionType: o.nextActionType,
+      nextActionNote: o.nextActionNote,
+      status: state,
+      attempts,
+      replies,
+      channels,
+      daysSinceOutbound: lastOut ? Math.floor((now - lastOut) / 86400000) : null,
+      last: last ? {
+        channel: last.channel || last.type, direction: last.direction, origin: last.origin, status: last.status, outcome: last.outcome, subject: last.subject, preview: String(last.body || last.note || '').slice(0, 160), at: last.occurredAt || last.createdAt,
+      } : null,
+    };
+  });
+  return { items, total: count, counts };
 }
 
 // ----------------------------------------------------------- twilio webhooks

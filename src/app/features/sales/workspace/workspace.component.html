@@ -10,7 +10,7 @@
     </div>
   }
 
-  <a routerLink="/app/leads" class="back-link">← Leads</a>
+  <div class="record-top"><a routerLink="/app/leads" class="back-link">← Leads</a> <a class="step-link" [routerLink]="['/app/work', id]">Step-by-step view →</a></div>
 
   @let w = ws();
   @if (loading() && !w) {
@@ -145,6 +145,7 @@
             @if (recButton(); as label) { <button class="btn btn-primary" (click)="runRecommendation()">{{ label }}</button> }
           </div>
         </section>
+
 
       <!-- Sections -->
       <nav class="line-tabs" role="tablist" aria-label="Lead sections">
@@ -398,7 +399,7 @@
 
     <app-dialog [open]="!!composerDialog()" [title]="composerDialog()?.channel === 'sms' ? 'Text ' + w.business.name : 'Email ' + w.business.name" [wide]="true" (closed)="composerDialog.set(null)">
       @if (composerDialog(); as cd) {
-        <app-composer [ws]="w" [channel]="cd.channel" [category]="cd.category" [intro]="!!cd.intro" (sent)="composerSent($event)" (closed)="composerDialog.set(null)" />
+        <app-composer [ws]="w" [channel]="cd.channel" [category]="cd.category" [intro]="!!cd.intro" [preset]="cd.preset ?? null" (sent)="composerSent($event)" (closed)="composerDialog.set(null)" />
       }
     </app-dialog>
 

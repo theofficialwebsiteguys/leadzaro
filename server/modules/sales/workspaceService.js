@@ -9,7 +9,7 @@ const { recordAudit } = require('../../core/audit/auditService');
 const { notify } = require('../../core/notifications/notificationService');
 const {
   STAGES, STAGE_LABELS, OUTCOMES, CHANNELS, NEXT_ACTION_TYPES, isForward, QUALIFICATION_FIELDS, STAGE_GUIDE, CLOSE_REASONS, NURTURE_REASONS,
-  STALL_DAYS, stallInfo, missingForStage,
+  STALL_DAYS, stallInfo, missingForStage, INTEREST_LEVELS, QUALIFICATION_LABELS, IN_QUALIFICATION,
 } = require('../../core/crm/pipelineCatalog');
 const opportunityService = require('../crm/opportunityService');
 const handoffService = require('./handoffService');
@@ -19,7 +19,7 @@ const channels = require('./channelService');
 const contactDiscovery = require('./contactDiscoveryService');
 const introEmail = require('./introEmailService');
 const {
-  invalid, isUniqueViolation, assertNoSecrets, isEmail,
+  invalid, isUniqueViolation, assertNoSecrets, isEmail, formatMoney,
 } = require('./salesCommon');
 
 /**
@@ -113,6 +113,17 @@ function recommend({
     why, ask, action: null, tip: null, ...rec,
   });
 
+  if (IN_QUALIFICATION.includes(opportunity.qualificationStatus)) {
+    return result({
+      key: 'in_qualification',
+      label: QUALIFICATION_LABELS[opportunity.qualificationStatus],
+      detail: opportunity.qualificationNote || 'This lead is still being researched and isn’t in a sales queue yet.',
+      tone: 'muted',
+      why: [],
+      ask: [],
+      action: { type: 'qualify', label: 'Open qualification' },
+    });
+  }
   if (opportunity.doNotContact) {
     return result({
       key: 'do_not_contact', label: 'Do not contact', detail: opportunity.doNotContactReason || 'This business asked not to be contacted.', tone: 'muted', why: [], ask: [],
@@ -122,6 +133,12 @@ function recommend({
     const base = { why: [], ask: [], action: { type: 'handoff', label: 'Open the handoff' } };
     if (!handoff) return result({ ...base, key: 'handoff', label: 'Prepare the handoff', detail: 'Payment received — the handoff is being prepared.', tone: 'info' });
     if (handoff.status === 'failed') return result({ ...base, key: 'retry_handoff', label: 'Retry the client setup', detail: handoff.lastError || 'Payment arrived but the client setup failed.', tone: 'danger' });
+    // Approved sales go to a client manager for onboarding (ADR 0016).
+    if (opportunity.clientManagerUserId && handoff.status !== 'complete') {
+      return result({
+        key: 'onboarding', label: 'With onboarding', detail: `${opportunity.clientManager?.name || 'The client manager'} is onboarding this client.`, tone: 'success', why: [], ask: [], action: { type: 'client', label: 'Open client' },
+      });
+    }
     if (handoff.status !== 'complete') {
       return result({
         ...base,
@@ -134,6 +151,32 @@ function recommend({
     }
     return result({
       key: 'done', label: 'Handed off', detail: 'This client is with the delivery team.', tone: 'success', why: [], ask: [], action: { type: 'client', label: 'Open client' },
+    });
+  }
+  // Closing approval (ADR 0016): a confirmed payment is not a client until approved.
+  if (opportunity.stage !== 'lost' && opportunity.closingStatus === 'submitted') {
+    return result({
+      key: 'awaiting_approval', label: 'Waiting for closing approval', detail: 'An admin reviews the sale, then it becomes a client and goes to onboarding.', tone: 'info', why: [], ask: [],
+    });
+  }
+  if (opportunity.stage !== 'lost' && opportunity.closingStatus === 'returned') {
+    return result({
+      key: 'closing_returned',
+      label: 'Sale returned — fix and resubmit',
+      detail: opportunity.closingReviewNote || 'An admin sent this sale back.',
+      tone: 'warning',
+      action: { type: 'submit_closing', label: 'Review and resubmit' },
+    });
+  }
+  if (opportunity.stage !== 'lost' && opportunity.paymentConfirmedAt && opportunity.closingStatus !== 'approved') {
+    return result({
+      key: 'submit_closing',
+      label: 'Submit the sale for approval',
+      detail: `Payment confirmed ${when(opportunity.paymentConfirmedAt)}. Submit it so an admin can approve the new client.`,
+      tone: 'primary',
+      why: [],
+      ask: [],
+      action: { type: 'submit_closing', label: 'Submit for approval' },
     });
   }
   if (opportunity.stage === 'lost') {
@@ -374,6 +417,9 @@ async function getWorkspace(ctx, opportunityId) {
       { model: Lead, as: 'sourceLead' },
       { model: User, as: 'assignedTo', attributes: USER_ATTRS },
       { model: User, as: 'creditedTo', attributes: USER_ATTRS },
+      { model: User, as: 'qualifiedBy', attributes: USER_ATTRS },
+      { model: User, as: 'researcher', attributes: USER_ATTRS },
+      { model: User, as: 'clientManager', attributes: USER_ATTRS },
       { model: InboundSubmission, as: 'inboundSubmission' },
     ],
   });
@@ -455,6 +501,30 @@ async function getWorkspace(ctx, opportunityId) {
       stall: stallInfo(opportunity),
       inboundSubmission: opportunity.inboundSubmission,
       paymentStatus: hasSale ? 'paid' : (requests.find((r) => r.isOpen)?.status || null),
+      interestLevel: opportunity.interestLevel || 'unknown',
+      meeting: opportunity.meeting || null,
+      proposal: opportunity.proposal || null,
+      paymentConfirmedAt: opportunity.paymentConfirmedAt,
+      closingStatus: opportunity.closingStatus,
+      closingNote: opportunity.closingNote,
+      closingSubmittedAt: opportunity.closingSubmittedAt,
+      closingReviewNote: opportunity.closingReviewNote,
+      closingException: opportunity.closingException,
+      clientManager: opportunity.clientManager || null,
+    },
+    qualificationBrief: opportunity.qualificationStatus ? {
+      status: opportunity.qualificationStatus,
+      statusLabel: QUALIFICATION_LABELS[opportunity.qualificationStatus],
+      note: opportunity.qualificationNote,
+      qualifiedBy: opportunity.qualifiedBy || null,
+      researcher: opportunity.researcher || null,
+      qualifiedAt: opportunity.qualifiedAt,
+      sources: opportunity.research?.sources || {},
+      contacts: Object.fromEntries(Object.entries(opportunity.research?.contacts || {}).map(([k, v]) => [k, { status: v?.status || 'not_checked', sourceUrl: v?.sourceUrl || null }])),
+    } : null,
+    closing: {
+      // eslint-disable-next-line global-require
+      milestones: await require('./closingService').milestones(opportunity),
     },
     business,
     contacts,
@@ -488,6 +558,9 @@ async function getWorkspace(ctx, opportunityId) {
       managePipeline: ctx.can('crm.manage_pipeline'),
       archive: ctx.can('leads.archive') || ctx.can('crm.manage_pipeline'),
       editBusiness: ctx.can('leads.update'),
+      approveClose: ctx.can('sales.approve_close'),
+      returnToQualifier: Boolean(opportunity.researcherUserId) && !IN_QUALIFICATION.includes(opportunity.qualificationStatus),
+      qualify: ctx.can('qualification.work'),
     },
   };
 }
@@ -760,6 +833,7 @@ async function logOutcome(ctx, opportunityId, input) {
   assertNoSecrets(note, 'Note');
   const next = parseNextAction(input.nextAction);
   const direction = outcome === 'replied' ? 'inbound' : 'outbound';
+  if (input.interestLevel && !INTEREST_LEVELS.includes(input.interestLevel)) throw invalid('Unknown interest level');
 
   try {
     await sequelize.transaction(async (transaction) => {
@@ -815,7 +889,20 @@ async function logOutcome(ctx, opportunityId, input) {
         return;
       }
       if (outcome === 'wrong_contact' && contact) await contact.update({ archivedAt: new Date(), isPrimary: false }, { transaction });
+      // Interest is tracked apart from the stage (ADR 0016): the person's choice wins, else a sensible nudge.
+      const nudge = {
+        interested: ['unknown', 'cold'].includes(opportunity.interestLevel) ? 'warm' : null,
+        meeting_arranged: ['unknown', 'cold'].includes(opportunity.interestLevel) ? 'warm' : null,
+        not_interested: 'cold',
+      };
+      const interest = input.interestLevel || nudge[outcome] || null;
+      if (interest && interest !== opportunity.interestLevel) await opportunity.update({ interestLevel: interest }, { transaction });
       let revisit = null;
+      if (outcome === 'not_now') {
+        const code = CLOSE_REASONS[input.closeReasonCode] ? input.closeReasonCode : 'bad_timing';
+        await applyStage(ctx, opportunity, 'nurture', { reason: 'outcome', closeReasonCode: code, transaction });
+        revisit = next || { nextActionAt: new Date(Date.now() + 90 * 86400000), nextActionType: 'follow_up', nextActionNote: `Revisit — ${CLOSE_REASONS[code]}` };
+      }
       if (outcome === 'not_interested') {
         const code = CLOSE_REASONS[input.closeReasonCode] ? input.closeReasonCode : (input.nurture ? 'bad_timing' : 'not_interested');
         if (input.nurture) {
@@ -839,6 +926,11 @@ async function logOutcome(ctx, opportunityId, input) {
   await recordAudit({
     organizationId: ctx.agencyId, actorUserId: ctx.userId, action: 'outreach.created', targetType: 'Opportunity', targetId: opportunityId, metadata: { channel, outcome }, req: ctx.req,
   });
+  // Wrong details from qualification go back to the qualifier (ADR 0016).
+  if (outcome === 'wrong_contact' && input.returnToQualification) {
+    // eslint-disable-next-line global-require
+    await require('./qualificationService').returnForCorrection(ctx, opportunityId, { reason: input.returnReason || note || 'Contact details were wrong' });
+  }
   return getWorkspace(ctx, opportunityId);
 }
 
@@ -899,7 +991,205 @@ async function assign(ctx, opportunityId, userId) {
   return getWorkspace(ctx, opportunityId);
 }
 
+// ---- Guided deal steps (ADR 0016): interest, meeting, pricing.
+
+async function setInterest(ctx, opportunityId, { level }) {
+  if (!INTEREST_LEVELS.includes(level)) throw invalid('Choose unknown, cold, warm or hot.');
+  const opportunity = await loadOpportunity(ctx, opportunityId);
+  if (opportunity.interestLevel !== level) {
+    await opportunity.update({ interestLevel: level });
+    await recordAudit({
+      organizationId: ctx.agencyId, actorUserId: ctx.userId, action: 'sales.interest_changed', targetType: 'Opportunity', targetId: opportunityId, metadata: { level }, req: ctx.req,
+    });
+  }
+  return getWorkspace(ctx, opportunityId);
+}
+
+const MEETING_STATUSES = ['scheduled', 'rescheduled', 'held', 'no_show', 'canceled'];
+const MEETING_METHODS = { phone: 'Phone call', video: 'Video call', in_person: 'In person' };
+const METHOD_CHANNEL = { phone: 'call', video: 'other', in_person: 'in_person' };
+
+/**
+ * Records a meeting: scheduled, rescheduled, held (with what was agreed),
+ * no-show or canceled. This records it in Leadzaro only — no calendar
+ * invitation is sent. Booking counts once as a meeting booked.
+ */
+async function saveMeeting(ctx, opportunityId, input) {
+  const { status } = input;
+  if (!MEETING_STATUSES.includes(status)) throw invalid('Choose what happened with the meeting.');
+  const method = MEETING_METHODS[input.method] ? input.method : 'phone';
+  const at = input.at ? new Date(input.at) : null;
+  const booking = ['scheduled', 'rescheduled'].includes(status);
+  if (booking && (!at || Number.isNaN(at.getTime()))) throw invalid('Choose the meeting date and time.');
+  const notes = input.notes ? String(input.notes).trim().slice(0, 2000) : null;
+  const outcome = input.outcome ? String(input.outcome).trim().slice(0, 2000) : null;
+  assertNoSecrets(notes, 'Meeting notes');
+  assertNoSecrets(outcome, 'Meeting outcome');
+  if (status === 'held' && !outcome) throw invalid('Summarize what was agreed in the meeting.');
+  const next = parseNextAction(input.nextAction);
+  const idempotencyKey = input.idempotencyKey ? String(input.idempotencyKey).slice(0, 100) : crypto.randomUUID();
+  if (await OutreachActivity.findOne({ where: { idempotencyKey } })) return getWorkspace(ctx, opportunityId);
+
+  try {
+    await sequelize.transaction(async (transaction) => {
+      const opportunity = await loadOpportunity(ctx, opportunityId, { transaction, lock: true });
+      if (opportunity.doNotContact && booking) throw invalid('This business is marked Do Not Contact.', 409);
+      if (['won', 'lost'].includes(opportunity.stage)) throw invalid('This deal is closed.', 409);
+      if (!opportunity.assignedToUserId) await opportunity.update({ assignedToUserId: ctx.userId }, { transaction });
+      const prev = opportunity.meeting || {};
+      const wasBooked = ['scheduled', 'rescheduled'].includes(prev.status);
+      await opportunity.update({
+        meeting: {
+          status,
+          method,
+          methodLabel: MEETING_METHODS[method],
+          at: at ? at.toISOString() : prev.at || null,
+          notes: notes ?? prev.notes ?? null,
+          outcome: status === 'held' ? outcome : (prev.outcome || null),
+          updatedAt: new Date().toISOString(),
+          updatedBy: ctx.userId,
+          history: [...(prev.history || []), ...(prev.status ? [{ status: prev.status, at: prev.at, updatedAt: prev.updatedAt }] : [])].slice(-10),
+        },
+      }, { transaction });
+
+      const whenText = at ? at.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: ctx.timezone || 'America/New_York' }) : '';
+      const summaries = {
+        scheduled: `Meeting booked for ${whenText} (${MEETING_METHODS[method]})`,
+        rescheduled: `Meeting moved to ${whenText} (${MEETING_METHODS[method]})`,
+        held: 'Meeting held',
+        no_show: 'Meeting — they didn’t show',
+        canceled: 'Meeting canceled',
+      };
+      const activityOutcome = {
+        scheduled: wasBooked ? null : 'meeting_arranged', rescheduled: wasBooked ? null : 'meeting_arranged', held: 'connected', no_show: 'no_answer', canceled: null,
+      }[status];
+      await OutreachActivity.create({
+        organizationId: ctx.agencyId,
+        userId: ctx.userId,
+        leadId: opportunity.sourceLeadId || null,
+        opportunityId: opportunity.id,
+        type: { call: 'call', in_person: 'visit' }[METHOD_CHANNEL[method]] || 'other',
+        channel: METHOD_CHANNEL[method],
+        direction: 'outbound',
+        origin: 'manual',
+        outcome: activityOutcome,
+        note: [summaries[status], status === 'held' ? outcome : notes, booking ? 'Recorded in Leadzaro — no calendar invitation was sent.' : null].filter(Boolean).join('\n'),
+        idempotencyKey,
+        occurredAt: new Date(),
+      }, { transaction });
+      if (status === 'held' || booking) {
+        await recordInteraction(ctx, opportunity, {
+          direction: 'outbound', summary: summaries[status], advanceTo: 'proposal', transaction,
+        });
+      }
+      if (booking && ['unknown', 'cold'].includes(opportunity.interestLevel)) await opportunity.update({ interestLevel: 'warm' }, { transaction });
+      if (input.need !== undefined) {
+        const need = String(input.need || '').trim().slice(0, 2000);
+        assertNoSecrets(need, 'Their need');
+        if (need) await opportunity.update({ qualNeed: need }, { transaction });
+      }
+      if (booking) {
+        await opportunity.update({ nextActionAt: at, nextActionType: 'meeting', nextActionNote: `${MEETING_METHODS[method]} meeting` }, { transaction });
+      } else if (next) {
+        await opportunity.update(next, { transaction });
+      } else if (opportunity.nextActionType === 'meeting') {
+        await opportunity.update({ nextActionAt: null, nextActionType: null, nextActionNote: null }, { transaction });
+      }
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) return getWorkspace(ctx, opportunityId);
+    throw err;
+  }
+  await recordAudit({
+    organizationId: ctx.agencyId, actorUserId: ctx.userId, action: 'sales.meeting_recorded', targetType: 'Opportunity', targetId: opportunityId, metadata: { status, method }, req: ctx.req,
+  });
+  return getWorkspace(ctx, opportunityId);
+}
+
+function cents(value, label) {
+  if (value === undefined || value === null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0 || n > 100000000) throw invalid(`${label} must be a dollar amount`);
+  return n;
+}
+
+/**
+ * The pricing for this deal: service, scope, setup and recurring price,
+ * and the message. Saving keeps a draft; "mark sent" records once that the
+ * pricing went out and sets the follow-up. Never creates a charge.
+ */
+async function saveProposal(ctx, opportunityId, input) {
+  const service = String(input.service ?? '').trim().slice(0, 200);
+  const scope = String(input.scope ?? '').trim().slice(0, 2000);
+  const message = String(input.message ?? '').trim().slice(0, 5000);
+  assertNoSecrets(service, 'Service');
+  assertNoSecrets(scope, 'Scope');
+  assertNoSecrets(message, 'Pricing message');
+  const setupCents = cents(input.setupCents, 'Setup price');
+  const recurringCents = cents(input.recurringCents, 'Recurring price');
+  const interval = input.interval === 'year' ? 'year' : 'month';
+  const markSent = Boolean(input.markSent);
+  if (markSent && !service) throw invalid('Name the service you priced.');
+  if (markSent && setupCents === null && recurringCents === null) throw invalid('Add a setup or recurring price.');
+  const followUp = markSent ? parseNextAction({ at: input.followUpAt, type: 'follow_up', note: 'Follow up on the pricing' }) : null;
+  if (markSent && !followUp) throw invalid('Pick when to follow up on the pricing.');
+  const sentVia = ['email', 'call', 'in_person', 'sms', 'other'].includes(input.sentVia) ? input.sentVia : 'other';
+
+  await sequelize.transaction(async (transaction) => {
+    const opportunity = await loadOpportunity(ctx, opportunityId, { transaction, lock: true });
+    if (['won', 'lost'].includes(opportunity.stage)) throw invalid('This deal is closed.', 409);
+    if (markSent && opportunity.doNotContact) throw invalid('This business is marked Do Not Contact.', 409);
+    const prev = opportunity.proposal || {};
+    const alreadySent = Boolean(prev.sentAt);
+    const proposal = {
+      ...prev, service: service || null, scope: scope || null, setupCents, recurringCents, interval, message: message || null, updatedAt: new Date().toISOString(), updatedBy: ctx.userId,
+    };
+    if (markSent && !alreadySent) {
+      proposal.sentAt = new Date().toISOString();
+      proposal.sentVia = sentVia;
+      proposal.sentBy = ctx.userId;
+    }
+    if (markSent) proposal.followUpAt = followUp.nextActionAt.toISOString();
+    const updates = { proposal };
+    if (service && !opportunity.qualService) updates.qualService = service;
+    if (!opportunity.valueCents && (setupCents || recurringCents)) updates.valueCents = (setupCents || 0) + (recurringCents || 0) * (interval === 'year' ? 1 : 12);
+    await opportunity.update(updates, { transaction });
+    if (markSent && !alreadySent) {
+      const price = [setupCents ? `${formatMoney(setupCents)} setup` : null, recurringCents ? `${formatMoney(recurringCents)}/${interval}` : null].filter(Boolean).join(' + ');
+      // An email sent from Leadzaro is already in the history; only log sends made elsewhere.
+      if (!input.sentThroughLeadzaro) {
+        await OutreachActivity.create({
+          organizationId: ctx.agencyId,
+          userId: ctx.userId,
+          leadId: opportunity.sourceLeadId || null,
+          opportunityId: opportunity.id,
+          type: {
+            email: 'email', call: 'call', in_person: 'visit', sms: 'message',
+          }[sentVia] || 'other',
+          channel: sentVia,
+          direction: 'outbound',
+          origin: 'external',
+          outcome: null,
+          note: `Pricing sent (recorded by ${ctx.user?.name || 'the salesperson'}): ${service} — ${price}`,
+          occurredAt: new Date(),
+        }, { transaction });
+      }
+      await recordInteraction(ctx, opportunity, {
+        direction: 'outbound', summary: `Pricing sent — ${price}`, advanceTo: 'proposal', transaction,
+      });
+    }
+    if (followUp) await opportunity.update(followUp, { transaction });
+  });
+  await recordAudit({
+    organizationId: ctx.agencyId, actorUserId: ctx.userId, action: markSent ? 'sales.pricing_sent' : 'sales.pricing_saved', targetType: 'Opportunity', targetId: opportunityId, req: ctx.req,
+  });
+  return getWorkspace(ctx, opportunityId);
+}
+
 module.exports = {
+  setInterest,
+  saveMeeting,
+  saveProposal,
   getWorkspace,
   updateBusiness,
   updateDeal,

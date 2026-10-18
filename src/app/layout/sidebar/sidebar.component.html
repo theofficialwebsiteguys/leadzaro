@@ -19,9 +19,21 @@
     </div>
   }
 
+  <!-- Working as: one role at a time for people who hold several (ADR 0016) -->
+  @if (workMode.available().length > 1) {
+    <div class="mode-switch" role="radiogroup" aria-label="Working as">
+      <span class="mode-label">Working as</span>
+      <div class="mode-options">
+        @for (m of workMode.available(); track m) {
+          <button type="button" role="radio" [attr.aria-checked]="workMode.mode() === m" [class.active]="workMode.mode() === m" (click)="setMode(m)">{{ modeLabels[m] }}</button>
+        }
+      </div>
+    </div>
+  }
+
   <!-- Navigation -->
   <nav class="sidebar-nav">
-    @for (section of navSections(); track section.title) {
+    @for (section of navSections(); track $index) {
       @if (section.title) {
         <div class="nav-section-label">{{ section.title }}</div>
       }
@@ -29,6 +41,7 @@
         <a
           [routerLink]="item.route"
           routerLinkActive="active"
+          [routerLinkActiveOptions]="{ exact: !!item.exact }"
           class="nav-item"
           (click)="closeMobile.emit()"
         >
@@ -40,6 +53,8 @@
       }
     }
   </nav>
+
+  @if (org.membership()?.membershipType === 'employee') { <app-time-tracker /> }
 
   <!-- User section -->
   <div class="sidebar-footer">

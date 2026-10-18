@@ -71,7 +71,7 @@ async function getReport(ctx, query = {}) {
          COUNT(*) FILTER (WHERE o."nextActionAt" IS NULL)::int AS "noNextStep",
          COUNT(*) FILTER (WHERE o."nextActionAt" < NOW())::int AS overdue,
          COUNT(*) FILTER (WHERE ${stalledSql('o')})::int AS stalled
-       FROM "Opportunities" o WHERE o."agencyOrganizationId" = :agencyId AND o."deletedAt" IS NULL AND o."archivedAt" IS NULL AND o."doNotContact" = false
+       FROM "Opportunities" o WHERE o."agencyOrganizationId" = :agencyId AND o."deletedAt" IS NULL AND o."archivedAt" IS NULL AND o."doNotContact" = false AND (o."qualificationStatus" IS NULL OR o."qualificationStatus" = 'assigned')
        AND o.stage IN ('new', 'contacting', 'qualified', 'proposal', 'awaiting_payment', 'nurture') ${testOpp} ${ownerOpp} GROUP BY 1`, r),
   ]);
 
@@ -97,7 +97,7 @@ async function getReport(ctx, query = {}) {
        WHERE h."agencyOrganizationId" = :agencyId AND h.status = 'complete' AND h."completedAt" >= :from AND h."completedAt" <= :to ${testOpp}
        ${userId ? 'AND COALESCE(o."creditedUserId", o."assignedToUserId") = :userId' : ''}`, r),
     q(`SELECT COUNT(*)::int AS count FROM "Opportunities" o WHERE o."agencyOrganizationId" = :agencyId AND o."deletedAt" IS NULL AND o."archivedAt" IS NULL
-       AND o."doNotContact" = false AND o.stage NOT IN ('won', 'lost') AND o."nextActionAt" < NOW() ${testOpp} ${userId ? 'AND o."assignedToUserId" = :userId' : ''}`, r),
+       AND o."doNotContact" = false AND (o."qualificationStatus" IS NULL OR o."qualificationStatus" = 'assigned') AND o.stage NOT IN ('won', 'lost') AND o."nextActionAt" < NOW() ${testOpp} ${userId ? 'AND o."assignedToUserId" = :userId' : ''}`, r),
     q(`SELECT COUNT(*)::int AS count FROM "Opportunities" o WHERE o."agencyOrganizationId" = :agencyId AND o."deletedAt" IS NULL AND o.stage = 'won'
        AND NOT EXISTS (SELECT 1 FROM "SalesPayments" p WHERE p."opportunityId" = o.id AND p.kind = 'initial') ${testOpp}
        ${userId ? 'AND COALESCE(o."creditedUserId", o."assignedToUserId") = :userId' : ''}`, r),
@@ -192,7 +192,7 @@ async function teamBreakdown(ctx, r, { testOpp, testPay, counted }) {
        WHERE h."agencyOrganizationId" = :agencyId AND h.status = 'complete' AND h."completedAt" >= :from AND h."completedAt" <= :to ${testOpp} GROUP BY 1`, r),
     q(`SELECT o."assignedToUserId" AS "userId", COUNT(*)::int AS open,
          COUNT(*) FILTER (WHERE o."nextActionAt" < NOW())::int AS overdue
-       FROM "Opportunities" o WHERE o."agencyOrganizationId" = :agencyId AND o."deletedAt" IS NULL AND o."archivedAt" IS NULL AND o."doNotContact" = false
+       FROM "Opportunities" o WHERE o."agencyOrganizationId" = :agencyId AND o."deletedAt" IS NULL AND o."archivedAt" IS NULL AND o."doNotContact" = false AND (o."qualificationStatus" IS NULL OR o."qualificationStatus" = 'assigned')
        AND o.stage NOT IN ('won', 'lost') ${testOpp} GROUP BY 1`, r),
   ]);
   const ids = new Set([...activity, ...sales, ...offers, ...handoffs, ...open].map((row) => row.userId).filter(Boolean));
@@ -224,7 +224,7 @@ async function teamBreakdown(ctx, r, { testOpp, testPay, counted }) {
 /** Stage counts for the Leads board header. */
 async function stageCounts(ctx, { mine } = {}) {
   const rows = await q(`SELECT stage, COUNT(*)::int AS count FROM "Opportunities"
-    WHERE "agencyOrganizationId" = :agencyId AND "deletedAt" IS NULL AND "archivedAt" IS NULL ${mine ? 'AND "assignedToUserId" = :userId' : ''}
+    WHERE "agencyOrganizationId" = :agencyId AND "deletedAt" IS NULL AND "archivedAt" IS NULL AND ("qualificationStatus" IS NULL OR "qualificationStatus" = 'assigned') ${mine ? 'AND "assignedToUserId" = :userId' : ''}
     GROUP BY stage`, { agencyId: ctx.agencyId, userId: ctx.userId });
   return Object.keys(STAGE_LABELS).map((stage) => ({ stage, label: STAGE_LABELS[stage], count: rows.find((row) => row.stage === stage)?.count || 0 }));
 }

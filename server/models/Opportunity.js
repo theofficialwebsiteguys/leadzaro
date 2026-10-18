@@ -97,6 +97,28 @@ module.exports = (sequelize) => {
     outreachReason: { type: DataTypes.TEXT, allowNull: true },
     outreachEvidence: { type: DataTypes.TEXT, allowNull: true },
     emailDraft: { type: DataTypes.JSONB, allowNull: true },
+    // Guided workflow (ADR 0016). Each concept is its own field: qualification
+    // progress and who did it, interest, meeting, pricing, payment
+    // confirmation and closing approval.
+    qualificationStatus: { type: DataTypes.STRING(20), allowNull: true },
+    researcherUserId: { type: DataTypes.UUID, allowNull: true },
+    qualifiedByUserId: { type: DataTypes.UUID, allowNull: true },
+    qualifiedAt: { type: DataTypes.DATE, allowNull: true },
+    qualificationNote: { type: DataTypes.STRING(500), allowNull: true },
+    research: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    interestLevel: { type: DataTypes.STRING(10), allowNull: false, defaultValue: 'unknown' },
+    meeting: { type: DataTypes.JSONB, allowNull: true },
+    proposal: { type: DataTypes.JSONB, allowNull: true },
+    paymentConfirmedAt: { type: DataTypes.DATE, allowNull: true },
+    closingStatus: { type: DataTypes.STRING(20), allowNull: true },
+    closingSubmittedAt: { type: DataTypes.DATE, allowNull: true },
+    closingSubmittedByUserId: { type: DataTypes.UUID, allowNull: true },
+    closingNote: { type: DataTypes.TEXT, allowNull: true },
+    closingReviewedAt: { type: DataTypes.DATE, allowNull: true },
+    closingReviewedByUserId: { type: DataTypes.UUID, allowNull: true },
+    closingReviewNote: { type: DataTypes.STRING(500), allowNull: true },
+    closingException: { type: DataTypes.STRING(500), allowNull: true },
+    clientManagerUserId: { type: DataTypes.UUID, allowNull: true },
   }, {
     indexes: [
       {
@@ -122,6 +144,12 @@ module.exports = (sequelize) => {
     Opportunity.hasMany(models.SalesPayment, { foreignKey: 'opportunityId', as: 'payments' });
     Opportunity.hasOne(models.SalesHandoff, { foreignKey: 'opportunityId', as: 'handoff' });
     Opportunity.belongsTo(models.User, { foreignKey: 'creditedUserId', as: 'creditedTo' });
+    Opportunity.belongsTo(models.User, { foreignKey: 'researcherUserId', as: 'researcher' });
+    Opportunity.belongsTo(models.User, { foreignKey: 'qualifiedByUserId', as: 'qualifiedBy' });
+    Opportunity.belongsTo(models.User, { foreignKey: 'closingSubmittedByUserId', as: 'closingSubmittedBy' });
+    Opportunity.belongsTo(models.User, { foreignKey: 'closingReviewedByUserId', as: 'closingReviewedBy' });
+    Opportunity.belongsTo(models.User, { foreignKey: 'clientManagerUserId', as: 'clientManager' });
+    Opportunity.hasOne(models.WorkCredit, { foreignKey: 'opportunityId', as: 'qualificationCredit', scope: { kind: 'qualification' } });
   };
 
   return Opportunity;

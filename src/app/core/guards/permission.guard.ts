@@ -14,7 +14,7 @@ export function requireAnyPermissionGuard(keys: string[]): CanActivateFn {
 
     if (orgContext.hasAnyPermission(keys)) return true;
 
-    router.navigate(['/app/dashboard']);
+    router.navigate(['/app/my-work']);
     return false;
   };
 }

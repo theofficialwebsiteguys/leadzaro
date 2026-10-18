@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
 import {
-  BillingSummary, CatalogProduct, Channels, ContactResearch, Conversation, EmailDraft, IntroDraft, Handoff, HandoffData, LeadList, LeadNote, MessageTemplate, PaymentRequest,
+  BillingSummary, CatalogProduct, Channels, ContactResearch, Conversation, ConversationCounts, EmailDraft, IntroDraft, Handoff, HandoffData, LeadList, LeadNote, MessageTemplate, PaymentRequest,
   Qualification, QueueItem, RenderedMessage, SalesPayment, SalesReport, StripeClientMatches, StripeCustomer, StripeCustomerLink, StripeStatus, TodayData, UserRef, Workspace,
 } from '../models/sales.model';
 
@@ -55,7 +55,7 @@ export class SalesService {
   // Leads
   leads(filters: Record<string, unknown>) { return this.get<LeadList>('/leads', { ...filters, tzOffset: tzOffset() }); }
   stageCounts(owner?: string) { return this.get<{ stage: string; label: string; count: number }[]>('/leads/stage-counts', { owner }); }
-  createLead(body: unknown) { return this.send<{ opportunityId: string; discovery?: ContactResearch | null }>('post', '/leads', body); }
+  createLead(body: unknown) { return this.send<{ opportunityId: string; discovery?: ContactResearch | null; qualificationStatus?: string | null }>('post', '/leads', body); }
   resolveSavedLead(savedLeadId: string) { return this.get<{ opportunityId: string }>(`/leads/resolve-saved/${savedLeadId}`); }
   workspace(id: string) { return this.get<Workspace>(`/leads/${id}`); }
   updateQualification(id: string, body: Partial<Qualification>) { return this.send<Workspace>('patch', `/leads/${id}/qualification`, body); }
@@ -92,7 +92,7 @@ export class SalesService {
   sendMessage(id: string, body: unknown) { return this.send<{ activity: { id: string; status: string }; duplicate: boolean }>('post', `/leads/${id}/send`, body); }
   startCall(id: string, body: unknown) { return this.send<{ activity: { id: string; status: string } }>('post', `/leads/${id}/calls`, body); }
   completeCall(id: string, activityId: string, body: unknown) { return this.send<Workspace>('post', `/leads/${id}/calls/${activityId}/outcome`, body); }
-  conversations(filters: Record<string, unknown>) { return this.get<{ items: Conversation[]; total: number }>('/conversations', filters); }
+  conversations(filters: Record<string, unknown>) { return this.get<{ items: Conversation[]; total: number; counts: ConversationCounts }>('/conversations', { ...filters, tzOffset: tzOffset() }); }
   channels() { return this.get<Channels>('/channels'); }
   setMyPhone(phone: string) { return this.send<Channels>('put', '/me/phone', { phone }); }
   templates(filters: Record<string, unknown> = {}) { return this.get<MessageTemplate[]>('/templates', filters); }

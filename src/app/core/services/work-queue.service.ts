@@ -34,6 +34,11 @@ export class WorkQueueService {
     return items[0] ?? null;
   }
 
+  /** Whether a lead was handled (not skipped) in this queue. */
+  isDone(opportunityId: string): boolean {
+    return this.state()?.done.includes(opportunityId) ?? false;
+  }
+
   /** Position of a lead in the queue, or -1 when it isn't part of it. */
   positionOf(opportunityId: string): number {
     return this.items().findIndex((item) => item.opportunityId === opportunityId);

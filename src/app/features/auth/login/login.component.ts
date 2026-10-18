@@ -42,7 +42,7 @@ export class LoginComponent {
           if (inviteToken) {
             this.router.navigate(['/accept-invite'], { queryParams: { token: inviteToken } });
           } else {
-            this.router.navigate(['/app/dashboard']);
+            this.router.navigate(['/app/my-work']);
           }
         });
       },

@@ -5,7 +5,7 @@ const {
   sequelize, Opportunity, Organization, User, PaymentLinkRequest, Contact,
 } = require('../../models');
 const {
-  STAGES, STAGE_LABELS, stallInfo, stalledSql,
+  STAGES, STAGE_LABELS, stallInfo, stalledSql, inSalesWhere,
 } = require('../../core/crm/pipelineCatalog');
 const { dayBounds } = require('./todayService');
 const { effectiveOffset } = require('../../core/workspace/timezone');
@@ -39,6 +39,8 @@ async function listLeads(ctx, query = {}) {
   if (query.due === 'reply') where.replyNeededSince = { [Op.ne]: null };
   if (query.due === 'stalled') where[Op.and] = [sequelize.literal(stalledSql('Opportunity'))];
   if (query.includeTest !== 'true') where.isTest = false;
+  // Leads still being qualified live in the qualification workspace, not the sales list (ADR 0016).
+  where[Op.and] = [...(where[Op.and] || []), inSalesWhere()];
   // Leads still waiting on contact research (ADR 0014): no business or contact email.
   if (query.contact === 'missing_email') {
     where[Op.and] = [...(where[Op.and] || []), sequelize.literal(`"organization"."email" IS NULL AND NOT EXISTS (SELECT 1 FROM "Contacts" c WHERE c."organizationId" = "Opportunity"."organizationId" AND c.email IS NOT NULL AND c."archivedAt" IS NULL AND c."deletedAt" IS NULL)`)];

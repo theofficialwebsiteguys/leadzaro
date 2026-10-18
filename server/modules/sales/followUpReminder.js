@@ -34,7 +34,7 @@ async function remindAgency(agencyId, timezone, now) {
       COUNT(*) FILTER (WHERE o."replyNeededSince" IS NULL AND o."nextActionAt" < :start)::int AS overdue,
       COUNT(*) FILTER (WHERE o."replyNeededSince" IS NULL AND o."nextActionAt" >= :start AND o."nextActionAt" < :end)::int AS "dueToday"
     FROM "Opportunities" o
-    WHERE o."agencyOrganizationId" = :agencyId AND o."deletedAt" IS NULL AND o."archivedAt" IS NULL AND o."doNotContact" = false
+    WHERE o."agencyOrganizationId" = :agencyId AND o."deletedAt" IS NULL AND o."archivedAt" IS NULL AND o."doNotContact" = false AND (o."qualificationStatus" IS NULL OR o."qualificationStatus" = 'assigned')
       AND o."isTest" = false AND o."assignedToUserId" IS NOT NULL AND o.stage IN (:open)
     GROUP BY 1`, {
     replacements: {

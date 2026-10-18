@@ -1,3 +1,5 @@
+import type { ClosingMilestone, InterestLevel, Meeting, Proposal, QualificationBrief } from './workflow.model';
+
 // Sales workflow (ADR 0011). Mirrors server/core/crm/pipelineCatalog.js.
 export const SALES_STAGES = ['new', 'contacting', 'qualified', 'proposal', 'awaiting_payment', 'won', 'lost', 'nurture'] as const;
 export type SalesStage = typeof SALES_STAGES[number];
@@ -15,13 +17,15 @@ export const STAGE_LABELS: Record<SalesStage, string> = {
 
 export const OPEN_STAGES: SalesStage[] = ['new', 'contacting', 'qualified', 'proposal', 'awaiting_payment'];
 
-export type Outcome = 'no_answer' | 'voicemail' | 'connected' | 'interested' | 'meeting_arranged' | 'not_interested' | 'wrong_contact' | 'do_not_contact';
+export type Outcome = 'no_answer' | 'voicemail' | 'email_sent' | 'connected' | 'interested' | 'meeting_arranged' | 'not_now' | 'not_interested' | 'wrong_contact' | 'do_not_contact';
 export const OUTCOMES: { key: Outcome; label: string; hint: string }[] = [
   { key: 'no_answer', label: 'No answer', hint: 'Try again later' },
   { key: 'voicemail', label: 'Left voicemail', hint: 'Follow up in a couple of days' },
+  { key: 'email_sent', label: 'Email sent — awaiting reply', hint: 'Sent outside Leadzaro' },
   { key: 'connected', label: 'Connected', hint: 'Spoke with someone' },
   { key: 'interested', label: 'Interested', hint: 'Moves to Interested / Qualified' },
   { key: 'meeting_arranged', label: 'Meeting arranged', hint: 'Moves to Meeting / Proposal' },
+  { key: 'not_now', label: 'Not now', hint: 'Nurture — revisit later' },
   { key: 'not_interested', label: 'Not interested', hint: 'Closes as lost (or nurture)' },
   { key: 'wrong_contact', label: 'Wrong contact', hint: 'Removes that contact' },
   { key: 'do_not_contact', label: 'Do not contact', hint: 'Stops all outreach' },
@@ -348,7 +352,7 @@ export interface ChannelState {
 
 export interface Channels { email: ChannelState; sms: ChannelState; call: ChannelState }
 
-export type RecommendationAction = 'call' | 'email' | 'sms' | 'log' | 'offer' | 'check_payment' | 'handoff' | 'client' | 'schedule' | 'edit_business' | 'find_email' | 'intro_email';
+export type RecommendationAction = 'call' | 'email' | 'sms' | 'log' | 'offer' | 'check_payment' | 'handoff' | 'client' | 'schedule' | 'edit_business' | 'find_email' | 'intro_email' | 'qualify' | 'submit_closing';
 
 export interface Recommendation {
   key: string;
@@ -448,7 +452,19 @@ export interface Workspace {
     emailDraft: EmailDraft | null;
     qualification: Qualification;
     stall: StallInfo | null;
+    interestLevel: InterestLevel;
+    meeting: Meeting | null;
+    proposal: Proposal | null;
+    paymentConfirmedAt: string | null;
+    closingStatus: 'submitted' | 'approved' | 'returned' | null;
+    closingNote: string | null;
+    closingSubmittedAt: string | null;
+    closingReviewNote: string | null;
+    closingException: string | null;
+    clientManager: UserRef | null;
   };
+  qualificationBrief: QualificationBrief | null;
+  closing: { milestones: ClosingMilestone[] };
   business: Business;
   contacts: Contact[];
   primaryContact: Contact | null;
@@ -469,6 +485,7 @@ export interface Workspace {
   permissions: {
     send: boolean; logOutreach: boolean; createPayment: boolean; customOffer: boolean; recordManualPayment: boolean;
     assign: boolean; managePipeline: boolean; archive: boolean; editBusiness: boolean;
+    approveClose: boolean; returnToQualifier: boolean; qualify: boolean;
   };
 }
 
@@ -504,7 +521,21 @@ export interface Conversation {
   doNotContact: boolean;
   lastInteractionAt: string;
   last: { channel: string; direction: string; origin: string; status: string | null; outcome: string | null; subject: string | null; preview: string; at: string } | null;
+  // Where the conversation stands, and how often we've reached out (ADR 0016).
+  status: 'needs_reply' | 'due' | 'waiting' | 'no_response' | 'closed';
+  attempts: number;
+  replies: number;
+  channels: Record<string, number>;
+  daysSinceOutbound: number | null;
+  nextActionAt: string | null;
+  nextActionType: string | null;
+  nextActionNote: string | null;
+  interestLevel: string;
+  hasEmail: boolean;
+  hasPhone: boolean;
 }
+
+export type ConversationCounts = Record<'all' | 'needs_reply' | 'due' | 'waiting' | 'no_response' | 'failed', number>;
 
 export interface PossibleDuplicate {
   organizationId: string;
@@ -515,6 +546,9 @@ export interface PossibleDuplicate {
   stage: SalesStage | null;
   stageLabel: string | null;
   assignedTo: UserRef | null;
+  qualificationStatus?: string | null;
+  qualificationLabel?: string | null;
+  researcher?: UserRef | null;
 }
 
 export interface Ratio { numerator: number; denominator: number }

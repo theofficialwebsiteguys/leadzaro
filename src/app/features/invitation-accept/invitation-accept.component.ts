@@ -63,7 +63,7 @@ export class InvitationAcceptComponent implements OnInit {
       name: this.form.value.name!,
       password: this.form.value.password!,
     }).subscribe({
-      next: () => this.orgContext.load().subscribe(() => this.router.navigate(['/app/dashboard'])),
+      next: () => this.orgContext.load().subscribe(() => this.router.navigate(['/app/my-work'])),
       error: (err) => {
         this.submitError.set(err.error?.message || 'Failed to accept invitation.');
         this.submitting.set(false);
@@ -75,7 +75,7 @@ export class InvitationAcceptComponent implements OnInit {
     this.submitting.set(true);
     this.submitError.set('');
     this.auth.acceptInvitation({ token: this.token }).subscribe({
-      next: () => this.orgContext.load().subscribe(() => this.router.navigate(['/app/dashboard'])),
+      next: () => this.orgContext.load().subscribe(() => this.router.navigate(['/app/my-work'])),
       error: (err) => {
         this.submitError.set(err.error?.message || 'Failed to accept invitation.');
         this.submitting.set(false);

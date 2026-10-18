@@ -5,6 +5,7 @@ import { SalesService, actionKey } from '../../../core/services/sales.service';
 import {
   CHANNEL_LABELS, NEXT_ACTION_LABELS, OUTCOMES, Outcome, Qualification, QualificationKey, UserRef, Workspace,
 } from '../../../core/models/sales.model';
+import { INTEREST_LABELS, InterestLevel } from '../../../core/models/workflow.model';
 import { suggestDate, toLocalInput } from '../shared/sales-format';
 
 // Outcomes where a real conversation happened — the moment to capture what was learned.
@@ -73,6 +74,28 @@ const CONVERSATION_OUTCOMES: Outcome[] = ['connected', 'interested', 'meeting_ar
         </fieldset>
       }
 
+      @if (talked()) {
+        <div class="form-group">
+          <span class="form-label" id="oc-interest">How interested are they?</span>
+          <div class="seg" role="radiogroup" aria-labelledby="oc-interest">
+            @for (level of interestLevels; track level.key) {
+              <button type="button" role="radio" [attr.aria-checked]="interest === level.key" [class.active]="interest === level.key" (click)="interest = level.key">{{ level.label }}</button>
+            }
+          </div>
+          <p class="form-hint">Separate from the stage — being qualified doesn’t mean they want to buy.</p>
+        </div>
+      }
+
+      @if (outcome() === 'not_now') {
+        <div class="form-group">
+          <label class="form-label" for="oc-notnow">Why not now? (optional)</label>
+          <select id="oc-notnow" class="form-select" name="notNowReason" [(ngModel)]="closeReasonCode">
+            <option value="">Bad timing — maybe later</option>
+            @for (r of ws().pipeline.nurtureReasons; track r.key) { <option [value]="r.key">{{ r.label }}</option> }
+          </select>
+        </div>
+      }
+
       @if (outcome() === 'not_interested') {
         <div class="seg" role="radiogroup" aria-label="Close or park">
           <button type="button" role="radio" [attr.aria-checked]="!nurture" [class.active]="!nurture" (click)="setNurture(false)">Close as lost</button>
@@ -96,6 +119,15 @@ const CONVERSATION_OUTCOMES: Outcome[] = ['connected', 'interested', 'meeting_ar
       @if (outcome() === 'wrong_contact' && !contactId) {
         <p class="form-hint">Choose the contact above to remove them, or add the right person in Details.</p>
       }
+      @if (outcome() === 'wrong_contact' && ws().permissions.returnToQualifier) {
+        <label class="check-row">
+          <input type="checkbox" [(ngModel)]="returnToQualifier" name="returnToQualifier" />
+          Send it back to {{ ws().qualificationBrief?.qualifiedBy?.name || 'the qualifier' }} to correct the contact details
+        </label>
+        @if (returnToQualifier) {
+          <input class="form-control" [(ngModel)]="returnReason" name="returnReason" maxlength="500" placeholder="What’s wrong, e.g. the number belongs to a different business" aria-label="What needs correcting" />
+        }
+      }
 
       <div class="form-group">
         <label class="form-label" for="oc-note">Notes</label>
@@ -104,9 +136,9 @@ const CONVERSATION_OUTCOMES: Outcome[] = ['connected', 'interested', 'meeting_ar
 
       @if (needsNext()) {
         <fieldset class="next">
-          <legend class="form-label">{{ outcome() === 'not_interested' && nurture ? 'Revisit on *' : 'Next step *' }}</legend>
+          <legend class="form-label">{{ parking() ? 'Revisit on *' : 'Next step *' }}</legend>
           <div class="quick">
-            @for (q of (outcome() === 'not_interested' && nurture ? revisitDates : quickDates); track q.label) {
+            @for (q of (parking() ? revisitDates : quickDates); track q.label) {
               <button type="button" class="btn btn-sm" [class.btn-primary]="nextAt === q.value" [class.btn-ghost]="nextAt !== q.value" (click)="nextAt = q.value">{{ q.label }}</button>
             }
           </div>
@@ -157,6 +189,7 @@ const CONVERSATION_OUTCOMES: Outcome[] = ['connected', 'interested', 'meeting_ar
     .next { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 8px; margin: 0; }
     .quick { display: flex; gap: 6px; flex-wrap: wrap; }
     .next-row { display: grid; grid-template-columns: 1fr 180px; gap: 8px; @media (max-width: 520px) { grid-template-columns: 1fr; } }
+    .check-row { display: flex; gap: 8px; align-items: center; font-size: .8125rem; input { accent-color: var(--primary); } }
     .owner { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
     .form-actions { display: flex; justify-content: flex-end; gap: 8px; }
   `],
@@ -196,6 +229,12 @@ export class OutcomeFormComponent implements OnInit {
   readonly owner = signal<UserRef | null>(null);
   private readonly nurtureSignal = signal(false);
   readonly needsNext = computed(() => !['do_not_contact'].includes(this.outcome() ?? '') && !(this.outcome() === 'not_interested' && !this.nurtureSignal()));
+  /** Parking a lead for later asks for a revisit date rather than a next step. */
+  readonly parking = computed(() => this.outcome() === 'not_now' || (this.outcome() === 'not_interested' && this.nurtureSignal()));
+  readonly interestLevels = (Object.keys(INTEREST_LABELS) as InterestLevel[]).map((key) => ({ key, label: INTEREST_LABELS[key] }));
+  interest: InterestLevel = 'unknown';
+  returnToQualifier = false;
+  returnReason = '';
   readonly talked = computed(() => CONVERSATION_OUTCOMES.includes(this.outcome() as Outcome));
   private key = actionKey();
 
@@ -218,6 +257,7 @@ export class OutcomeFormComponent implements OnInit {
 
   ngOnInit(): void {
     this.channel = this.presetChannel();
+    this.interest = this.ws().opportunity.interestLevel ?? 'unknown';
     this.contactId = this.ws().primaryContact?.id ?? '';
     const known: Qualification = this.ws().opportunity.qualification;
     for (const key of Object.keys(this.qual) as QualificationKey[]) this.qual[key] = known?.[key] ?? '';
@@ -227,8 +267,16 @@ export class OutcomeFormComponent implements OnInit {
     this.outcome.set(outcome);
     this.error.set('');
     const defaults: Partial<Record<Outcome, [number, string]>> = {
-      no_answer: [1, 'call'], voicemail: [2, 'call'], connected: [2, 'follow_up'], interested: [1, 'send_offer'], meeting_arranged: [2, 'meeting'], wrong_contact: [1, 'call'],
+      no_answer: [1, 'call'], voicemail: [2, 'call'], email_sent: [3, 'follow_up'], connected: [2, 'follow_up'], interested: [1, 'send_offer'], meeting_arranged: [2, 'meeting'], wrong_contact: [1, 'call'],
     };
+    if (outcome === 'email_sent') this.channel = 'email';
+    if (outcome === 'interested' && ['unknown', 'cold'].includes(this.interest)) this.interest = 'warm';
+    if (outcome === 'not_now') {
+      this.closeReasonCode = '';
+      this.nextAt = this.revisitDates[1].value;
+      this.nextType = 'follow_up';
+      return;
+    }
     const d = defaults[outcome];
     if (d && !this.nextAt) {
       this.nextAt = toLocalInput(suggestDate(d[0]));
@@ -272,6 +320,10 @@ export class OutcomeFormComponent implements OnInit {
       this.error.set('Add a few words about why.');
       return;
     }
+    if (outcome === 'wrong_contact' && this.returnToQualifier && !this.returnReason.trim()) {
+      this.error.set('Say what needs correcting so the qualifier can fix it.');
+      return;
+    }
     if (this.needsNext() && !this.nextAt) {
       this.error.set(this.nurture ? 'Pick when to revisit this business.' : 'Every open lead needs a next step — pick a date.');
       return;
@@ -286,7 +338,10 @@ export class OutcomeFormComponent implements OnInit {
       contactId: this.contactId || null,
       note: this.note || null,
       nurture: this.nurture,
-      closeReasonCode: outcome === 'not_interested' ? this.closeReasonCode : null,
+      closeReasonCode: outcome === 'not_interested' || outcome === 'not_now' ? this.closeReasonCode || null : null,
+      interestLevel: this.talked() ? this.interest : null,
+      returnToQualification: outcome === 'wrong_contact' && this.returnToQualifier,
+      returnReason: this.returnReason || null,
       lostReason: this.lostReason || null,
       nextAction: this.needsNext() && this.nextAt ? { at: new Date(this.nextAt).toISOString(), type: this.nextType, note: this.nextNote || null } : null,
       idempotencyKey: this.key,

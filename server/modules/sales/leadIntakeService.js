@@ -7,7 +7,7 @@ const {
 const { recordAudit } = require('../../core/audit/auditService');
 const opportunityService = require('../crm/opportunityService');
 const contactDiscovery = require('./contactDiscoveryService');
-const { STAGE_LABELS } = require('../../core/crm/pipelineCatalog');
+const { STAGE_LABELS, QUALIFICATION_LABELS, IN_QUALIFICATION } = require('../../core/crm/pipelineCatalog');
 const {
   invalid, phoneKey, registrableDomain, FREE_EMAIL_DOMAINS, isEmail, nameKey,
 } = require('./salesCommon');
@@ -99,9 +99,20 @@ async function opportunitiesFor(agencyId, organizationIds) {
   if (!organizationIds.length) return [];
   return Opportunity.findAll({
     where: { agencyOrganizationId: agencyId, organizationId: organizationIds, deletedAt: null },
-    include: [{ model: User, as: 'assignedTo', attributes: ['id', 'name'] }],
+    include: [{ model: User, as: 'assignedTo', attributes: ['id', 'name'] }, { model: User, as: 'researcher', attributes: ['id', 'name'] }],
     order: [['createdAt', 'DESC']],
   });
+}
+
+/** Who is already working a business, so two people never research or contact it without knowing (ADR 0016). */
+function workState(opp) {
+  if (!opp) return {};
+  const researching = IN_QUALIFICATION.includes(opp.qualificationStatus);
+  return {
+    qualificationStatus: opp.qualificationStatus || null,
+    qualificationLabel: opp.qualificationStatus ? QUALIFICATION_LABELS[opp.qualificationStatus] : null,
+    researcher: researching && opp.researcher ? { id: opp.researcher.id, name: opp.researcher.name } : null,
+  };
 }
 
 async function findPossibleDuplicates(agencyId, facts) {
@@ -130,6 +141,7 @@ async function findPossibleDuplicates(agencyId, facts) {
       stage: opp?.stage || null,
       stageLabel: opp ? STAGE_LABELS[opp.stage] : null,
       assignedTo: opp?.assignedTo || null,
+      ...workState(opp),
     };
   });
 }
@@ -223,12 +235,23 @@ async function createNewLead(ctx, input, leadData, email) {
     }
   }
 
+  // A qualifier's business becomes a lead only through a completed (or
+  // deliberately parked) qualification (ADR 0016); salespeople keep adding
+  // leads straight to sales.
+  const qualifying = input.qualify === true && ctx.can('qualification.work');
+  if (!qualifying && !ctx.can('outreach.send') && !ctx.can('leads.read')) {
+    throw invalid('Qualify the business first — it’s added to Leadzaro when the qualification is complete.', 403);
+  }
   const { opportunity, organization } = await opportunityService.createFromLead({
     agencyOrganizationId: ctx.agencyId,
     leadData,
-    assignedToUserId: input.assignToMe === false ? null : ctx.userId,
+    assignedToUserId: input.assignToMe === false || qualifying ? null : ctx.userId,
     actorUserId: ctx.userId,
   });
+  if (qualifying) {
+    // eslint-disable-next-line global-require
+    await require('./qualificationService').startDraft(ctx, opportunity, leadData);
+  }
 
   const orgUpdates = {};
   if (email) {
@@ -270,19 +293,27 @@ async function createNewLead(ctx, input, leadData, email) {
     // eslint-disable-next-line no-console
     console.error(`[sales] email discovery could not start: ${err.name}`);
   }
-  return { opportunityId: opportunity.id, created: true, discovery };
+  return {
+    opportunityId: opportunity.id, created: true, discovery, qualificationStatus: qualifying ? 'draft' : null,
+  };
 }
 
 /**
  * Pipeline status for search results: already a lead (and whose), an
  * existing client, or a possible match on phone/website.
  */
-async function annotateSearchResults(agencyId, items) {
+async function annotateSearchResults(agencyId, items, userId = null) {
   const placeIds = items.map((i) => i.googlePlaceId || i.id).filter(Boolean);
+  // eslint-disable-next-line global-require
+  const claims = await require('./qualificationService').activeClaims(agencyId, placeIds);
   const leads = placeIds.length ? await Lead.findAll({ where: { googlePlaceId: placeIds }, attributes: ['id', 'googlePlaceId'] }) : [];
   const opportunities = leads.length ? await Opportunity.findAll({
     where: { agencyOrganizationId: agencyId, sourceLeadId: leads.map((l) => l.id), deletedAt: null },
-    include: [{ model: User, as: 'assignedTo', attributes: ['id', 'name'] }, { model: Organization, as: 'organization', attributes: ['id', 'type', 'email', 'website', 'facebookUrl', 'emailDiscovery', 'detailsSource'] }],
+    include: [
+      { model: User, as: 'assignedTo', attributes: ['id', 'name'] },
+      { model: User, as: 'researcher', attributes: ['id', 'name'] },
+      { model: Organization, as: 'organization', attributes: ['id', 'type', 'email', 'website', 'facebookUrl', 'emailDiscovery', 'detailsSource'] },
+    ],
     order: [['archivedAt', 'DESC NULLS FIRST'], ['createdAt', 'DESC']],
   }) : [];
   const businesses = await agencyBusinesses(agencyId);
@@ -303,6 +334,7 @@ async function annotateSearchResults(agencyId, items) {
         doNotContact: opp.doNotContact,
         archived: Boolean(opp.archivedAt),
         contact: opp.organization ? contactDiscovery.present(opp.organization) : null,
+        ...workState(opp),
       };
     }
     let possibleMatch = null;
@@ -311,8 +343,11 @@ async function annotateSearchResults(agencyId, items) {
       const match = businesses.find((b) => matchReasons(b, facts).length);
       if (match) possibleMatch = { organizationId: match.id, name: match.name, isClient: match.type === 'client', reasons: matchReasons(match, facts) };
     }
+    const claim = claims.find((cl) => cl.googlePlaceId === (item.googlePlaceId || item.id));
     return {
       ...item,
+      // Someone has the qualification open (nothing saved yet) — ADR 0016.
+      researching: !pipeline && claim ? { name: claim.user?.name || 'A teammate', mine: claim.userId === userId, since: claim.updatedAt } : null,
       isSaved: Boolean(pipeline && !pipeline.archived),
       pipeline,
       possibleMatch,

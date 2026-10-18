@@ -4,7 +4,9 @@ const { Op } = require('sequelize');
 const {
   Opportunity, Organization, User, PaymentLinkRequest, SalesHandoff, OutreachActivity, SalesPayment, SalesGoal,
 } = require('../../models');
-const { STAGE_LABELS, OUTCOMES, stallInfo } = require('../../core/crm/pipelineCatalog');
+const {
+  STAGE_LABELS, OUTCOMES, stallInfo, inSalesWhere,
+} = require('../../core/crm/pipelineCatalog');
 const { invalid } = require('./salesCommon');
 const { effectiveOffset } = require('../../core/workspace/timezone');
 
@@ -77,6 +79,8 @@ async function openOpportunities(ctx, scope, userId, extraWhere) {
   return Opportunity.findAll({
     where: {
       agencyOrganizationId: ctx.agencyId, deletedAt: null, archivedAt: null, doNotContact: false, stage: OPEN_STAGES, ...ownerWhere(ctx, scope, userId), ...extraWhere,
+      // Leads still being qualified aren't sales work yet (ADR 0016).
+      [Op.and]: [inSalesWhere()],
     },
     include: OPP_INCLUDE,
     order: [['nextActionAt', 'ASC NULLS LAST'], ['updatedAt', 'DESC']],
@@ -170,7 +174,7 @@ async function getToday(ctx, { scope = 'mine', userId, tzOffset } = {}) {
 
   const unclaimed = await Opportunity.count({
     where: {
-      agencyOrganizationId: ctx.agencyId, deletedAt: null, archivedAt: null, assignedToUserId: null, stage: 'new', doNotContact: false,
+      agencyOrganizationId: ctx.agencyId, deletedAt: null, archivedAt: null, assignedToUserId: null, stage: 'new', doNotContact: false, [Op.and]: [inSalesWhere()],
     },
   });
 

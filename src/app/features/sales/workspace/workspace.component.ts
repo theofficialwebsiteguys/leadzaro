@@ -1,5 +1,5 @@
 import { PhoneInputDirective, PhonePipe, ZipInputDirective } from '../../../shared/forms/formatted-inputs';
-import { Component, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
@@ -21,6 +21,7 @@ import { ComposerComponent } from './composer.component';
 import { ContactResearchComponent } from './contact-research.component';
 import { OffersComponent } from './offers.component';
 import { HandoffComponent } from './handoff.component';
+import { WorkflowService } from '../../../core/services/workflow.service';
 import {
   MoneyPipe, RelativeDayPipe, isOverdue, nextActionLabel, sourceLabel, suggestDate, toLocalInput,
 } from '../shared/sales-format';
@@ -49,7 +50,7 @@ interface TimelineEntry { at: string; activity?: Activity; note?: LeadNote }
   templateUrl: './workspace.component.html',
   styleUrl: './workspace.component.scss',
 })
-export class WorkspaceComponent implements OnInit {
+export class WorkspaceComponent implements OnInit, OnDestroy {
   private readonly sales = inject(SalesService);
   private readonly crm = inject(CrmService);
   private readonly settings = inject(SettingsService);
@@ -57,6 +58,7 @@ export class WorkspaceComponent implements OnInit {
   private readonly router = inject(Router);
   readonly queue = inject(WorkQueueService);
   readonly auth = inject(AuthService);
+  private readonly workflow = inject(WorkflowService);
 
   readonly stages = SALES_STAGES;
   readonly stageLabels = STAGE_LABELS;
@@ -87,7 +89,9 @@ export class WorkspaceComponent implements OnInit {
 
   // Dialogs
   readonly outcomeDialog = signal<{ channel: string; activityId: string | null } | null>(null);
-  readonly composerDialog = signal<{ channel: 'email' | 'sms'; category: string | null; intro?: boolean } | null>(null);
+  readonly composerDialog = signal<{
+    channel: 'email' | 'sms'; category: string | null; intro?: boolean; preset?: { subject: string; body: string }; pricing?: Record<string, unknown>;
+  } | null>(null);
   readonly stageDialog = signal(false);
   readonly dncDialog = signal(false);
   readonly dealDialog = signal(false);
@@ -132,7 +136,7 @@ export class WorkspaceComponent implements OnInit {
   readonly enrichment = signal<Enrichment | null>(null);
   readonly researchBusy = signal<string | null>(null);
 
-  private id = '';
+  id = '';
 
   readonly timeline = computed<TimelineEntry[]>(() => {
     const w = this.ws();
@@ -223,6 +227,15 @@ export class WorkspaceComponent implements OnInit {
     this.settings.ensureMe();
   }
 
+  ngOnDestroy(): void {
+    this.workflow.focusLead.set(null);
+  }
+
+  /** Opens the pricing email in the composer to review; recorded as pricing sent only once it's sent. */
+  composePricing(event: { subject: string; body: string; pricing: Record<string, unknown> }): void {
+    this.composerDialog.set({ channel: 'email', category: null, preset: { subject: event.subject, body: event.body }, pricing: event.pricing });
+  }
+
   @HostListener('document:click')
   closeMenu(): void {
     this.menuOpen.set(false);
@@ -236,7 +249,12 @@ export class WorkspaceComponent implements OnInit {
   load(): void {
     this.loading.set(true);
     this.sales.workspace(this.id).subscribe({
-      next: (w) => { this.ws.set(w); this.loading.set(false); this.error.set(''); },
+      next: (w) => {
+        this.ws.set(w);
+        this.loading.set(false);
+        this.error.set('');
+        this.workflow.focusLead.set({ id: w.opportunity.id, name: w.business.name });
+      },
       error: (err) => {
         if (err.status === 404) {
           // Older links pointed at a saved-lead id.
@@ -328,6 +346,8 @@ export class WorkspaceComponent implements OnInit {
       case 'schedule': this.openNext(); return;
       case 'edit_business': this.setTab('details'); this.startEditBusiness(); return;
       case 'find_email': this.showResearch(); return;
+      case 'qualify': this.router.navigate(['/app/qualify', w.opportunity.id]); return;
+      case 'submit_closing': this.router.navigate(['/app/work', w.opportunity.id]); return;
       case 'intro_email': if (this.email()) this.composeIntro(); else this.showResearch(); return;
       default: break;
     }
@@ -371,7 +391,15 @@ export class WorkspaceComponent implements OnInit {
   }
 
   composerSent(workspace: Workspace | null): void {
+    const pricing = this.composerDialog()?.pricing;
     this.composerDialog.set(null);
+    if (pricing && workspace) {
+      this.workflow.saveProposal(workspace.opportunity.id, pricing).subscribe({
+        next: (w) => { this.ws.set(w); this.notice.set('Pricing emailed and recorded.'); },
+        error: (err) => this.error.set(err.error?.message || 'The email was sent, but recording the pricing failed — mark it sent on the Pricing step.'),
+      });
+      return;
+    }
     if (workspace) this.ws.set(workspace);
     else this.load();
     this.notice.set('Message recorded.');
@@ -384,7 +412,7 @@ export class WorkspaceComponent implements OnInit {
     else {
       this.queue.stop();
       this.notice.set('Queue finished — nice work.');
-      this.router.navigate(['/app/today']);
+      this.router.navigate(['/app/my-work']);
     }
   }
 

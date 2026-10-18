@@ -13,10 +13,10 @@ const KIND_ICONS: Record<string, string> = {
   payment: 'card', handoff: 'handoff', reply: 'message', follow_up: 'clock', client_info: 'users', client_account: 'users', domain: 'globe', integration: 'alert',
 };
 const KIND_LINKS: Record<string, { label: string; path: string; query?: Record<string, string> }> = {
-  reply: { label: 'Today', path: '/app/today' },
-  follow_up: { label: 'Today', path: '/app/today' },
-  payment: { label: 'Today', path: '/app/today' },
-  handoff: { label: 'Today', path: '/app/today' },
+  reply: { label: 'My Work', path: '/app/my-work' },
+  follow_up: { label: 'My Work', path: '/app/my-work' },
+  payment: { label: 'My Work', path: '/app/my-work' },
+  handoff: { label: 'My Work', path: '/app/my-work' },
   client_info: { label: 'Clients', path: '/app/clients' },
   client_account: { label: 'Clients needing attention', path: '/app/clients', query: { view: 'attention' } },
   domain: { label: 'Domains', path: '/app/domains' },
@@ -73,7 +73,7 @@ export class DashboardComponent implements OnInit {
   readonly canSales = computed(() => this.org.hasPermission('leads.read'));
   readonly quickActions = computed(() => {
     const actions: { label: string; icon: string; path: string; primary?: boolean }[] = [];
-    if (this.canSales()) actions.push({ label: 'Open Today', icon: 'sun', path: '/app/today', primary: true });
+    if (this.canSales()) actions.push({ label: 'Open My Work', icon: 'sun', path: '/app/my-work', primary: true });
     if (this.org.hasPermission('leads.search')) actions.push({ label: 'Find leads', icon: 'search', path: '/app/search' });
     if (!this.canSales() && this.org.hasPermission('projects.view')) actions.push({ label: 'Clients', icon: 'folder', path: '/app/clients', primary: true });
     if (this.org.hasPermission('sales.view_team')) actions.push({ label: 'Reports', icon: 'chart-bar', path: '/app/sales/reports' });

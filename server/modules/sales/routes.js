@@ -23,6 +23,12 @@ const handoff = require('./handoffService');
 const reports = require('./reportService');
 const contactDiscovery = require('./contactDiscoveryService');
 const introEmail = require('./introEmailService');
+const qualification = require('./qualificationService');
+const closing = require('./closingService');
+const onboarding = require('./onboardingService');
+const workSessions = require('./workSessionService');
+const teamWork = require('./teamWorkService');
+const myWork = require('./myWorkService');
 const { discoveryLimiter } = require('../../middleware/rateLimiter');
 
 /**
@@ -94,7 +100,7 @@ router.get('/team', read, handle(async (ctx) => {
 router.get('/leads', read, handle((ctx, req) => leadList.listLeads(ctx, req.query)));
 router.get('/leads/stage-counts', read, handle((ctx, req) => reports.stageCounts(ctx, { mine: req.query.owner === 'me' })));
 router.post('/leads', requirePermission('leads.save'), handle((ctx, req) => intake.createLead(ctx, req.body || {})));
-router.get('/leads/contact-status', read, handle((ctx, req) => contactDiscovery.statusForLeads(ctx, req.query.ids)));
+router.get('/leads/contact-status', requireAnyPermission(['leads.read', 'qualification.work']), handle((ctx, req) => contactDiscovery.statusForLeads(ctx, req.query.ids)));
 router.get('/leads/resolve-saved/:savedLeadId', read, handle((ctx, req) => intake.resolveSavedLead(ctx, req.params.savedLeadId)));
 router.get('/leads/:id', read, handle((ctx, req) => workspace.getWorkspace(ctx, req.params.id)));
 router.patch('/leads/:id/business', update, handle((ctx, req) => workspace.updateBusiness(ctx, req.params.id, req.body || {})));
@@ -109,7 +115,7 @@ router.put('/leads/:id/do-not-contact', update, handle((ctx, req) => workspace.s
 router.post('/leads/:id/outcomes', requirePermission('outreach.create'), handle((ctx, req) => workspace.logOutcome(ctx, req.params.id, req.body || {})));
 router.post('/leads/:id/replies', requirePermission('outreach.create'), handle((ctx, req) => workspace.logReply(ctx, req.params.id, req.body || {})));
 router.post('/leads/:id/reply-handled', requirePermission('outreach.create'), handle((ctx, req) => workspace.markReplyHandled(ctx, req.params.id)));
-router.post('/leads/:id/assign', requirePermission('leads.save'), handle((ctx, req) => workspace.assign(ctx, req.params.id, req.body?.userId)));
+router.post('/leads/:id/assign', requirePermission('leads.save'), read, handle((ctx, req) => workspace.assign(ctx, req.params.id, req.body?.userId)));
 router.post('/leads/:id/archive', requireAnyPermission(['leads.archive', 'crm.manage_pipeline']), handle(async (ctx, req) => {
   await opportunityService.archive(req.params.id, ctx.agencyId);
   return workspace.getWorkspace(ctx, req.params.id);
@@ -118,7 +124,7 @@ router.post('/leads/:id/restore', requireAnyPermission(['leads.archive', 'crm.ma
   await opportunityService.restore(req.params.id, ctx.agencyId);
   return workspace.getWorkspace(ctx, req.params.id);
 }));
-router.post('/leads/:id/opportunities', requirePermission('leads.save'), handle((ctx, req) => workspace.createAdditionalOpportunity(ctx, req.params.id, req.body || {})));
+router.post('/leads/:id/opportunities', requirePermission('leads.save'), read, handle((ctx, req) => workspace.createAdditionalOpportunity(ctx, req.params.id, req.body || {})));
 
 // ---- Contact research and the introduction email (ADR 0014)
 router.post('/leads/:id/discover-email', discoveryLimiter, update, handle((ctx, req) => contactDiscovery.requestForLead(ctx, req.params.id, { force: Boolean(req.body?.force) })));
@@ -180,5 +186,68 @@ router.post('/templates/preview', requirePermission('outreach.read'), handle((ct
 
 // ---- Reports
 router.get('/reports', read, handle((ctx, req) => reports.getReport(ctx, req.query)));
+
+// ---- Guided workflow (ADR 0016)
+// My Work: every employee; the service builds only the sections their permissions allow.
+router.get('/my-work', handle((ctx, req) => myWork.getMyWork(ctx, req.query)));
+
+// Qualification. Qualifiers reach only their own research (checked in the service).
+const qualifyRead = requireAnyPermission(['qualification.work', 'leads.read']);
+const qualifyWrite = requireAnyPermission(['qualification.work', 'leads.assign']);
+// Qualifying a search result: nothing is saved until it's complete (or deliberately parked).
+const qualify = requirePermission('qualification.work');
+router.get('/qualification-setup', qualify, handle((ctx) => qualification.setup(ctx)));
+router.post('/qualification', qualify, requirePermission('leads.save'), handle((ctx, req) => qualification.createQualified(ctx, req.body || {})));
+router.post('/qualification/claim', qualify, handle((ctx, req) => qualification.claim(ctx, req.body || {})));
+router.delete('/qualification/claim/:placeId', qualify, handle((ctx, req) => qualification.release(ctx, req.params.placeId)));
+router.get('/qualification/:id', qualifyRead, handle((ctx, req) => qualification.getQualification(ctx, req.params.id)));
+router.put('/qualification/:id', qualifyWrite, handle((ctx, req) => qualification.saveResearch(ctx, req.params.id, req.body || {})));
+router.put('/qualification/:id/status', qualifyWrite, handle((ctx, req) => qualification.setStatus(ctx, req.params.id, req.body || {})));
+router.post('/qualification/:id/complete', qualifyWrite, handle((ctx, req) => qualification.complete(ctx, req.params.id, req.body || {})));
+router.post('/qualification/:id/discover-email', discoveryLimiter, qualifyWrite, handle(async (ctx, req) => {
+  await qualification.getQualification(ctx, req.params.id);
+  await contactDiscovery.requestForLead(ctx, req.params.id, { force: Boolean(req.body?.force) });
+  return qualification.getQualification(ctx, req.params.id);
+}));
+router.post('/leads/:id/return-to-qualifier', requirePermission('outreach.create'), handle((ctx, req) => qualification.returnForCorrection(ctx, req.params.id, req.body || {})));
+
+// Deal steps: interest, meeting, pricing.
+router.put('/leads/:id/interest', update, handle((ctx, req) => workspace.setInterest(ctx, req.params.id, req.body || {})));
+router.put('/leads/:id/meeting', requirePermission('outreach.create'), handle((ctx, req) => workspace.saveMeeting(ctx, req.params.id, req.body || {})));
+router.put('/leads/:id/proposal', update, handle((ctx, req) => workspace.saveProposal(ctx, req.params.id, req.body || {})));
+
+// Closing approval: sales submits, an approver converts.
+const approver = requirePermission('sales.approve_close');
+router.post('/leads/:id/closing/submit', requirePermission('outreach.create'), handle(async (ctx, req) => {
+  await closing.submit(ctx, req.params.id, req.body || {});
+  return workspace.getWorkspace(ctx, req.params.id);
+}));
+router.get('/closings', approver, handle((ctx) => closing.pending(ctx)));
+router.post('/leads/:id/closing/approve', approver, handle((ctx, req) => closing.approve(ctx, req.params.id, req.body || {})));
+router.post('/leads/:id/closing/return', approver, handle((ctx, req) => closing.returnToSales(ctx, req.params.id, req.body || {})));
+
+// Client onboarding: the assigned client manager (or an admin).
+const onboard = requirePermission('clients.onboard');
+router.get('/onboarding/:id', onboard, handle((ctx, req) => onboarding.getOnboarding(ctx, req.params.id)));
+router.put('/onboarding/:id', onboard, handle((ctx, req) => onboarding.save(ctx, req.params.id, req.body || {})));
+router.post('/onboarding/:id/complete', onboard, handle((ctx, req) => onboarding.save(ctx, req.params.id, req.body || {}, { complete: true })));
+
+// Work time: each person's own timer; reviewers see everyone's.
+router.get('/time/current', handle((ctx) => workSessions.current(ctx)));
+router.post('/time/start', handle((ctx, req) => workSessions.start(ctx, req.body || {})));
+router.post('/time/pause', handle((ctx) => workSessions.pause(ctx)));
+router.post('/time/resume', handle((ctx) => workSessions.resume(ctx)));
+router.post('/time/stop', handle((ctx, req) => workSessions.stop(ctx, req.body || {})));
+router.post('/time/manual', handle((ctx, req) => workSessions.addManual(ctx, req.body || {})));
+router.get('/time', handle((ctx, req) => workSessions.list(ctx, req.query)));
+router.patch('/time/:sessionId', handle((ctx, req) => workSessions.correct(ctx, req.params.sessionId, req.body || {})));
+router.post('/time/:sessionId/review', requirePermission('team.review_work'), handle((ctx, req) => workSessions.review(ctx, req.params.sessionId, req.body || {})));
+
+// Team work and compensation review.
+const reviewer = requirePermission('team.review_work');
+router.get('/team-work', reviewer, handle((ctx, req) => teamWork.report(ctx, req.query)));
+router.get('/team-work/credits', reviewer, handle((ctx, req) => teamWork.listCredits(ctx, req.query)));
+router.post('/team-work/credits/review', reviewer, handle((ctx, req) => teamWork.reviewCredits(ctx, req.body || {})));
+router.get('/team-work/records', reviewer, handle((ctx, req) => teamWork.records(ctx, req.query)));
 
 module.exports = router;

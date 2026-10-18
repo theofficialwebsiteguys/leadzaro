@@ -176,6 +176,8 @@ export class ComposerComponent implements OnInit {
   readonly category = input<string | null>(null);
   /** Introduction mode (ADR 0014): drafted from facts on file, with the evidence shown. */
   readonly intro = input(false);
+  /** A message prepared elsewhere (e.g. the pricing step) to review and send. */
+  readonly preset = input<{ subject: string; body: string } | null>(null);
   readonly sent = output<Workspace | null>();
   readonly closed = output<void>();
 
@@ -271,16 +273,21 @@ export class ComposerComponent implements OnInit {
       }
       return;
     }
+    const preset = this.preset();
+    if (preset) {
+      this.subject = preset.subject;
+      this.body = preset.body;
+    }
     this.sales.templates({ channel: this.channel() }).subscribe({
       next: (list) => {
         this.templates.set(list);
-        if (!this.restoreDraft()) {
+        if (!preset && !this.restoreDraft()) {
           const match = this.category() ? list.find((t) => t.category === this.category()) : null;
           if (match) this.applyTemplate(match.id);
           else this.startWithSignature();
         }
       },
-      error: () => this.restoreDraft(),
+      error: () => { if (!preset) this.restoreDraft(); },
     });
   }
 

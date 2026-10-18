@@ -11,7 +11,8 @@ requireUuidParams(router, ['domainId', 'planId', 'clientId', 'expenseId']);
 // Registrar data, costs and access details are agency-internal (ADR 0009).
 router.use(authenticate, resolveContext(), requireEmployeeMembership());
 
-const view = requirePermission('projects.view');
+// The Domains area (renewals, registrar, hosting) is for people who look after domains — not sales or qualifiers (ADR 0016).
+const view = requirePermission('domains.view');
 const manage = requirePermission('projects.manage');
 
 // The read-only Domains list and domain pages (ADR 0010).

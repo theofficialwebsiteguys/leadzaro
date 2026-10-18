@@ -18,6 +18,6 @@ export const noAuthGuard: CanActivateFn = () => {
 
   if (!auth.isAuthenticated()) return true;
 
-  router.navigate(['/app/dashboard']);
+  router.navigate(['/app/my-work']);
   return false;
 };

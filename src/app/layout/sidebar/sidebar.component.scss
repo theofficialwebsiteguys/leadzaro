@@ -252,3 +252,16 @@
     color: #FECACA;
   }
 }
+
+// "Working as" (ADR 0016)
+.mode-switch {
+  margin: 4px 12px 10px;
+  .mode-label { display: block; font-size: .65rem; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin: 0 0 6px 2px; font-weight: 600; }
+  .mode-options { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  button {
+    background: rgba(255, 255, 255, .04); border: 1px solid rgba(255, 255, 255, .08); color: #cbd5e1;
+    border-radius: 8px; padding: 6px 4px; font-size: .75rem; cursor: pointer;
+    &:hover { background: rgba(255, 255, 255, .08); }
+    &.active { background: #6366f1; border-color: #6366f1; color: #fff; font-weight: 600; }
+  }
+}

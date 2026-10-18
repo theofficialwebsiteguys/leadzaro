@@ -144,7 +144,8 @@ export class LeadsComponent implements OnInit {
   }
 
   open(row: LeadRow): void {
-    this.router.navigate(['/app/leads', row.opportunityId]);
+    // Rows open the step-by-step view; the full record is one click from there (ADR 0016).
+    this.router.navigate(['/app/work', row.opportunityId]);
   }
 
   toggleMenu(event: Event, id: string): void {

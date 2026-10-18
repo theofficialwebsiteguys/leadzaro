@@ -4,7 +4,7 @@ const { Op, QueryTypes } = require('sequelize');
 const {
   sequelize, Opportunity, Organization, User, PaymentLinkRequest, SalesHandoff, SalesPayment, OutreachActivity, ConversionAttempt, OrganizationMembership,
 } = require('../../models');
-const { STAGE_LABELS } = require('../../core/crm/pipelineCatalog');
+const { STAGE_LABELS, inSalesWhere } = require('../../core/crm/pipelineCatalog');
 const { effectiveOffset, startOfLocalDate } = require('../../core/workspace/timezone');
 const { dayBounds } = require('../sales/todayService');
 const stripeService = require('../sales/stripeService');
@@ -112,7 +112,7 @@ async function metrics(ctx, {
     });
   } else if (canSales) {
     const [open] = await q(`SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE stage = 'awaiting_payment')::int AS awaiting FROM "Opportunities"
-      WHERE "agencyOrganizationId" = :agencyId AND "deletedAt" IS NULL AND "archivedAt" IS NULL AND "doNotContact" = false AND "isTest" = false
+      WHERE "agencyOrganizationId" = :agencyId AND "deletedAt" IS NULL AND "archivedAt" IS NULL AND "doNotContact" = false AND ("qualificationStatus" IS NULL OR "qualificationStatus" = 'assigned') AND "isTest" = false
       AND stage IN (:open) AND "assignedToUserId" = :userId`, { ...r, open: OPEN_STAGES });
     out.push({
       key: 'open_deals', label: 'My open deals', timeframe: 'now', format: 'count', value: open.n, state: 'ok', note: `${open.awaiting} awaiting payment. Deal value is a forecast and isn’t counted as revenue.`, link: { path: '/app/leads', query: { owner: 'me' } },
@@ -141,7 +141,7 @@ async function metrics(ctx, {
   } else if (canSales) {
     const { start, end } = dayBounds(ctx.offset);
     const [due] = await q(`SELECT COUNT(*) FILTER (WHERE "nextActionAt" < :end)::int AS due, COUNT(*) FILTER (WHERE "replyNeededSince" IS NOT NULL)::int AS replies
-      FROM "Opportunities" WHERE "agencyOrganizationId" = :agencyId AND "deletedAt" IS NULL AND "archivedAt" IS NULL AND "doNotContact" = false
+      FROM "Opportunities" WHERE "agencyOrganizationId" = :agencyId AND "deletedAt" IS NULL AND "archivedAt" IS NULL AND "doNotContact" = false AND ("qualificationStatus" IS NULL OR "qualificationStatus" = 'assigned')
       AND stage IN (:open) AND "assignedToUserId" = :userId`, {
       ...r, open: OPEN_STAGES, end, start,
     });
@@ -168,7 +168,7 @@ async function attention(ctx, {
     { model: User, as: 'assignedTo', attributes: ['id', 'name'] },
   ];
   const baseOpp = {
-    agencyOrganizationId: ctx.agencyId, deletedAt: null, archivedAt: null, isTest: false, ...ownerWhere(ctx, team),
+    agencyOrganizationId: ctx.agencyId, deletedAt: null, archivedAt: null, isTest: false, ...ownerWhere(ctx, team), [Op.and]: [inSalesWhere()],
   };
 
   if (ctx.can('leads.read')) {
