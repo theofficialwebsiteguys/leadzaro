@@ -173,6 +173,7 @@ export interface Business {
   listingSource: string | null;
   facebookUrl: string | null;
   contactResearch: ContactResearch;
+  socialLinks?: { platform: string; url: string }[];
 }
 
 export interface Activity {

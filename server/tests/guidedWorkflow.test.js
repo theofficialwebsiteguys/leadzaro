@@ -113,6 +113,48 @@ describe('Guided workflow (ADR 0016)', () => {
     expect(other.body.data.claimedBy.id).toBe(qualifier.user.id);
   });
 
+  test('qualifying a business already in Leads merges into it instead of duplicating', async () => {
+    const { qualifier, sales } = people;
+    // Sales added it directly, before anyone qualified it.
+    const existing = await sales.call('post', '/sales/leads', { leadData: { name: 'Merge Test Pizzeria', city: 'Tarrytown', phone: '(914) 555-0142' }, confirmNew: true });
+    expect(existing.status).toBe(200);
+    const existingId = existing.body.data.opportunityId;
+
+    const body = qualifyBody('Merge Test Pizzeria', {
+      assigneeUserId: people.sales2.user.id,
+      socials: [{ platform: 'instagram', url: 'https://www.instagram.com/mergetestpizza' }],
+      contacts: {
+        email: { status: 'found', values: [{ value: 'hello@mergetest.example' }, { value: 'orders@mergetest.example' }] },
+        phone: { status: 'found', values: [{ value: '(914) 555-0142' }, { value: '(914) 555-0199', label: 'Mobile' }] },
+        owner: { status: 'found', people: [{ name: 'Rosa Bianchi', title: 'Owner' }, { name: 'Luca Bianchi', title: 'Manager' }] },
+      },
+    });
+    const dup = await qualifier.call('post', '/sales/qualification', { ...body, confirmNew: false });
+    expect(dup.status).toBe(409);
+    expect(dup.body.possibleDuplicates.map((d) => d.opportunityId)).toContain(existingId);
+
+    const merged = await qualifier.call('post', '/sales/qualification', { ...body, confirmNew: false, mergeIntoOpportunityId: existingId });
+    expect(merged.status).toBe(200);
+    expect(merged.body.data.qualification.opportunityId).toBe(existingId);
+    const opp = await Opportunity.findByPk(existingId);
+    expect(opp.qualificationStatus).toBe('assigned');
+    expect(opp.assignedToUserId).toBe(sales.user.id); // stays with its salesperson
+    expect(opp.qualifiedByUserId).toBe(qualifier.user.id);
+    expect(await WorkCredit.count({ where: { opportunityId: existingId } })).toBe(1);
+    const org = await Organization.findByPk(opp.organizationId);
+    expect(org.email).toBe('hello@mergetest.example');
+    expect(org.socialLinks).toEqual([{ platform: 'instagram', url: 'https://www.instagram.com/mergetestpizza' }]);
+    const contacts = await sequelize.models.Contact.findAll({ where: { organizationId: org.id } });
+    expect(contacts.map((c) => c.email).filter(Boolean)).toContain('orders@mergetest.example');
+    expect(contacts.map((c) => c.phone).filter(Boolean)).toContain('(914) 555-0199');
+    expect(contacts.map((c) => c.name)).toEqual(expect.arrayContaining(['Rosa Bianchi', 'Luca Bianchi']));
+    expect(await Opportunity.count({ where: { organizationId: opp.organizationId } })).toBe(1);
+
+    // Already qualified: no second merge.
+    const again = await qualifier.call('post', '/sales/qualification', { ...body, mergeIntoOpportunityId: existingId });
+    expect(again.status).toBe(409);
+  });
+
   test('without a usable email or phone the lead cannot go to sales, but can be parked', async () => {
     const res = await people.qualifier.call('post', '/sales/qualification', qualifyBody('No Contact Diner', { ...research({ phone: null }), assigneeUserId: people.sales.user.id }));
     expect(res.status).toBe(422);
@@ -140,7 +182,7 @@ describe('Guided workflow (ADR 0016)', () => {
     expect(opp.qualifiedByUserId).toBe(qualifier.user.id);
     expect(opp.outreachEvidence).toMatch(/Website: not found/);
     expect(await WorkCredit.count({ where: { opportunityId: leadId } })).toBe(1);
-    expect(await Notification.count({ where: { userId: sales.user.id, type: 'lead_assignment' } })).toBe(1);
+    expect(await Notification.count({ where: { userId: sales.user.id, type: 'lead_assignment', data: { opportunityId: leadId } } })).toBe(1);
 
     const myWork = await sales.call('get', '/sales/my-work');
     expect(myWork.body.data.sales.newlyAssigned.map((l) => l.opportunityId)).toContain(leadId);

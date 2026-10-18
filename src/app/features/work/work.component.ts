@@ -314,6 +314,7 @@ function dates(days: number[]): { label: string; value: string }[] {
               <div class="snap-links">
                 @if (w.business.googleMapsUrl) { <a [href]="w.business.googleMapsUrl" target="_blank" rel="noopener">Google ↗</a> }
                 @if (w.business.facebookUrl) { <a [href]="w.business.facebookUrl" target="_blank" rel="noopener">Facebook ↗</a> }
+                @for (soc of w.business.socialLinks ?? []; track soc.url) { <a [href]="soc.url" target="_blank" rel="noopener">{{ socialLabel(soc.platform) }} ↗</a> }
                 <a [routerLink]="['/app/leads', w.opportunity.id]">Full record</a>
               </div>
             </section>
@@ -514,6 +515,12 @@ export class WorkComponent implements OnInit, OnDestroy {
     };
     return reasons.length === 1 ? names[reasons[0]] ?? 'Your leads' : reasons.length && reasons.length < 4 ? reasons.map((r) => names[r] ?? r).join(' & ') : 'All your leads';
   });
+
+  socialLabel(platform: string): string {
+    return ({
+      instagram: 'Instagram', linkedin: 'LinkedIn', tiktok: 'TikTok', x: 'X', youtube: 'YouTube', yelp: 'Yelp', nextdoor: 'Nextdoor', pinterest: 'Pinterest',
+    } as Record<string, string>)[platform] ?? 'Profile';
+  }
 
   host(url: string): string {
     try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }

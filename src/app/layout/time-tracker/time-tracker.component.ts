@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { WorkflowService } from '../../core/services/workflow.service';
 import { WORK_TYPE_LABELS } from '../../core/models/workflow.model';
+import { WorkModeService } from '../../core/services/work-mode.service';
 import { IconComponent } from '../../shared/icon/icon.component';
 
 /**
@@ -39,7 +40,7 @@ import { IconComponent } from '../../shared/icon/icon.component';
         @if (workflow.focusLead(); as lead) { <label class="link"><input type="checkbox" [(ngModel)]="linkLead" /> On {{ lead.name }}</label> }
         <div class="row btns"><button (click)="picking.set(false)">Cancel</button><button class="primary" (click)="start()" [disabled]="busy()">Start</button></div>
       } @else {
-        <div class="row"><button class="start" (click)="picking.set(true)"><lz-icon name="play" [size]="12" /> Start work timer</button><a routerLink="/app/time" class="mine">My time</a></div>
+        <div class="row"><button class="start" (click)="openPicker()"><lz-icon name="play" [size]="12" /> Start work timer</button><a routerLink="/app/time" class="mine">My time</a></div>
       }
       @if (error()) { <p class="err">{{ error() }}</p> }
     </div>
@@ -62,6 +63,7 @@ import { IconComponent } from '../../shared/icon/icon.component';
 })
 export class TimeTrackerComponent implements OnInit, OnDestroy {
   readonly workflow = inject(WorkflowService);
+  private readonly workMode = inject(WorkModeService);
   readonly types = WORK_TYPE_LABELS;
   readonly typeList = Object.entries(WORK_TYPE_LABELS).map(([key, label]) => ({ key, label }));
   readonly session = this.workflow.running;
@@ -84,6 +86,15 @@ export class TimeTrackerComponent implements OnInit, OnDestroy {
     const m = Math.floor((seconds % 3600) / 60);
     return `${h}:${String(m).padStart(2, '0')}`;
   });
+
+  /** Starts with the kind of work that matches the role being worked. */
+  openPicker(): void {
+    const byMode: Record<string, string> = {
+      qualifier: 'qualifying', sales: 'outreach', client_manager: 'onboarding', admin: 'admin',
+    };
+    this.workType = byMode[this.workMode.mode() ?? ''] ?? 'other';
+    this.picking.set(true);
+  }
 
   ngOnInit(): void {
     this.workflow.refreshTimer().subscribe({ error: () => undefined });

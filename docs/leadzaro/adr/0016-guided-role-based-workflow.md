@@ -199,3 +199,27 @@ option tiles start a focused session of one group:
 The page shows those tabs as count cards and a sortable list. Clicking a row
 opens the full thread across channels (messages, calls and notes, in time
 order) in a side panel, with "Work this lead".
+
+## Revision: merging, socials, several contacts
+
+- **Merging into an existing lead.** When a qualified business is already in
+  Leadzaro, it can now be merged instead of erroring.
+  - `POST /sales/qualification` accepts `mergeIntoOpportunityId`. The research
+    is added to that lead: links, contacts and reason. Existing values are
+    never cleared.
+  - The lead keeps its salesperson, gets `qualificationStatus = assigned`, and
+    the qualifier gets the usual one credit.
+  - Merging is refused for clients and won deals, lost or do-not-contact leads,
+    leads someone else is researching, leads already qualified, and leads
+    marked not relevant.
+  - A 409 now carries `existing`, so the screen can explain the conflict and
+    offer the merge. Possible duplicates each get "Merge into this one".
+- **Social profiles.** `Organizations.socialLinks` is a JSONB list of
+  `{ platform, url }` (migration `20261018120001-organization-social-links`).
+  It's entered beside Facebook while qualifying, shown on the sales lead card,
+  and carried into onboarding.
+- **Several contacts.** Several emails, phones and people per business. The
+  first email and first phone stay on the business. The rest become contacts,
+  so sales can email or call them.
+- **Timer.** New work type "Qualifying", chosen by default while working as a
+  qualifier.

@@ -45,6 +45,56 @@ const GOOGLE_LISTING_URL = /(google\.[a-z.]+\/maps|maps\.google\.|maps\.app\.goo
 
 const USER_ATTRS = ['id', 'name'];
 
+const SOCIAL_PLATFORMS = {
+  instagram: 'Instagram', linkedin: 'LinkedIn', tiktok: 'TikTok', x: 'X / Twitter', youtube: 'YouTube', yelp: 'Yelp', nextdoor: 'Nextdoor', pinterest: 'Pinterest', other: 'Other',
+};
+
+/**
+ * Several emails, phones and people per business. Accepts the list form
+ * ({ values: [...] } / { people: [...] }) or the older single-value form.
+ */
+function contactLists(contacts = {}) {
+  const text = (v, max) => String(v ?? '').trim().slice(0, max);
+  const emails = (Array.isArray(contacts.email?.values) ? contacts.email.values : (contacts.email?.value ? [{ value: contacts.email.value, sourceUrl: contacts.email.sourceUrl }] : []))
+    .map((e) => ({ value: text(e.value, 255), sourceUrl: e.sourceUrl || null })).filter((e) => e.value);
+  const phones = (Array.isArray(contacts.phone?.values) ? contacts.phone.values : (contacts.phone?.value ? [{ value: contacts.phone.value, sourceUrl: contacts.phone.sourceUrl }] : []))
+    .map((p) => ({ value: text(p.value, 50), label: p.label ? text(p.label, 60) : null, sourceUrl: p.sourceUrl || null })).filter((p) => p.value);
+  const people = (Array.isArray(contacts.owner?.people) ? contacts.owner.people : (contacts.owner?.name ? [{ name: contacts.owner.name, title: contacts.owner.title, sourceUrl: contacts.owner.sourceUrl }] : []))
+    .map((p) => ({ name: text(p.name, 255), title: p.title ? text(p.title, 150) : null, sourceUrl: p.sourceUrl || null })).filter((p) => p.name);
+  return { emails, phones, people };
+}
+
+function cleanSocials(list) {
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  for (const item of list.slice(0, 12)) {
+    const raw = String(item?.url || '').trim();
+    if (!raw) continue;
+    const platform = SOCIAL_PLATFORMS[item.platform] ? item.platform : 'other';
+    const url = cleanUrl(raw, 'social');
+    if (!out.some((s) => s.url === url)) out.push({ platform, url });
+  }
+  return out;
+}
+
+/** Adds extra emails, phones and people as contacts, without duplicating ones already there. */
+async function addExtraContacts(ctx, organization, { emails, phones, people }, transaction) {
+  const existing = await Contact.findAll({ where: { organizationId: organization.id, deletedAt: null }, transaction });
+  const has = (field, value) => existing.some((c) => c[field] && String(c[field]).toLowerCase() === String(value).toLowerCase());
+  const add = async (fields) => {
+    const created = await Contact.create({
+      organizationId: organization.id, agencyOrganizationId: ctx.agencyId, source: 'manual', isPrimary: false, ...fields,
+    }, { transaction });
+    existing.push(created);
+  };
+  for (const e of emails) if (e.value.toLowerCase() !== String(organization.email || '').toLowerCase() && !has('email', e.value)) await add({ name: e.value, email: e.value });
+  for (const p of phones) if (phoneKey(p.value) !== phoneKey(organization.phone) && !existing.some((c) => phoneKey(c.phone) && phoneKey(c.phone) === phoneKey(p.value))) await add({ name: p.label || p.value, phone: p.value });
+  for (const person of people) {
+    assertNoSecrets(person.name, 'Contact name');
+    if (!has('name', person.name)) await add({ name: person.name, title: person.title });
+  }
+}
+
 function isManager(ctx) {
   return ctx.can('leads.assign') || ctx.can('team.review_work');
 }
@@ -150,6 +200,7 @@ async function present(ctx, opportunity) {
     ? await Contact.findOne({ where: { id: savedContacts.owner.contactId, organizationId: organization.id, deletedAt: null } })
     : await Contact.findOne({ where: { organizationId: organization.id, isPrimary: true, archivedAt: null, deletedAt: null } });
   const discovery = contactDiscovery.present(organization);
+  const others = await Contact.findAll({ where: { organizationId: organization.id, archivedAt: null, deletedAt: null }, order: [['isPrimary', 'DESC'], ['createdAt', 'ASC']] });
 
   const q = {
     opportunityId: opportunity.id,
@@ -180,12 +231,14 @@ async function present(ctx, opportunity) {
         value: organization.email || null,
         sourceUrl: organization.email ? (savedContacts.email?.sourceUrl || discovery.emailSourceUrl || null) : null,
         from: organization.email ? (discovery.emailSource || 'manual') : null,
+        values: [organization.email, ...others.map((c) => c.email)].filter((v, i, all) => v && all.indexOf(v) === i).map((value) => ({ value })),
       },
       phone: {
         status: organization.phone ? 'found' : (savedContacts.phone?.status || 'not_checked'),
         value: organization.phone || null,
         sourceUrl: savedContacts.phone?.sourceUrl || null,
         from: savedContacts.phone?.from || null,
+        values: [organization.phone ? { value: organization.phone, label: null } : null, ...others.filter((c) => c.phone).map((c) => ({ value: c.phone, label: c.name !== c.phone ? c.name : null }))].filter(Boolean),
       },
       owner: {
         status: ownerContact ? 'found' : (savedContacts.owner?.status || 'not_checked'),
@@ -193,8 +246,10 @@ async function present(ctx, opportunity) {
         name: ownerContact?.name || null,
         title: ownerContact?.title || null,
         sourceUrl: savedContacts.owner?.sourceUrl || null,
+        people: others.filter((c) => c.name && c.name !== c.email && c.name !== c.phone && !(c.phone && c.name === c.phone)).map((c) => ({ name: c.name, title: c.title })),
       },
     },
+    socials: organization.socialLinks || [],
     emailDiscovery: discovery,
     reason: {
       tags: Array.isArray(research.reasonTags) ? research.reasonTags : [],
@@ -275,6 +330,9 @@ async function saveResearch(ctx, opportunityId, input) {
     }
   }
 
+  const keep = Boolean(input.keepExisting);
+  const socials = cleanSocials(input.socials);
+  if (socials) org.socialLinks = socials;
   for (const key of SOURCE_KEYS) {
     const s = input.sources?.[key];
     if (!s) continue;
@@ -285,19 +343,24 @@ async function saveResearch(ctx, opportunityId, input) {
       status: s.status, url, note: s.note ? String(s.note).trim().slice(0, 300) : null, checkedAt: new Date().toISOString(), checkedBy: ctx.userId,
     };
     if (key === 'website') {
-      if (url) { org.website = url; detailsSource.website = 'manual'; } else if (s.status === 'not_found') { org.website = null; delete detailsSource.website; }
+      if (url) { org.website = url; detailsSource.website = 'manual'; } else if (s.status === 'not_found' && !keep) { org.website = null; delete detailsSource.website; }
     }
     if (key === 'facebook') {
-      if (url) { org.facebookUrl = url; detailsSource.facebook = 'manual'; } else if (s.status === 'not_found') { org.facebookUrl = null; delete detailsSource.facebook; }
+      if (url) { org.facebookUrl = url; detailsSource.facebook = 'manual'; } else if (s.status === 'not_found' && !keep) { org.facebookUrl = null; delete detailsSource.facebook; }
     }
   }
 
   const contacts = input.contacts || {};
+  const lists = contactLists(contacts);
+  const extras = { emails: [], phones: [], people: [] };
   if (contacts.email) {
     const c = contacts.email;
     if (!CONTACT_STATUSES.includes(c.status)) throw invalid('Email: choose what you found.');
     if (c.status === 'found') {
-      const email = String(c.value || '').trim().slice(0, 255);
+      for (const e of lists.emails) if (!isEmail(e.value)) throw invalid(`Email: “${e.value}” doesn’t look valid. Copy it exactly as it appears.`);
+      extras.emails = lists.emails.slice(1);
+      c.sourceUrl = lists.emails[0]?.sourceUrl ?? c.sourceUrl;
+      const email = String(lists.emails[0]?.value || c.value || '').trim().slice(0, 255);
       if (!isEmail(email)) throw invalid('Email: that address doesn’t look valid. Copy it exactly as it appears.');
       const sourceUrl = c.sourceUrl ? cleanUrl(c.sourceUrl, 'email') : null;
       if (email !== organization.email) {
@@ -310,7 +373,7 @@ async function saveResearch(ctx, opportunityId, input) {
       }
       research.contacts.email = { status: 'found', sourceUrl };
     } else {
-      if (c.status === 'not_found' && organization.email) {
+      if (c.status === 'not_found' && organization.email && !keep) {
         org.email = null;
         org.emailDiscovery = contactDiscovery.discoveryAfterManualEmail(organization, null, ctx.userId);
         delete detailsSource.email;
@@ -322,12 +385,14 @@ async function saveResearch(ctx, opportunityId, input) {
     const c = contacts.phone;
     if (!CONTACT_STATUSES.includes(c.status)) throw invalid('Phone: choose what you found.');
     if (c.status === 'found') {
-      const phone = String(c.value || '').trim().slice(0, 50);
+      for (const p of lists.phones) if (!phoneKey(p.value)) throw invalid(`Phone: “${p.value}” isn’t a full number.`);
+      extras.phones = lists.phones.slice(1);
+      const phone = String(lists.phones[0]?.value || c.value || '').trim().slice(0, 50);
       if (!phoneKey(phone)) throw invalid('Phone: enter the full number.');
       if (phone !== organization.phone) { org.phone = phone; detailsSource.phone = 'manual'; }
       research.contacts.phone = { status: 'found', sourceUrl: c.sourceUrl ? cleanUrl(c.sourceUrl, 'phone') : null };
     } else {
-      if (c.status === 'not_found' && organization.phone) { org.phone = null; delete detailsSource.phone; }
+      if (c.status === 'not_found' && organization.phone && !keep) { org.phone = null; delete detailsSource.phone; }
       research.contacts.phone = { status: c.status, sourceUrl: null };
     }
   }
@@ -335,7 +400,9 @@ async function saveResearch(ctx, opportunityId, input) {
     const c = contacts.owner;
     if (!CONTACT_STATUSES.includes(c.status)) throw invalid('Contact name: choose what you found.');
     if (c.status === 'found') {
-      const contactId = await setOwnerContact(ctx, organization, research, c);
+      const [first, ...rest] = lists.people.length ? lists.people : [c];
+      extras.people = rest;
+      const contactId = await setOwnerContact(ctx, organization, research, first);
       research.contacts.owner = { status: 'found', contactId, sourceUrl: c.sourceUrl ? cleanUrl(c.sourceUrl, 'owner') : null };
     } else {
       research.contacts.owner = { status: c.status, contactId: null, sourceUrl: null };
@@ -358,6 +425,7 @@ async function saveResearch(ctx, opportunityId, input) {
   await sequelize.transaction(async (transaction) => {
     if (Object.keys(org).length) await organization.update({ ...org, detailsSource }, { transaction });
     await opportunity.update({ ...opp, research }, { transaction });
+    if (extras.emails.length || extras.phones.length || extras.people.length) await addExtraContacts(ctx, await organization.reload({ transaction }), extras, transaction);
   });
   return getQualification(ctx, opportunityId);
 }
@@ -588,9 +656,17 @@ function checkResearch(input, { parking = false } = {}) {
     if (!CONTACT_STATUSES.includes(c.status)) throw invalid(`${key === 'email' ? 'Email' : 'Phone'}: choose what you found.`);
     if (c.status === 'not_checked') missing.push({ step: 3, key, label: key === 'email' ? 'Check for an email' : 'Check for a phone number' });
   }
-  if (contacts.email?.status === 'found' && !isEmail(String(contacts.email.value || '').trim())) throw invalid('Email: that address doesn’t look valid. Copy it exactly as it appears.');
-  if (contacts.phone?.status === 'found' && !phoneKey(contacts.phone.value)) throw invalid('Phone: enter the full number.');
-  if (contacts.owner?.status === 'found' && !String(contacts.owner.name || '').trim()) throw invalid('Contact name: enter the name you found, or mark it “Not found”.');
+  const lists = contactLists(contacts);
+  if (contacts.email?.status === 'found') {
+    if (!lists.emails.length) throw invalid('Email: enter the address you found, or mark it “Not found”.');
+    for (const e of lists.emails) if (!isEmail(e.value)) throw invalid(`Email: “${e.value}” doesn’t look valid. Copy it exactly as it appears.`);
+  }
+  if (contacts.phone?.status === 'found') {
+    if (!lists.phones.length) throw invalid('Phone: enter the number you found, or mark it “Not found”.');
+    for (const p of lists.phones) if (!phoneKey(p.value)) throw invalid(`Phone: “${p.value}” isn’t a full number.`);
+  }
+  if (contacts.owner?.status === 'found' && !lists.people.length) throw invalid('Contact name: enter the name you found, or mark it “Not found”.');
+  cleanSocials(input.socials);
   const reason = String(input.reason?.text || '').trim();
   if (reason.length > 1000) throw invalid('Keep the reason short — under 1,000 characters.');
   assertNoSecrets(reason, 'Reason to reach out');
@@ -616,16 +692,83 @@ async function createQualified(ctx, input) {
   }
   // eslint-disable-next-line global-require
   const intake = require('./leadIntakeService');
-  const created = await intake.createLead(ctx, { leadData: input.leadData, confirmNew: Boolean(input.confirmNew), qualify: true });
-  const id = created.opportunityId;
+  const merging = Boolean(input.mergeIntoOpportunityId);
+  let id;
+  let assigneeUserId = input.assigneeUserId || null;
+  if (merging) {
+    if (park) throw invalid('It’s already a lead in Leadzaro — leave it with sales rather than marking it here.', 409);
+    const target = await prepareMerge(ctx, input.mergeIntoOpportunityId);
+    id = target.id;
+    // The lead keeps its salesperson; the research is added for them.
+    if (target.ownerId && await memberHas(ctx.agencyId, target.ownerId, 'outreach.send')) assigneeUserId = target.ownerId;
+  } else {
+    try {
+      id = (await intake.createLead(ctx, { leadData: input.leadData, confirmNew: Boolean(input.confirmNew), qualify: true })).opportunityId;
+    } catch (err) {
+      if (err.existingOpportunityId) {
+        const existing = await describeExisting(ctx, err.existingOpportunityId);
+        err.existing = existing;
+        err.message = existing.mergeable
+          ? `${existing.name} is already in Leadzaro (${existing.label}${existing.assignedTo ? ` · ${existing.assignedTo.name}` : ''}). You can add your research to it.`
+          : `${existing.name} is already in Leadzaro — ${existing.reason}`;
+      }
+      throw err;
+    }
+  }
   const contacts = Object.fromEntries(Object.entries(input.contacts || {}).filter(([, c]) => c && c.status && c.status !== 'not_checked'));
   await saveResearch(ctx, id, {
-    sources: input.sources, contacts, reason: input.reason, step: 5,
+    sources: input.sources, contacts, socials: input.socials, reason: input.reason, step: 5, keepExisting: merging,
   });
-  const result = park ? await setStatus(ctx, id, park) : await complete(ctx, id, { assigneeUserId: input.assigneeUserId || null });
+  if (merging && !assigneeUserId) throw invalid('Choose who should work this lead.', 422);
+  const result = park ? await setStatus(ctx, id, park) : await complete(ctx, id, { assigneeUserId });
+  if (merging) {
+    await recordAudit({
+      organizationId: ctx.agencyId, actorUserId: ctx.userId, action: 'qualification.merged', targetType: 'Opportunity', targetId: id, req: ctx.req,
+    });
+  }
   const placeId = input.leadData?.googlePlaceId;
   if (placeId) await ResearchClaim.destroy({ where: { agencyOrganizationId: ctx.agencyId, googlePlaceId: placeId } });
   return result;
+}
+
+/** What a teammate needs to know about a lead that already exists, and whether research can be added to it. */
+async function describeExisting(ctx, opportunityId) {
+  const o = await Opportunity.findOne({
+    where: { id: opportunityId, agencyOrganizationId: ctx.agencyId, deletedAt: null },
+    include: [
+      { model: Organization, as: 'organization', attributes: ['name', 'type'] },
+      { model: User, as: 'assignedTo', attributes: USER_ATTRS },
+      { model: User, as: 'researcher', attributes: USER_ATTRS },
+      { model: User, as: 'qualifiedBy', attributes: USER_ATTRS },
+    ],
+  });
+  if (!o) throw invalid('Lead not found', 404);
+  let reason = null;
+  if (o.organization?.type === 'client' || o.stage === 'won') reason = 'it’s already a client, so there’s nothing to qualify.';
+  else if (o.doNotContact) reason = 'it’s marked do not contact.';
+  else if (o.stage === 'lost') reason = 'it was closed as lost. Reopen it from the lead first.';
+  else if (o.qualificationStatus === 'assigned' && o.qualifiedByUserId) reason = `${o.qualifiedBy?.name || 'someone'} already qualified it.`;
+  else if (IN_QUALIFICATION.includes(o.qualificationStatus) && o.researcherUserId && o.researcherUserId !== ctx.userId) reason = `${o.researcher?.name || 'someone'} is researching it.`;
+  else if (o.qualificationStatus === 'unsuitable') reason = 'it was marked not relevant.';
+  return {
+    opportunityId: o.id,
+    name: o.organization?.name,
+    qualificationStatus: o.qualificationStatus,
+    label: o.qualificationStatus ? QUALIFICATION_LABELS[o.qualificationStatus] : STAGE_LABELS[o.stage],
+    assignedTo: o.assignedTo,
+    researcher: o.researcher,
+    mergeable: !reason,
+    reason,
+  };
+}
+
+/** Readies an existing lead to take a qualifier's research: same lead, same owner, nothing duplicated. */
+async function prepareMerge(ctx, opportunityId) {
+  const existing = await describeExisting(ctx, opportunityId);
+  if (!existing.mergeable) throw invalid(`${existing.name}: ${existing.reason}`, 409, { existing });
+  const opportunity = await Opportunity.findOne({ where: { id: opportunityId, agencyOrganizationId: ctx.agencyId, deletedAt: null } });
+  await opportunity.update({ researcherUserId: opportunity.researcherUserId || ctx.userId, qualificationStatus: 'draft' });
+  return { id: opportunity.id, ownerId: opportunity.assignedToUserId };
 }
 
 /** Marks a listing as being researched by the caller; reports who else has it, if anyone. */
@@ -640,17 +783,7 @@ async function claim(ctx, { googlePlaceId, name, takeOver = false }) {
       },
       include: [{ model: User, as: 'researcher', attributes: USER_ATTRS }, { model: User, as: 'assignedTo', attributes: USER_ATTRS }],
     });
-    if (existing) {
-      return {
-        existing: {
-          opportunityId: existing.id,
-          qualificationStatus: existing.qualificationStatus,
-          label: existing.qualificationStatus ? QUALIFICATION_LABELS[existing.qualificationStatus] : STAGE_LABELS[existing.stage],
-          researcher: existing.researcher,
-          assignedTo: existing.assignedTo,
-        },
-      };
-    }
+    if (existing) return { existing: await describeExisting(ctx, existing.id) };
   }
   const current = await ResearchClaim.findOne({
     where: { agencyOrganizationId: ctx.agencyId, googlePlaceId: placeId },

@@ -93,8 +93,12 @@ async function buildInitialData(opportunity) {
     targetDates: { kickoff: null, launch: null },
     registrarAccess: 'unknown',
     hostingAccess: 'unknown',
+    // Profiles found while qualifying carry over to onboarding.
     socialLinks: {
-      facebook: '', instagram: '', linkedin: '', google: '',
+      facebook: organization.facebookUrl || '',
+      instagram: (organization.socialLinks || []).find((s) => s.platform === 'instagram')?.url || '',
+      linkedin: (organization.socialLinks || []).find((s) => s.platform === 'linkedin')?.url || '',
+      google: sources.google?.url || '',
     },
     checklist: {
       logo: false, photos: false, content: false, businessInfo: false, extraContacts: false,

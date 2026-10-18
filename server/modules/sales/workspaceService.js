@@ -365,6 +365,7 @@ function presentBusiness(organization, lead) {
     reviewCount: lead?.reviewCount ?? null,
     listingSource: lead?.source || null,
     facebookUrl: organization.facebookUrl || null,
+    socialLinks: organization.socialLinks || [],
     contactResearch: contactDiscovery.present(organization),
   };
 }

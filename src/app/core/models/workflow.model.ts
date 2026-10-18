@@ -227,6 +227,7 @@ export interface CreditItem {
 }
 
 export const WORK_TYPE_LABELS: Record<string, string> = {
+  qualifying: 'Qualifying',
   research: 'Research', outreach: 'Outreach', calls: 'Calls', meeting: 'Meeting', onboarding: 'Onboarding', admin: 'Admin', other: 'Other',
 };
 

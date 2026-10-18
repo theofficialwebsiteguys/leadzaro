@@ -38,7 +38,7 @@ const { discoveryLimiter } = require('../../middleware/rateLimiter');
  * custom offers, team scope, reassignment).
  */
 
-const PASSTHROUGH = ['existingOpportunityId', 'possibleDuplicates', 'candidates', 'unresolved', 'activityId', 'code', 'owner', 'missing', 'previous'];
+const PASSTHROUGH = ['existing', 'existingOpportunityId', 'possibleDuplicates', 'candidates', 'unresolved', 'activityId', 'code', 'owner', 'missing', 'previous'];
 
 function handle(fn) {
   return async (req, res, next) => {

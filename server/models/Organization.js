@@ -70,6 +70,8 @@ module.exports = (sequelize) => {
     // Contact research (ADR 0014): the business's Facebook page and the
     // email-discovery record (status, sources checked, what was found where).
     facebookUrl: { type: DataTypes.STRING(500), allowNull: true },
+    // Other social profiles found while qualifying: [{ platform, url }] (ADR 0016).
+    socialLinks: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
     emailDiscovery: { type: DataTypes.JSONB, allowNull: true },
     // Workspace-wide defaults for an agency (ADR 0012): timezone, default
     // search location/keywords, default follow-up days.

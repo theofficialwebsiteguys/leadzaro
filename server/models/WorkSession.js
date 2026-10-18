@@ -1,6 +1,6 @@
 const { DataTypes } = require('sequelize');
 
-const WORK_TYPES = ['research', 'outreach', 'calls', 'meeting', 'onboarding', 'admin', 'other'];
+const WORK_TYPES = ['qualifying', 'research', 'outreach', 'calls', 'meeting', 'onboarding', 'admin', 'other'];
 const STATUSES = ['running', 'paused', 'stopped', 'abandoned'];
 const REVIEW_STATUSES = ['unreviewed', 'approved', 'flagged'];
 

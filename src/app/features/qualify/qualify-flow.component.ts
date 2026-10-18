@@ -46,14 +46,25 @@ interface Draft {
   step: number;
   business: { name: string; address: string; city: string; state: string; zip: string; category: string };
   sources: Record<SourceKey, { status: SourceStatus; url: string }>;
+  socials: { platform: string; url: string }[];
   contacts: {
-    email: { status: ContactStatus; value: string; sourceUrl: string };
-    phone: { status: ContactStatus; value: string; sourceUrl: string };
-    owner: { status: ContactStatus; name: string; title: string; sourceUrl: string };
+    email: { status: ContactStatus; values: { value: string; sourceUrl: string }[] };
+    phone: { status: ContactStatus; values: { value: string; label: string; sourceUrl?: string }[] };
+    owner: { status: ContactStatus; people: { name: string; title: string }[] };
   };
   reason: { tags: string[]; text: string };
   emailChecked: boolean;
 }
+
+interface Existing {
+  opportunityId: string; name?: string; label: string; qualificationStatus?: string | null;
+  researcher: { id?: string; name: string } | null; assignedTo: { id?: string; name: string } | null; mergeable?: boolean; reason?: string | null; mine?: boolean;
+}
+
+const PLATFORMS = [
+  { key: 'instagram', label: 'Instagram' }, { key: 'linkedin', label: 'LinkedIn' }, { key: 'tiktok', label: 'TikTok' }, { key: 'x', label: 'X / Twitter' },
+  { key: 'youtube', label: 'YouTube' }, { key: 'yelp', label: 'Yelp' }, { key: 'nextdoor', label: 'Nextdoor' }, { key: 'pinterest', label: 'Pinterest' }, { key: 'other', label: 'Other' },
+];
 
 /**
  * Qualifying one business, one step at a time (ADR 0016). First decide if
@@ -85,8 +96,13 @@ interface Draft {
           @if (existing(); as e) {
             <p class="eyebrow">Already in Leadzaro</p>
             <h2>{{ start().name }}</h2>
-            <p class="sub">{{ e.label }}@if (e.researcher) { · {{ e.researcher.name }} }@if (e.assignedTo) { · {{ e.assignedTo.name }} }</p>
-            @if (e.mine) { <div class="foot"><span class="spacer"></span><a class="btn btn-primary" [routerLink]="['/app/qualify', e.opportunityId]">Continue it</a></div> }
+            <p class="sub">{{ e.label }}@if (e.researcher) { · researched by {{ e.researcher.name }} }@if (e.assignedTo) { · {{ e.assignedTo.name }} }</p>
+            @if (e.mine) {
+              <div class="foot"><span class="spacer"></span><a class="btn btn-primary" [routerLink]="['/app/qualify', e.opportunityId]">Continue it</a></div>
+            } @else if (e.mergeable) {
+              <p class="hint">You can still qualify it — your research is added to that lead, and it stays with its salesperson.</p>
+              <div class="foot"><span class="spacer"></span><button class="btn btn-primary btn-lg" (click)="mergeInto(e)">Qualify it anyway</button></div>
+            } @else { <p class="hint">Nothing to do here: {{ e.reason }}</p> }
           } @else if (message) {
             <div class="done">
               <span class="done-icon"><lz-icon name="check-circle" [size]="30" /></span>
@@ -113,7 +129,7 @@ interface Draft {
                     @if (start().rating) {
                       <li [class.good]="(start().reviewCount ?? 0) >= 20"><lz-icon name="star" [size]="15" /> {{ start().rating }}★ from {{ start().reviewCount }} reviews{{ (start().reviewCount ?? 0) >= 20 ? ' — an established business' : '' }}</li>
                     } @else { <li><lz-icon name="star" [size]="15" /> No Google reviews yet</li> }
-                    @if (details() && !d.contacts.phone.value) { <li><lz-icon name="phone" [size]="15" /> No phone on Google</li> }
+                    @if (details() && !filled(d.contacts.phone.values).length) { <li><lz-icon name="phone" [size]="15" /> No phone on Google</li> }
                   </ul>
                   <div class="gate">
                     <button class="btn btn-outline btn-lg" (click)="trashOpen.set(true)"><lz-icon name="x" [size]="16" /> Not relevant</button>
@@ -149,39 +165,76 @@ interface Draft {
                     </div>
                     <div class="seg">@for (o of sourceOptions; track o.key) { <button type="button" [class.active]="d.sources[s.key].status === o.key" (click)="d.sources[s.key].status = o.key; save()">{{ o.label }}</button> }</div>
                     @if (d.sources[s.key].status === 'found') { <input class="form-control" [(ngModel)]="d.sources[s.key].url" (ngModelChange)="save()" placeholder="https://…" [attr.aria-label]="s.label + ' link'" /> }
+                    @if (s.key === 'facebook') {
+                      <div class="socials">
+                        <span class="hint">Other social profiles (optional)</span>
+                        @for (soc of d.socials; track $index; let i = $index) {
+                          <div class="multi">
+                            <select class="form-select" [(ngModel)]="soc.platform" (ngModelChange)="save()" aria-label="Platform">
+                              @for (pl of platforms; track pl.key) { <option [value]="pl.key">{{ pl.label }}</option> }
+                            </select>
+                            <input class="form-control" [(ngModel)]="soc.url" (ngModelChange)="save()" placeholder="https://…" aria-label="Profile link" />
+                            <button type="button" class="rm" (click)="removeAt(d.socials, i)" aria-label="Remove">×</button>
+                          </div>
+                        }
+                        <button type="button" class="add" (click)="d.socials.push({ platform: 'instagram', url: '' }); save()"><lz-icon name="plus" [size]="13" /> Add Instagram, LinkedIn, TikTok…</button>
+                      </div>
+                    }
                   </div>
                 }
               }
               @case (3) {
                 <h2>How can sales reach them?</h2>
-                <p class="sub">Copy what’s published. Never guess a name or make up an email.</p>
+                <p class="sub">Copy what’s published. Never guess a name or make up an email. Add as many as you find — the first is the main one.</p>
                 <div class="block" [attr.data-status]="d.contacts.email.status">
                   <div class="block-top"><span class="block-title"><lz-icon name="mail" [size]="16" /> Email</span>
                     @if (emailChecking()) { <span class="hint"><span class="spinner spinner-sm"></span> Checking their website…</span> }
                     @else if (canCheckEmail()) { <button class="btn btn-ghost btn-sm" (click)="checkEmail(true)">Check website again</button> }</div>
                   @if (emailSummary()) { <p class="hint">{{ emailSummary() }}</p> }
                   @for (cand of candidates(); track cand.email) {
-                    @if (cand.email !== d.contacts.email.value) { <button class="suggest" (click)="useEmail(cand.email, cand.sourceUrl)"><lz-icon name="plus" [size]="13" /> Use <strong>{{ cand.email }}</strong>@if (cand.sourceUrl) { <span class="hint">· {{ host(cand.sourceUrl) }}</span> }</button> }
+                    @if (!hasEmail(cand.email)) { <button class="suggest" (click)="useEmail(cand.email, cand.sourceUrl)"><lz-icon name="plus" [size]="13" /> Use <strong>{{ cand.email }}</strong>@if (cand.sourceUrl) { <span class="hint">· {{ host(cand.sourceUrl) }}</span> }</button> }
                   }
-                  <div class="seg">@for (o of contactOptions; track o.key) { <button type="button" [class.active]="d.contacts.email.status === o.key" (click)="d.contacts.email.status = o.key; save()">{{ o.label }}</button> }</div>
+                  <div class="seg">@for (o of contactOptions; track o.key) { <button type="button" [class.active]="d.contacts.email.status === o.key" (click)="setStatus('email', o.key)">{{ o.label }}</button> }</div>
                   @if (d.contacts.email.status === 'found') {
-                    <div class="two">
-                      <input class="form-control" type="email" [(ngModel)]="d.contacts.email.value" (ngModelChange)="save()" placeholder="name@business.com" aria-label="Email" />
-                      <input class="form-control" [(ngModel)]="d.contacts.email.sourceUrl" (ngModelChange)="save()" placeholder="Where you found it (link)" aria-label="Where you found the email" />
-                    </div>
+                    @for (e of d.contacts.email.values; track $index; let i = $index) {
+                      <div class="multi">
+                        <input class="form-control" type="email" [(ngModel)]="e.value" (ngModelChange)="save()" placeholder="name@business.com" [attr.aria-label]="'Email ' + (i + 1)" />
+                        <input class="form-control" [(ngModel)]="e.sourceUrl" (ngModelChange)="save()" placeholder="Where you found it (link)" aria-label="Where you found it" />
+                        @if (d.contacts.email.values.length > 1) { <button type="button" class="rm" (click)="removeAt(d.contacts.email.values, i)" aria-label="Remove">×</button> }
+                        @if (i === 0 && d.contacts.email.values.length > 1) { <span class="main-tag">main</span> }
+                      </div>
+                    }
+                    <button type="button" class="add" (click)="d.contacts.email.values.push({ value: '', sourceUrl: '' }); save()"><lz-icon name="plus" [size]="13" /> Add another email</button>
                   }
                 </div>
                 <div class="block" [attr.data-status]="d.contacts.phone.status">
-                  <div class="block-top"><span class="block-title"><lz-icon name="phone" [size]="16" /> Phone</span>@if (d.contacts.phone.value && d.contacts.phone.sourceUrl) { <span class="hint">from Google</span> }</div>
-                  <div class="seg">@for (o of contactOptions; track o.key) { <button type="button" [class.active]="d.contacts.phone.status === o.key" (click)="d.contacts.phone.status = o.key; save()">{{ o.label }}</button> }</div>
-                  @if (d.contacts.phone.status === 'found') { <input class="form-control" [(ngModel)]="d.contacts.phone.value" (ngModelChange)="save()" placeholder="(555) 555-0100" aria-label="Phone" /> }
+                  <div class="block-top"><span class="block-title"><lz-icon name="phone" [size]="16" /> Phone</span>@if (phoneFromGoogle()) { <span class="hint">from Google</span> }</div>
+                  <div class="seg">@for (o of contactOptions; track o.key) { <button type="button" [class.active]="d.contacts.phone.status === o.key" (click)="setStatus('phone', o.key)">{{ o.label }}</button> }</div>
+                  @if (d.contacts.phone.status === 'found') {
+                    @for (p of d.contacts.phone.values; track $index; let i = $index) {
+                      <div class="multi">
+                        <input class="form-control" [(ngModel)]="p.value" (ngModelChange)="save()" placeholder="(555) 555-0100" [attr.aria-label]="'Phone ' + (i + 1)" />
+                        <select class="form-select" [(ngModel)]="p.label" (ngModelChange)="save()" aria-label="Which number">
+                          <option value="">Main line</option><option value="Mobile">Mobile</option><option value="Owner">Owner</option><option value="Office">Office</option><option value="Other">Other</option>
+                        </select>
+                        @if (d.contacts.phone.values.length > 1) { <button type="button" class="rm" (click)="removeAt(d.contacts.phone.values, i)" aria-label="Remove">×</button> }
+                      </div>
+                    }
+                    <button type="button" class="add" (click)="d.contacts.phone.values.push({ value: '', label: '' }); save()"><lz-icon name="plus" [size]="13" /> Add another number</button>
+                  }
                 </div>
                 <div class="block" [attr.data-status]="d.contacts.owner.status">
-                  <div class="block-top"><span class="block-title"><lz-icon name="user" [size]="16" /> Owner or contact name</span><span class="hint">only if published</span></div>
-                  <div class="seg">@for (o of contactOptions; track o.key) { <button type="button" [class.active]="d.contacts.owner.status === o.key" (click)="d.contacts.owner.status = o.key; save()">{{ o.label }}</button> }</div>
+                  <div class="block-top"><span class="block-title"><lz-icon name="user" [size]="16" /> Owner or contact people</span><span class="hint">only if published</span></div>
+                  <div class="seg">@for (o of contactOptions; track o.key) { <button type="button" [class.active]="d.contacts.owner.status === o.key" (click)="setStatus('owner', o.key)">{{ o.label }}</button> }</div>
                   @if (d.contacts.owner.status === 'found') {
-                    <div class="two"><input class="form-control" [(ngModel)]="d.contacts.owner.name" (ngModelChange)="save()" placeholder="Name" aria-label="Name" />
-                      <input class="form-control" [(ngModel)]="d.contacts.owner.title" (ngModelChange)="save()" placeholder="Role, e.g. Owner" aria-label="Role" /></div>
+                    @for (person of d.contacts.owner.people; track $index; let i = $index) {
+                      <div class="multi">
+                        <input class="form-control" [(ngModel)]="person.name" (ngModelChange)="save()" placeholder="Name" [attr.aria-label]="'Person ' + (i + 1)" />
+                        <input class="form-control" [(ngModel)]="person.title" (ngModelChange)="save()" placeholder="Role, e.g. Owner" aria-label="Role" />
+                        @if (d.contacts.owner.people.length > 1) { <button type="button" class="rm" (click)="removeAt(d.contacts.owner.people, i)" aria-label="Remove">×</button> }
+                      </div>
+                    }
+                    <button type="button" class="add" (click)="d.contacts.owner.people.push({ name: '', title: '' }); save()"><lz-icon name="plus" [size]="13" /> Add another person</button>
                   }
                 </div>
               }
@@ -195,11 +248,14 @@ interface Draft {
               @case (5) {
                 <h2>Decide</h2>
                 <p class="sub">Everything you found is on the right. Hand it to sales, or park it.</p>
+                @if (mergeTarget(); as m) { <div class="merge-note"><lz-icon name="leads" [size]="15" /> Your research will be added to the existing lead ({{ m.label }}@if (m.assignedTo) { · {{ m.assignedTo.name }} }) — no duplicate is created.</div> }
                 @if (d.reason.text) { <blockquote class="quote">{{ d.reason.text }}</blockquote> }
                 @if (missing().length) {
                   <div class="alert alert-warning">To qualify it, still check: @for (m of missing(); track m.label; let last = $last) { <button class="link inline" (click)="goTo(m.step)">{{ m.label }}</button>{{ last ? '' : ', ' }} }</div>
                 } @else if (!usable()) {
                   <div class="alert alert-warning">No email or phone, so sales can’t contact them. Mark it as needing more info, or not relevant.</div>
+                } @else if (mergeTarget()?.assignedTo) {
+                  <p class="hint">It stays with <strong>{{ mergeTarget()?.assignedTo?.name }}</strong>, who’ll be told about your research.</p>
                 } @else {
                   <div class="field"><label class="form-label" for="qf-who">Assign to</label>
                     <select id="qf-who" class="form-select" [(ngModel)]="assignee">
@@ -211,10 +267,26 @@ interface Draft {
                   <div class="field"><label class="form-label" for="qf-need">What’s missing?</label>
                     <input id="qf-need" class="form-control" [(ngModel)]="needsInfoNote" placeholder="e.g. No phone or email anywhere — try Instagram" /></div>
                 }
+                @if (conflict(); as c) {
+                  <div class="conflict">
+                    <strong>{{ c.name }} is already in Leadzaro</strong>
+                    <span>{{ c.label }}@if (c.assignedTo) { · {{ c.assignedTo.name }} }</span>
+                    @if (c.mergeable) {
+                      <p class="hint">Add your links, contacts and reason to that lead instead of creating a new one.</p>
+                      <div class="foot-row"><button class="btn btn-primary" (click)="mergeInto(c)">Add my research to it</button></div>
+                    } @else { <p class="hint">Can’t add research: {{ c.reason }}</p> }
+                  </div>
+                }
                 @if (duplicates().length) {
-                  <div class="alert alert-warning">This may already be in Leadzaro:
-                    <ul>@for (x of duplicates(); track x.organizationId) { <li><strong>{{ x.name }}</strong> — {{ x.reasons.join(', ') }}@if (x.assignedTo) { · {{ x.assignedTo.name }} }</li> }</ul>
-                    <button class="btn btn-outline btn-sm" (click)="qualify(true)">It’s a different business — continue</button>
+                  <div class="conflict">
+                    <strong>This may already be in Leadzaro</strong>
+                    @for (x of duplicates(); track x.organizationId) {
+                      <div class="dup-row">
+                        <span><strong>{{ x.name }}</strong> — {{ x.reasons.join(', ') }}@if (x.stageLabel) { · {{ x.stageLabel }} }@if (x.assignedTo) { · {{ x.assignedTo.name }} }</span>
+                        @if (x.opportunityId) { <button class="btn btn-outline btn-sm" (click)="mergeIntoId(x.opportunityId)">Merge into this one</button> }
+                      </div>
+                    }
+                    <div class="foot-row"><button class="btn btn-ghost btn-sm" (click)="qualify(true)">It’s a different business — keep it separate</button></div>
                   </div>
                 }
               }
@@ -246,7 +318,7 @@ interface Draft {
                 } @else {
                   <button class="btn btn-outline" (click)="needsInfoOpen.set(true)">Needs more info</button>
                   @if (!missing().length && usable()) {
-                    <button class="btn btn-primary btn-lg" (click)="qualify(false)" [disabled]="busy() || !assignee">{{ busy() ? 'Saving…' : 'Qualify & assign' }}</button>
+                    <button class="btn btn-primary btn-lg" (click)="qualify(false)" [disabled]="busy() || (!assignee && !mergeTarget()?.assignedTo)">{{ busy() ? 'Saving…' : (mergeTarget() ? 'Qualify & add to lead' : 'Qualify & assign') }}</button>
                   }
                 }
               </footer>
@@ -269,18 +341,19 @@ interface Draft {
               @if (d.sources.website.status === 'found' && d.sources.website.url) { <a [href]="d.sources.website.url" target="_blank" rel="noopener">{{ host(d.sources.website.url) }}</a> }
               @else if (d.sources.website.status === 'not_found' || (!start().website && fromSearch())) { <span class="tag-warn">No website</span> }
               @else { <span class="muted">Website not checked</span> }</li>
-            <li><lz-icon name="phone" [size]="14" />@if (d.contacts.phone.value && d.contacts.phone.status === 'found') { {{ d.contacts.phone.value }} } @else { <span class="muted">{{ d.contacts.phone.status === 'not_found' ? 'No phone found' : 'Phone not checked' }}</span> }</li>
+            <li><lz-icon name="phone" [size]="14" />@if (filled(d.contacts.phone.values).length && d.contacts.phone.status === 'found') { <span class="stack">@for (ph of filled(d.contacts.phone.values); track $index) { <span>{{ ph.value }}@if (ph.label) { <span class="muted"> · {{ ph.label }}</span> }</span> }</span> } @else { <span class="muted">{{ d.contacts.phone.status === 'not_found' ? 'No phone found' : 'Phone not checked' }}</span> }</li>
             <li><lz-icon name="mail" [size]="14" />
-              @if (d.contacts.email.status === 'found' && d.contacts.email.value) { {{ d.contacts.email.value }} }
+              @if (d.contacts.email.status === 'found' && filled(d.contacts.email.values).length) { <span class="stack">@for (em of filled(d.contacts.email.values); track $index) { <span>{{ em.value }}</span> }</span> }
               @else if (emailChecking()) { <span class="muted">Checking website…</span> }
               @else { <span class="muted">{{ d.contacts.email.status === 'not_found' ? 'No email found' : 'Email not checked' }}</span> }</li>
-            @if (d.contacts.owner.status === 'found' && d.contacts.owner.name) { <li><lz-icon name="user" [size]="14" /> {{ d.contacts.owner.name }}@if (d.contacts.owner.title) { <span class="muted"> · {{ d.contacts.owner.title }}</span> }</li> }
+            @if (d.contacts.owner.status === 'found') { @for (person of filledPeople(); track $index) { <li><lz-icon name="user" [size]="14" /> {{ person.name }}@if (person.title) { <span class="muted"> · {{ person.title }}</span> }</li> } }
             @if (todayHours()) { <li><lz-icon name="clock" [size]="14" /> <span>{{ todayHours() }}</span></li> }
             @if (d.business.address || d.business.city) { <li><lz-icon name="target" [size]="14" /> <span>{{ [d.business.address, d.business.city].filter(truthy).join(', ') }}</span></li> }
           </ul>
           <div class="snap-links">
             @if (d.sources.google.url) { <a [href]="d.sources.google.url" target="_blank" rel="noopener">Google listing ↗</a> }
             @if (d.sources.facebook.url) { <a [href]="d.sources.facebook.url" target="_blank" rel="noopener">Facebook ↗</a> } @else { <a [href]="searchUrl('facebook')" target="_blank" rel="noopener">Find on Facebook ↗</a> }
+            @for (soc of d.socials; track $index) { @if (soc.url) { <a [href]="soc.url" target="_blank" rel="noopener">{{ platformLabel(soc.platform) }} ↗</a> } }
           </div>
         </section>
 
@@ -340,6 +413,15 @@ interface Draft {
     .chips { display: flex; flex-wrap: wrap; gap: 8px; }
     .chip { border: 1.5px solid var(--border); background: var(--card); border-radius: var(--radius-full); padding: 8px 14px; font-size: .85rem; cursor: pointer;
       &:hover { border-color: var(--primary-200); } &.on { border-color: var(--primary); background: var(--primary-50); color: var(--primary-dark); font-weight: 600; } }
+    .multi { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; position: relative; @media (max-width: 560px) { grid-template-columns: 1fr; } }
+    .rm { background: none; border: 0; font-size: 1.2rem; color: var(--text-muted); cursor: pointer; padding: 0 6px; }
+    .main-tag { position: absolute; right: 36px; top: -8px; font-size: .62rem; text-transform: uppercase; background: var(--primary); color: #fff; border-radius: 6px; padding: 1px 6px; }
+    .add { align-self: flex-start; display: inline-flex; gap: 6px; align-items: center; background: none; border: 1px dashed var(--border); border-radius: 8px; padding: 6px 10px; font-size: .8rem; color: var(--primary); cursor: pointer; &:hover { border-color: var(--primary-200); } }
+    .socials { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+    .conflict { border: 1.5px solid var(--warning); background: var(--warning-bg); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: .88rem; }
+    .dup-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .merge-note { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--primary-50); font-size: .86rem; }
+    .stack { display: flex; flex-direction: column; }
     .quote { margin: 0; padding: 12px 14px; border-left: 3px solid var(--primary); background: var(--primary-50); border-radius: 0 10px 10px 0; font-size: .92rem; }
     .trash { border: 1.5px solid var(--danger); background: var(--danger-bg); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
     .link { background: none; border: 0; color: var(--primary); cursor: pointer; padding: 0; font-size: .82rem; align-self: flex-start; &.inline { font-size: inherit; text-decoration: underline; } }
@@ -392,8 +474,13 @@ export class QualifyFlowComponent implements OnInit, OnDestroy {
   readonly error = signal('');
   readonly done = signal<string | null>(null);
   readonly claimedBy = signal<string | null>(null);
-  readonly existing = signal<{ opportunityId: string; label: string; researcher: { name: string } | null; assignedTo: { name: string } | null; mine: boolean } | null>(null);
-  readonly duplicates = signal<{ organizationId: string; name: string; reasons: string[]; assignedTo: { name: string } | null }[]>([]);
+  readonly existing = signal<Existing | null>(null);
+  readonly duplicates = signal<{ organizationId: string; name: string; reasons: string[]; opportunityId: string | null; stageLabel?: string | null; assignedTo: { name: string } | null }[]>([]);
+  /** An existing lead this research will be added to, instead of creating a new one. */
+  readonly mergeTarget = signal<Existing | null>(null);
+  /** The listing turned out to be in Leadzaro already (found when saving). */
+  readonly conflict = signal<Existing | null>(null);
+  readonly platforms = PLATFORMS;
   readonly emailChecking = signal(false);
   readonly emailSummary = signal('');
   readonly candidates = signal<{ email: string; sourceUrl: string | null }[]>([]);
@@ -420,7 +507,9 @@ export class QualifyFlowComponent implements OnInit, OnDestroy {
     if (!d.business.city.trim() && !d.business.address.trim()) out.push({ step: 1, label: 'town or address' });
     for (const s of SOURCES) if (d.sources[s.key].status === 'not_checked') out.push({ step: 2, label: s.label });
     if (d.contacts.email.status === 'not_checked') out.push({ step: 3, label: 'email' });
+    else if (d.contacts.email.status === 'found' && !d.contacts.email.values.some((e) => e.value.trim())) out.push({ step: 3, label: 'email address' });
     if (d.contacts.phone.status === 'not_checked') out.push({ step: 3, label: 'phone' });
+    else if (d.contacts.phone.status === 'found' && !d.contacts.phone.values.some((x) => x.value.trim())) out.push({ step: 3, label: 'phone number' });
     if (!d.reason.text.trim()) out.push({ step: 4, label: 'reason' });
     return out;
   });
@@ -468,7 +557,7 @@ export class QualifyFlowComponent implements OnInit, OnDestroy {
       next: (res) => {
         const det = res.data.details;
         this.details.set(det);
-        if (det.phone && this.d.contacts.phone.status === 'not_checked') this.d.contacts.phone = { status: 'found', value: det.phone, sourceUrl: this.d.sources.google.url };
+        if (det.phone && this.d.contacts.phone.status === 'not_checked') this.d.contacts.phone = { status: 'found', values: [{ value: det.phone, label: '', sourceUrl: this.d.sources.google.url }] };
         if (det.googleMapsUrl && !this.d.sources.google.url) this.d.sources.google = { status: 'found', url: det.googleMapsUrl };
         if (det.address && !this.d.business.address) this.d.business.address = det.address;
         this.save();
@@ -487,8 +576,11 @@ export class QualifyFlowComponent implements OnInit, OnDestroy {
       step: 1,
       business: { name: '', address: '', city: '', state: '', zip: '', category: '' },
       sources: { google: { status: 'not_checked', url: '' }, website: { status: 'not_checked', url: '' }, facebook: { status: 'not_checked', url: '' } },
+      socials: [],
       contacts: {
-        email: { status: 'not_checked', value: '', sourceUrl: '' }, phone: { status: 'not_checked', value: '', sourceUrl: '' }, owner: { status: 'not_checked', name: '', title: '', sourceUrl: '' },
+        email: { status: 'not_checked', values: [{ value: '', sourceUrl: '' }] },
+        phone: { status: 'not_checked', values: [{ value: '', label: '' }] },
+        owner: { status: 'not_checked', people: [{ name: '', title: '' }] },
       },
       reason: { tags: [], text: '' },
       emailChecked: false,
@@ -499,7 +591,7 @@ export class QualifyFlowComponent implements OnInit, OnDestroy {
   private restore(): void {
     try {
       const raw = localStorage.getItem(this.key);
-      if (raw) { this.d = { ...this.blank(), ...JSON.parse(raw) }; this.bump(); return; }
+      if (raw) { this.d = this.upgrade({ ...this.blank(), ...JSON.parse(raw) }); this.bump(); return; }
     } catch { /* storage unavailable — start fresh */ }
     const s = this.start();
     const d = this.blank();
@@ -508,7 +600,7 @@ export class QualifyFlowComponent implements OnInit, OnDestroy {
     if (maps) d.sources.google = { status: 'found', url: maps };
     if (s.website) d.sources.website = { status: 'found', url: s.website };
     if (s.facebookUrl) d.sources.facebook = { status: 'not_checked', url: s.facebookUrl };
-    if (s.phone) d.contacts.phone = { status: 'found', value: s.phone, sourceUrl: maps };
+    if (s.phone) d.contacts.phone = { status: 'found', values: [{ value: s.phone, label: '', sourceUrl: maps }] };
     this.d = d;
     this.bump();
   }
@@ -570,8 +662,71 @@ export class QualifyFlowComponent implements OnInit, OnDestroy {
   }
 
   useEmail(email: string, sourceUrl: string | null): void {
-    this.d.contacts.email = { status: 'found', value: email, sourceUrl: sourceUrl || '' };
+    const list = this.d.contacts.email.values.filter((e) => e.value.trim());
+    this.d.contacts.email = { status: 'found', values: [...list, { value: email, sourceUrl: sourceUrl || '' }] };
     this.save();
+  }
+
+  hasEmail(email: string): boolean {
+    return this.d.contacts.email.values.some((e) => e.value.trim().toLowerCase() === email.toLowerCase());
+  }
+
+  /** Found/Not found for a contact type; "found" always leaves one row to fill in. */
+  setStatus(kind: 'email' | 'phone' | 'owner', status: ContactStatus): void {
+    const c = this.d.contacts[kind];
+    c.status = status;
+    if (kind === 'email' && !this.d.contacts.email.values.length) this.d.contacts.email.values.push({ value: '', sourceUrl: '' });
+    if (kind === 'phone' && !this.d.contacts.phone.values.length) this.d.contacts.phone.values.push({ value: '', label: '' });
+    if (kind === 'owner' && !this.d.contacts.owner.people.length) this.d.contacts.owner.people.push({ name: '', title: '' });
+    this.save();
+  }
+
+  removeAt<T>(list: T[], index: number): void {
+    list.splice(index, 1);
+    this.save();
+  }
+
+  filled<T extends { value: string }>(list: T[]): T[] {
+    return list.filter((x) => x.value.trim());
+  }
+
+  filledPeople(): { name: string; title: string }[] {
+    return this.d.contacts.owner.people.filter((p) => p.name.trim());
+  }
+
+  phoneFromGoogle(): boolean {
+    return Boolean(this.d.contacts.phone.values[0]?.sourceUrl && this.d.contacts.phone.values[0]?.value);
+  }
+
+  platformLabel(key: string): string {
+    return PLATFORMS.find((p) => p.key === key)?.label ?? 'Profile';
+  }
+
+  /** Drafts saved before lists existed are converted, so nothing typed is lost. */
+  private upgrade(d: Draft): Draft {
+    const c = d.contacts as unknown as Record<string, Record<string, unknown>>;
+    if (!Array.isArray(c['email']?.['values'])) d.contacts.email = { status: (c['email']?.['status'] as ContactStatus) ?? 'not_checked', values: [{ value: String(c['email']?.['value'] ?? ''), sourceUrl: String(c['email']?.['sourceUrl'] ?? '') }] };
+    if (!Array.isArray(c['phone']?.['values'])) d.contacts.phone = { status: (c['phone']?.['status'] as ContactStatus) ?? 'not_checked', values: [{ value: String(c['phone']?.['value'] ?? ''), label: '', sourceUrl: String(c['phone']?.['sourceUrl'] ?? '') }] };
+    if (!Array.isArray(c['owner']?.['people'])) d.contacts.owner = { status: (c['owner']?.['status'] as ContactStatus) ?? 'not_checked', people: [{ name: String(c['owner']?.['name'] ?? ''), title: String(c['owner']?.['title'] ?? '') }] };
+    d.socials = Array.isArray(d.socials) ? d.socials : [];
+    return d;
+  }
+
+  // ---- merging into a lead that already exists
+
+  mergeInto(e: Existing): void {
+    this.existing.set(null);
+    this.conflict.set(null);
+    this.duplicates.set([]);
+    this.mergeTarget.set({ ...e });
+    if (this.d.step === 5 && !this.missing().length && this.usable() && e.assignedTo) this.qualify(false);
+    else if (this.d.step < 2) this.goTo(2);
+  }
+
+  /** A possible match picked from the duplicate list. */
+  mergeIntoId(opportunityId: string): void {
+    const dup = this.duplicates().find((x) => x.opportunityId === opportunityId);
+    this.mergeInto({ opportunityId, label: dup?.stageLabel ?? 'Lead', researcher: null, assignedTo: dup?.assignedTo ?? null, mergeable: true, name: dup?.name });
   }
 
   toggleReason(key: string, text: string): void {
@@ -597,7 +752,7 @@ export class QualifyFlowComponent implements OnInit, OnDestroy {
         state: d.business.state || null,
         zip: d.business.zip || null,
         category: d.business.category || null,
-        phone: d.contacts.phone.status === 'found' ? d.contacts.phone.value : null,
+        phone: d.contacts.phone.status === 'found' ? (d.contacts.phone.values.find((x) => x.value.trim())?.value ?? null) : null,
         website: d.sources.website.status === 'found' ? d.sources.website.url : null,
         googleMapsUrl: d.sources.google.status === 'found' ? d.sources.google.url : (s.googleMapsUrl || null),
         googlePlaceId: s.googlePlaceId || null,
@@ -608,15 +763,22 @@ export class QualifyFlowComponent implements OnInit, OnDestroy {
         source: s.googlePlaceId ? (s.source === 'demo' ? 'demo' : 'google') : 'manual',
       },
       confirmNew,
+      mergeIntoOpportunityId: this.mergeTarget()?.opportunityId ?? null,
       sources: d.sources,
-      contacts: d.contacts,
+      socials: d.socials.filter((x) => x.url.trim()),
+      contacts: {
+        email: { status: d.contacts.email.status, values: d.contacts.email.values.filter((x) => x.value.trim()) },
+        phone: { status: d.contacts.phone.status, values: d.contacts.phone.values.filter((x) => x.value.trim()) },
+        owner: { status: d.contacts.owner.status, people: d.contacts.owner.people.filter((x) => x.name.trim()) },
+      },
       reason: d.reason,
     };
   }
 
   qualify(confirmNew: boolean): void {
-    const who = this.assignees().find((a) => a.id === this.assignee)?.name || 'sales';
-    this.submit({ ...this.body(confirmNew), assigneeUserId: this.assignee }, `Qualified — assigned to ${who}`, 'qualified');
+    const merge = this.mergeTarget();
+    const who = merge?.assignedTo?.name || this.assignees().find((a) => a.id === this.assignee)?.name || 'sales';
+    this.submit({ ...this.body(confirmNew), assigneeUserId: this.assignee || null }, merge ? `Research added to the existing lead — ${who} has it` : `Qualified — assigned to ${who}`, 'qualified');
   }
 
   needsInfo(): void {
@@ -643,7 +805,7 @@ export class QualifyFlowComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.busy.set(false);
         if (err.status === 409 && err.error?.possibleDuplicates) { this.goTo(5); this.duplicates.set(err.error.possibleDuplicates); return; }
-        if (err.status === 409 && err.error?.existingOpportunityId) { this.error.set('Someone already added this business to Leadzaro.'); return; }
+        if (err.status === 409 && err.error?.existing) { this.goTo(5); this.conflict.set(err.error.existing); return; }
         if (err.error?.missing?.length) this.goTo(err.error.missing[0].step);
         this.error.set(err.error?.message || 'Not saved — your answers are still here. Try again.');
       },
