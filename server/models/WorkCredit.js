@@ -22,6 +22,8 @@ module.exports = (sequelize) => {
     reviewedAt: { type: DataTypes.DATE, allowNull: true },
     paidAt: { type: DataTypes.DATE, allowNull: true },
     paidByUserId: { type: DataTypes.UUID, allowNull: true },
+    // Context for the reviewer, e.g. research added to a lead already in Leadzaro (ADR 0017).
+    note: { type: DataTypes.STRING(255), allowNull: true },
   });
 
   WorkCredit.KINDS = KINDS;

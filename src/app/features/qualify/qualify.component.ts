@@ -9,7 +9,8 @@ import {
   ContactStatus, Qualification, QualificationResponse, SourceKey, SourceStatus,
 } from '../../core/models/workflow.model';
 import { IconComponent } from '../../shared/icon/icon.component';
-import { QualifyFlowComponent, QualifyStart } from './qualify-flow.component';
+import { EmailSourceComponent } from '../../shared/email-source/email-source.component';
+import { QualifyDraft, QualifyFlowComponent, QualifyStart } from './qualify-flow.component';
 
 const STEPS = [
   { n: 1, label: 'Business' },
@@ -33,16 +34,31 @@ const SOURCES: { key: SourceKey; label: string; hint: string }[] = [
 @Component({
   selector: 'app-qualify',
   standalone: true,
-  imports: [FormsModule, RouterLink, DatePipe, IconComponent, QualifyFlowComponent],
+  imports: [FormsModule, RouterLink, DatePipe, IconComponent, QualifyFlowComponent, EmailSourceComponent],
   template: `
     <div class="page qualify">
-      <a routerLink="/app/my-work" class="back-link">← My Work</a>
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a routerLink="/app/my-work">My Work</a><span aria-hidden="true">›</span>
+        <a routerLink="/app/qualify">Qualifying</a><span aria-hidden="true">›</span>
+        <span>{{ isNew() ? 'Add a business' : (resumeData()?.start?.name || qq()?.business?.name || 'Research') }}</span>
+      </nav>
 
       @if (isNew()) {
-        <!-- Manual entry (ADR 0016): same steps as from search; nothing is saved until it's complete. -->
+        <!-- Manual entry (ADR 0016): same steps as from search; nothing becomes a lead until it's decided. -->
         @for (k of [manualKey()]; track k) {
           <h1 class="manual-title">Add a business</h1>
-          <app-qualify-flow [start]="manualStart" (next)="manualKey.set(manualKey() + 1)" />
+          <app-qualify-flow [start]="manualStart" nextText="Add another business" (next)="manualKey.set(manualKey() + 1)" />
+        }
+      } @else if (resumeKey()) {
+        <!-- Research saved earlier (ADR 0017), resumed from My Work or a link. -->
+        @if (resumeData(); as r) {
+          @for (k of [resumeKey()]; track k) {
+            <app-qualify-flow [start]="r.start" [saved]="r.draft" [resumeKey]="k" [nextText]="nextDraftKey() ? 'Next saved research' : 'Find more businesses'" (next)="nextResearch()" (skip)="router.navigate(['/app/my-work'])" />
+          }
+        } @else if (error()) {
+          <div class="alert alert-error">{{ error() }} <a routerLink="/app/my-work">Back to My Work</a></div>
+        } @else {
+          <div class="loading-state"><div class="spinner"></div><span>Loading your research…</span></div>
         }
       } @else if (loading() && !qq()) {
         <div class="loading-state"><div class="spinner"></div><span>Loading research…</span></div>
@@ -59,7 +75,31 @@ const SOURCES: { key: SourceKey; label: string; hint: string }[] = [
           </div>
         </header>
 
-        @if (q.note && q.status !== 'assigned') { <div class="alert alert-warning">{{ q.status === 'needs_correction' ? 'Returned for correction: ' : 'Note: ' }}{{ q.note }}</div> }
+        @if (q.note && q.status !== 'assigned' && q.status !== 'needs_review') { <div class="alert alert-warning">{{ q.status === 'needs_correction' ? 'Returned for correction: ' : 'Note: ' }}{{ q.note }}</div> }
+        @if (q.review; as rv) {
+          <section class="card review">
+            <h2>Possible duplicate — waiting for a manager</h2>
+            <p class="sub">{{ rv.requestedBy?.name || 'The qualifier' }} saved this separately on {{ rv.requestedAt | date: 'MMM d' }} because it may already be in Leadzaro.@if (rv.note) { “{{ rv.note }}” }
+              It isn’t in any sales queue and doesn’t count as completed work until it’s settled.</p>
+            <ul class="review-matches">
+              @for (m of rv.matches; track m.opportunityId ?? m.organizationId) {
+                <li>
+                  <span><strong>{{ m.name }}</strong>@if (m.location) { · {{ m.location }} } — {{ m.label }}@if (m.assignedTo) { · {{ m.assignedTo.name }} }
+                    @if (m.reasons?.length) { <span class="hint">Matched on {{ m.reasons!.join(', ') }}</span> }</span>
+                  @if (q.canResolveReview && m.opportunityId && m.mergeable) { <button class="btn btn-outline btn-sm" (click)="resolve('merge', m.opportunityId)" [disabled]="busy()">Same business — add research to it</button> }
+                </li>
+              }
+            </ul>
+            @if (q.canResolveReview) {
+              <input class="form-control" [(ngModel)]="reviewNote" maxlength="500" placeholder="Note for the qualifier (optional)" aria-label="Note for the qualifier" />
+              <div class="actions">
+                <button class="btn btn-ghost danger" (click)="resolve('dismiss')" [disabled]="busy()">Discard it</button>
+                <span class="spacer"></span>
+                <button class="btn btn-primary" (click)="resolve('separate')" [disabled]="busy()">Different business — go ahead@if (rv.assignee) { (to {{ rv.assignee.name }}) }</button>
+              </div>
+            } @else { <p class="hint">A manager will check it. You can still correct the research below.</p> }
+          </section>
+        }
         @if (q.credit?.reviewNote && (q.credit?.status === 'needs_correction' || q.credit?.status === 'rejected')) { <div class="alert alert-warning">Review feedback: {{ q.credit?.reviewNote }}</div> }
 
         @if (done(); as d) {
@@ -67,9 +107,9 @@ const SOURCES: { key: SourceKey; label: string; hint: string }[] = [
             <lz-icon name="check-circle" [size]="28" />
             <div><h2>{{ d }}</h2><p class="sub">Your work is recorded with today’s date. Ready for the next one?</p></div>
             <div class="actions">
-              <a routerLink="/app/my-work" class="btn btn-ghost">My Work</a>
+              <a routerLink="/app/my-work" class="btn btn-ghost">Back to My Work</a>
               <a routerLink="/app/qualify/new" class="btn btn-outline">Add a business by hand</a>
-              <a routerLink="/app/search" class="btn btn-primary">Qualify next business</a>
+              <a routerLink="/app/qualify" class="btn btn-primary">Qualify next business</a>
             </div>
           </section>
         } @else {
@@ -136,12 +176,13 @@ const SOURCES: { key: SourceKey; label: string; hint: string }[] = [
                     @for (o of contactOptions; track o.key) { <button type="button" role="radio" [attr.aria-checked]="form.contacts.email.status === o.key" [class.active]="form.contacts.email.status === o.key" (click)="form.contacts.email.status = o.key">{{ o.label }}</button> }
                   </div>
                   @if (form.contacts.email.status === 'found') {
-                    <div class="grid2">
-                      <input class="form-control" type="email" [(ngModel)]="form.contacts.email.value" placeholder="name@business.com" aria-label="Email address" />
-                      <input class="form-control" [(ngModel)]="form.contacts.email.sourceUrl" placeholder="Where you found it (link)" aria-label="Where the email was found" />
-                    </div>
+                    <input class="form-control" type="email" [class.is-invalid]="!!err('contacts.email.values.0.value')" [(ngModel)]="form.contacts.email.value" (ngModelChange)="clearErr('contacts.email.values.0.value')" placeholder="name@business.com" aria-label="Email address" />
+                    @if (err('contacts.email.values.0.value')) { <p class="field-err" role="alert">{{ err('contacts.email.values.0.value') }}</p> }
+                    <app-email-source [(type)]="form.contacts.email.sourceType" [(note)]="form.contacts.email.sourceNote" [(url)]="form.contacts.email.sourceUrl" [email]="form.contacts.email.value"
+                      [typeError]="err('contacts.email.values.0.sourceType')" [noteError]="err('contacts.email.values.0.sourceNote')" [urlError]="err('contacts.email.values.0.sourceUrl')"
+                      (changed)="clearErr('contacts.email.values.0.' + $event)" />
                     <p class="hint">Format is checked only — an email isn’t marked verified until someone confirms it.</p>
-                  }
+                  } @else if (form.contacts.email.status === 'not_found') { <p class="hint">Recorded as checked with no email found — no placeholder needed.</p> }
                 </div>
                 <div class="check-block">
                   <div class="check-top"><div><strong>Phone</strong>@if (q.contacts.phone.from === 'search') { <p class="hint">From their Google listing</p> }</div></div>
@@ -149,10 +190,8 @@ const SOURCES: { key: SourceKey; label: string; hint: string }[] = [
                     @for (o of contactOptions; track o.key) { <button type="button" role="radio" [attr.aria-checked]="form.contacts.phone.status === o.key" [class.active]="form.contacts.phone.status === o.key" (click)="form.contacts.phone.status = o.key">{{ o.label }}</button> }
                   </div>
                   @if (form.contacts.phone.status === 'found') {
-                    <div class="grid2">
-                      <input class="form-control" [(ngModel)]="form.contacts.phone.value" placeholder="(555) 555-0100" aria-label="Phone number" />
-                      <input class="form-control" [(ngModel)]="form.contacts.phone.sourceUrl" placeholder="Where you found it (optional link)" aria-label="Where the phone was found" />
-                    </div>
+                    <input class="form-control" [class.is-invalid]="!!err('contacts.phone.values.0.value')" [(ngModel)]="form.contacts.phone.value" (ngModelChange)="clearErr('contacts.phone.values.0.value')" placeholder="(555) 555-0100" aria-label="Phone number" />
+                    @if (err('contacts.phone.values.0.value')) { <p class="field-err" role="alert">{{ err('contacts.phone.values.0.value') }}</p> }
                   }
                 </div>
                 <div class="check-block">
@@ -161,10 +200,9 @@ const SOURCES: { key: SourceKey; label: string; hint: string }[] = [
                     @for (o of contactOptions; track o.key) { <button type="button" role="radio" [attr.aria-checked]="form.contacts.owner.status === o.key" [class.active]="form.contacts.owner.status === o.key" (click)="form.contacts.owner.status = o.key">{{ o.label }}</button> }
                   </div>
                   @if (form.contacts.owner.status === 'found') {
-                    <div class="grid3">
+                    <div class="grid2">
                       <input class="form-control" [(ngModel)]="form.contacts.owner.name" placeholder="Name" aria-label="Contact name" />
                       <input class="form-control" [(ngModel)]="form.contacts.owner.title" placeholder="Role, e.g. Owner" aria-label="Contact role" />
-                      <input class="form-control" [(ngModel)]="form.contacts.owner.sourceUrl" placeholder="Where you found it (link)" aria-label="Where the name was found" />
                     </div>
                   }
                 </div>
@@ -224,12 +262,12 @@ const SOURCES: { key: SourceKey; label: string; hint: string }[] = [
 
             @if (q.canEdit) {
               <div class="actions">
-                @if (step() > 1) { <button class="btn btn-ghost" (click)="goTo(step() - 1)" [disabled]="busy()">Back</button> }
+                @if (step() > 1) { <button class="btn btn-ghost" (click)="goTo(step() - 1)" [disabled]="busy()">← Previous step</button> }
                 <span class="spacer"></span>
                 @if (step() < 5) {
                   <button class="btn btn-outline" (click)="saveStep(step())" [disabled]="busy()">Save draft</button>
                   <button class="btn btn-primary" (click)="goTo(step() + 1)" [disabled]="busy()">{{ busy() ? 'Saving…' : 'Save & continue' }}</button>
-                } @else if (q.status !== 'assigned') {
+                } @else if (q.status !== 'assigned' && q.status !== 'needs_review') {
                   <button class="btn btn-outline" (click)="complete(false)" [disabled]="busy() || q.missing.length > 0 || !q.hasUsableContact">Ready for assignment (no salesperson yet)</button>
                   <button class="btn btn-primary" (click)="complete(true)" [disabled]="busy() || !assigneeId || q.missing.length > 0 || !q.hasUsableContact">Complete qualification &amp; assign</button>
                 }
@@ -242,7 +280,13 @@ const SOURCES: { key: SourceKey; label: string; hint: string }[] = [
   `,
   styles: [`
     .qualify { max-width: 1080px; }
-    .back-link { font-size: .8125rem; color: var(--text-muted); text-decoration: none; }
+    .crumbs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: .8rem; color: var(--text-muted); margin: 0 0 6px; a { color: var(--text-muted); text-decoration: none; &:hover { color: var(--primary); } } }
+    .field-err { margin: 0; font-size: .78rem; color: var(--danger-text); }
+    .is-invalid { border-color: var(--danger) !important; }
+    .review { padding: 18px 20px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; border-left: 4px solid var(--warning); h2 { margin: 0; font-size: 1.05rem; } .sub { margin: 0; color: var(--text-muted); font-size: .86rem; }
+      .danger { color: var(--danger-text); } }
+    .review-matches { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; font-size: .86rem;
+      li { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; } .hint { display: block; } }
     .q-head { margin: 8px 0 16px; h1 { font-family: var(--font-display); font-size: 1.6rem; margin: 2px 0 0; } .sub { color: var(--text-muted); margin: 4px 0 0; font-size: .875rem; } }
     .eyebrow { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin: 0; font-weight: 600; }
     .status { color: var(--primary-dark); &[data-status='needs_correction'], &[data-status='needs_research'] { color: var(--warning-text, #92400e); } &[data-status='unsuitable'] { color: var(--danger-text); } }
@@ -300,6 +344,12 @@ export class QualifyComponent implements OnInit, OnDestroy {
   readonly reasonOptions = signal<QualificationResponse['reasonOptions']>([]);
   readonly step = signal(1);
   readonly done = signal<string | null>(null);
+  readonly fieldErrors = signal<Record<string, string>>({});
+  /** Saved progress being resumed (ADR 0017). */
+  readonly resumeKey = signal<string | null>(null);
+  readonly resumeData = signal<{ start: QualifyStart; draft: QualifyDraft | null } | null>(null);
+  readonly nextDraftKey = signal<string | null>(null);
+  reviewNote = '';
   private id = '';
 
   assigneeId = '';
@@ -312,8 +362,21 @@ export class QualifyComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.route.paramMap.subscribe((params) => {
       const id = params.get('id');
+      const resume = params.get('key');
       this.done.set(null);
       this.error.set('');
+      this.resumeKey.set(resume);
+      this.resumeData.set(null);
+      if (resume) {
+        this.isNew.set(false);
+        this.loading.set(false);
+        this.workflow.draft(resume).subscribe({
+          next: (r) => this.resumeData.set({ start: (r.start as QualifyStart) || { name: '', source: 'manual' }, draft: (r.draft as QualifyDraft) || null }),
+          error: (err) => this.error.set(err.status === 404 ? 'That saved research isn’t there any more — it may have been finished or discarded.' : 'Couldn’t load your saved research.'),
+        });
+        this.workflow.drafts().subscribe({ next: (r) => this.nextDraftKey.set(r.items.find((d) => d.key !== resume)?.key ?? null), error: () => undefined });
+        return;
+      }
       if (!id || id === 'new') {
         this.isNew.set(true);
         this.loading.set(false);
@@ -335,7 +398,7 @@ export class QualifyComponent implements OnInit, OnDestroy {
       business: { name: '', addressLine1: '', city: '', state: '', postalCode: '', category: '' },
       sources: { google: src(), website: src(), facebook: src() } as Record<SourceKey, { status: SourceStatus; url: string }>,
       contacts: {
-        email: { status: 'not_checked' as ContactStatus, value: '', sourceUrl: '' },
+        email: { status: 'not_checked' as ContactStatus, value: '', sourceType: '', sourceNote: '', sourceUrl: '' },
         phone: { status: 'not_checked' as ContactStatus, value: '', sourceUrl: '' },
         owner: { status: 'not_checked' as ContactStatus, name: '', title: '', sourceUrl: '' },
       },
@@ -354,7 +417,10 @@ export class QualifyComponent implements OnInit, OnDestroy {
       name: q.business.name || '', addressLine1: q.business.addressLine1 || '', city: q.business.city || '', state: q.business.state || '', postalCode: q.business.postalCode || '', category: q.business.category || '',
     };
     for (const s of SOURCES) f.sources[s.key] = { status: q.sources[s.key].status, url: q.sources[s.key].url || '' };
-    f.contacts.email = { status: q.contacts.email.status, value: q.contacts.email.value || '', sourceUrl: q.contacts.email.sourceUrl || '' };
+    const source = q.contacts.email.source;
+    f.contacts.email = {
+      status: q.contacts.email.status, value: q.contacts.email.value || '', sourceType: source?.type || '', sourceNote: source?.type === 'other' ? (source.label.replace(/^Other — /, '') || '') : '', sourceUrl: source?.url || '',
+    };
     f.contacts.phone = { status: q.contacts.phone.status, value: q.contacts.phone.value || '', sourceUrl: q.contacts.phone.sourceUrl || '' };
     f.contacts.owner = { status: q.contacts.owner.status, name: q.contacts.owner.name || '', title: q.contacts.owner.title || '', sourceUrl: q.contacts.owner.sourceUrl || '' };
     f.reason = { tags: [...q.reason.tags], text: q.reason.text || '' };
@@ -410,8 +476,40 @@ export class QualifyComponent implements OnInit, OnDestroy {
     this.busy.set(true);
     this.error.set('');
     request.subscribe({
-      next: (res) => { this.busy.set(false); this.apply(res); after?.(); },
-      error: (err) => { this.busy.set(false); this.error.set(err.error?.message || 'Not saved — your entries are still here. Try again.'); },
+      next: (res) => { this.busy.set(false); this.fieldErrors.set({}); this.apply(res); after?.(); },
+      error: (err) => {
+        this.busy.set(false);
+        if (err.error?.fields) this.fieldErrors.set(err.error.fields);
+        this.error.set(err.error?.message || 'Not saved — your entries are still here. Try again.');
+      },
+    });
+  }
+
+  err(field: string): string | null { return this.fieldErrors()[field] ?? null; }
+
+  clearErr(field: string): void {
+    const { [field]: _gone, ...rest } = this.fieldErrors();
+    this.fieldErrors.set(rest);
+  }
+
+  /** After finishing saved research: the next saved item, or a new search. */
+  nextResearch(): void {
+    const next = this.nextDraftKey();
+    this.router.navigate(next ? ['/app/qualify/resume', next] : ['/app/qualify']);
+  }
+
+  /** A manager settles a possible duplicate (ADR 0017). */
+  resolve(action: 'separate' | 'merge' | 'dismiss', targetOpportunityId?: string): void {
+    this.busy.set(true);
+    this.error.set('');
+    this.workflow.resolveReview(this.id, { action, targetOpportunityId, note: this.reviewNote || undefined }).subscribe({
+      next: (r) => {
+        this.busy.set(false);
+        this.done.set({ separate: 'Settled — it went ahead as a separate business', merge: 'Settled — the research was added to the existing lead', dismiss: 'Settled — the extra record was discarded' }[action]);
+        if (r.opportunityId !== this.id) this.id = r.opportunityId;
+        this.load();
+      },
+      error: (err) => { this.busy.set(false); this.error.set(err.error?.message || 'Not settled — try again.'); },
     });
   }
 
@@ -426,7 +524,9 @@ export class QualifyComponent implements OnInit, OnDestroy {
   }
 
   useEmail(email: string, sourceUrl: string | null): void {
-    this.form.contacts.email = { status: 'found', value: email, sourceUrl: sourceUrl || '' };
+    this.form.contacts.email = {
+      status: 'found', value: email, sourceType: /facebook\.com|fb\.com/i.test(sourceUrl || '') ? 'facebook' : 'website', sourceNote: '', sourceUrl: sourceUrl || '',
+    };
   }
 
   toggleReason(key: string, text: string): void {

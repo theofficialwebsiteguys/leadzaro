@@ -71,6 +71,9 @@ const OUTCOMES = {
   // Guided workflow (ADR 0016): an email sent outside Leadzaro, and "not now".
   email_sent: { label: 'Email sent — awaiting reply', advanceTo: 'contacting', connected: false },
   not_now: { label: 'Not now', advanceTo: null, connected: true },
+  // ADR 0017: they asked for information, and "not a business we can help" (disqualify).
+  info_requested: { label: 'Asked for information', advanceTo: 'contacting', connected: true },
+  not_a_fit: { label: 'Not a fit for us', advanceTo: null, connected: false },
 };
 
 /** How warm a lead is — tracked apart from the stage; a qualified lead is not automatically interested. */
@@ -81,16 +84,53 @@ const INTEREST_LEVELS = ['unknown', 'cold', 'warm', 'hot'];
  * means the lead never went through qualification (legacy or added by
  * sales directly). Only `assigned` (and null) leads are in sales queues.
  */
-const QUALIFICATION_STATUSES = ['draft', 'needs_research', 'needs_correction', 'ready', 'assigned', 'unsuitable'];
+const QUALIFICATION_STATUSES = ['draft', 'needs_research', 'needs_correction', 'needs_review', 'ready', 'assigned', 'unsuitable'];
 const QUALIFICATION_LABELS = {
   draft: 'Research in progress',
   needs_research: 'Needs more information',
   needs_correction: 'Returned for correction',
+  // ADR 0017: saved as a separate record while a manager checks a possible duplicate.
+  needs_review: 'Possible duplicate — being checked',
   ready: 'Ready for assignment',
   assigned: 'Assigned to sales',
   unsuitable: 'Not suitable',
 };
-const IN_QUALIFICATION = ['draft', 'needs_research', 'needs_correction', 'ready'];
+const IN_QUALIFICATION = ['draft', 'needs_research', 'needs_correction', 'needs_review', 'ready'];
+
+/**
+ * Where the relationship stands (ADR 0017), derived from the fields that
+ * already exist — qualification progress, stage and client status — so it
+ * never drifts from them. What happened on a call is an activity outcome
+ * and what happens next is the next action; neither is a lifecycle stage.
+ * Do-not-contact is a separate restriction shown alongside, never a stage.
+ */
+const LIFECYCLE_LABELS = {
+  research: 'Research',
+  needs_info: 'Needs information',
+  needs_review: 'Duplicate check',
+  ready: 'Qualified — ready for outreach',
+  active: 'Active outreach',
+  opportunity: 'Interested',
+  nurture: 'Nurture / on hold',
+  client: 'Won — client',
+  lost: 'Closed lost',
+  disqualified: 'Disqualified',
+};
+
+function lifecycleOf(opportunity, { isClient = false } = {}) {
+  const o = opportunity;
+  if (isClient || o.stage === 'won') return 'client';
+  if (['draft', 'needs_correction'].includes(o.qualificationStatus)) return 'research';
+  if (o.qualificationStatus === 'needs_research') return 'needs_info';
+  if (o.qualificationStatus === 'needs_review') return 'needs_review';
+  if (o.qualificationStatus === 'unsuitable') return 'disqualified';
+  if (o.qualificationStatus === 'ready') return 'ready';
+  if (o.stage === 'lost') return o.closeReasonCode === 'not_a_fit' ? 'disqualified' : 'lost';
+  if (o.stage === 'nurture') return 'nurture';
+  if (['qualified', 'proposal', 'awaiting_payment'].includes(o.stage)) return 'opportunity';
+  if (o.stage === 'contacting' || o.lastInteractionAt) return 'active';
+  return 'ready';
+}
 
 const CHANNELS = ['email', 'sms', 'call', 'in_person', 'linkedin', 'message', 'other'];
 const NEXT_ACTION_TYPES = ['call', 'email', 'text', 'follow_up', 'meeting', 'send_offer', 'payment_follow_up', 'handoff', 'other'];
@@ -213,6 +253,8 @@ module.exports = {
   QUALIFICATION_STATUSES,
   QUALIFICATION_LABELS,
   IN_QUALIFICATION,
+  LIFECYCLE_LABELS,
+  lifecycleOf,
   inSalesWhere,
   STAGES,
   STAGE_LABELS,

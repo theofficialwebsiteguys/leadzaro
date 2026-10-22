@@ -73,6 +73,8 @@ module.exports = (sequelize) => {
     // Other social profiles found while qualifying: [{ platform, url }] (ADR 0016).
     socialLinks: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
     emailDiscovery: { type: DataTypes.JSONB, allowNull: true },
+    // Where each email was found, keyed by the lower-cased address (ADR 0017).
+    emailSources: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
     // Workspace-wide defaults for an agency (ADR 0012): timezone, default
     // search location/keywords, default follow-up days.
     settings: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },

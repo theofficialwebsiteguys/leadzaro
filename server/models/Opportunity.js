@@ -119,6 +119,9 @@ module.exports = (sequelize) => {
     closingReviewNote: { type: DataTypes.STRING(500), allowNull: true },
     closingException: { type: DataTypes.STRING(500), allowNull: true },
     clientManagerUserId: { type: DataTypes.UUID, allowNull: true },
+    // Sales accepting a qualifier's handoff (ADR 0017), apart from the qualifier completing it.
+    salesAcceptedAt: { type: DataTypes.DATE, allowNull: true },
+    salesAcceptedByUserId: { type: DataTypes.UUID, allowNull: true },
   }, {
     indexes: [
       {

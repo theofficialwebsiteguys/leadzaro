@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal, viewChild } from '@angular
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { LeadService } from '../../core/services/lead.service';
+import { WorkflowService } from '../../core/services/workflow.service';
 import { Lead, SearchOptions, SearchPreset } from '../../core/models/lead.model';
 import { IconComponent } from '../../shared/icon/icon.component';
 import { QualifyFlowComponent, QualifyOutcome, QualifyResult, QualifyStart } from './qualify-flow.component';
@@ -13,6 +14,8 @@ interface Session {
   items: Lead[];
   index: number;
   results: Record<string, QualifyOutcome | 'skipped'>;
+  /** Obvious chains left out of the queue (ADR 0017), with why — shown on request. */
+  excluded?: Lead[];
 }
 
 function read(): Session | null {
@@ -23,7 +26,8 @@ function read(): Session | null {
  * A qualifying session (ADR 0016): choose what kind of business and where,
  * then work through the results one business at a time — worth it or not,
  * links, contact, reason, decide — and move straight on to the next. No
- * list to manage; nothing becomes a lead until it's qualified.
+ * list to manage; nothing becomes a lead until it's qualified. Obvious
+ * chains are left out (ADR 0017), and can be shown and brought back.
  */
 @Component({
   selector: 'app-qualify-session',
@@ -32,6 +36,7 @@ function read(): Session | null {
   template: `
     <div class="qs">
       @let s = session();
+      <nav class="crumbs" aria-label="Breadcrumb"><a routerLink="/app/my-work">My Work</a><span aria-hidden="true">›</span><span>Qualifying</span></nav>
       @if (!s) {
         <header class="head">
           <h1>Qualify businesses</h1>
@@ -83,7 +88,8 @@ function read(): Session | null {
             <li><strong>{{ counts().not_relevant }}</strong> not relevant</li>
             <li><strong>{{ counts().skipped }}</strong> skipped</li>
           </ul>
-          <div class="row"><a routerLink="/app/my-work" class="btn btn-ghost">My Work</a><button class="btn btn-primary btn-lg" (click)="endSession()">Start another search</button></div>
+          @if (s.excluded?.length) { <p class="excluded-note">{{ s.excluded!.length }} obvious chain{{ s.excluded!.length === 1 ? ' was' : 's were' }} left out of this search.</p> }
+          <div class="row"><a routerLink="/app/my-work" class="btn btn-ghost">Back to My Work</a><button class="btn btn-primary btn-lg" (click)="endSession()">Start another search</button></div>
         </section>
       } @else {
         @let lead = current()!;
@@ -106,12 +112,29 @@ function read(): Session | null {
               <span class="c c-q">{{ counts().qualified }} qualified</span>
               <span class="c c-n">{{ counts().needs_info }} need info</span>
               <span class="c c-x">{{ counts().not_relevant }} not relevant</span>
+              @if (s.excluded?.length) { <button type="button" class="excl-toggle" (click)="showExcluded.set(!showExcluded())" [attr.aria-expanded]="showExcluded()">{{ s.excluded!.length }} chain{{ s.excluded!.length === 1 ? '' : 's' }} hidden · {{ showExcluded() ? 'Hide' : 'Show excluded' }}</button> }
             </div>
           </div>
+          @if (showExcluded() && s.excluded?.length) {
+            <div class="excluded" role="region" aria-label="Excluded chains">
+              <p class="hint">Left out because they look like chains. Bring one back if it’s actually a local business worth researching.</p>
+              <ul>
+                @for (x of s.excluded!; track x.id) {
+                  <li>
+                    <span class="ex-main"><strong>{{ x.name }}</strong><span class="hint">{{ x.chain?.reasons?.[0] }}@if (x.city) { · {{ x.city }} }</span></span>
+                    <span class="ex-actions">
+                      <button class="btn btn-ghost btn-sm" (click)="restore(x, false)">Research it</button>
+                      <button class="btn btn-outline btn-sm" (click)="restore(x, true)" [disabled]="allowing()" title="Always show this location in searches">Always allow</button>
+                    </span>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
         </header>
         @if (flash()) { <div class="alert alert-success flash" role="status">{{ flash() }}</div> }
         @for (x of [lead]; track x.id) {
-          <app-qualify-flow [start]="startFor(x)" [session]="true" (completed)="decided($event)">
+          <app-qualify-flow [start]="startFor(x)" [session]="true" (completed)="decided($event)" (skip)="skip()">
             @if (upNext().length) {
               <section class="card up-next">
                 <h4>Up next</h4>
@@ -159,6 +182,14 @@ function read(): Session | null {
     .btn-xl { padding: 14px 24px; font-size: 1.05rem; border-radius: 12px; align-self: flex-start; display: inline-flex; gap: 8px; align-items: center; margin-top: 6px; }
     .alt { font-size: .85rem; color: var(--text-muted); margin: 14px 4px; }
     .flash { margin-bottom: 10px; }
+    .crumbs { display: flex; gap: 6px; align-items: center; font-size: .8rem; color: var(--text-muted); margin: 0 0 10px; a { color: var(--text-muted); text-decoration: none; &:hover { color: var(--primary); } } }
+    .excl-toggle { background: none; border: 0; color: var(--primary); font-size: .8rem; cursor: pointer; padding: 0; }
+    .excluded { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px;
+      ul { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 8px; }
+      li { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
+      .ex-main { display: flex; flex-direction: column; min-width: 0; } .ex-actions { display: flex; gap: 6px; } }
+    .hint { font-size: .78rem; color: var(--text-muted); margin: 0; }
+    .excluded-note { font-size: .82rem; }
     .summary { max-width: 560px; margin: 0 auto; padding: 30px; text-align: center; color: var(--success); display: flex; flex-direction: column; align-items: center; gap: 8px;
       h1 { color: var(--text-primary); margin: 0; } p { color: var(--text-muted); margin: 0; } ul { list-style: none; padding: 0; color: var(--text-primary); text-align: left; }
       .row { display: flex; gap: 8px; } }
@@ -166,7 +197,10 @@ function read(): Session | null {
 })
 export class QualifySessionComponent implements OnInit {
   private readonly leads = inject(LeadService);
+  private readonly workflow = inject(WorkflowService);
   private readonly flow = viewChild(QualifyFlowComponent);
+  readonly showExcluded = signal(false);
+  readonly allowing = signal(false);
 
   readonly options = signal<SearchOptions | null>(null);
   readonly categories = signal<string[]>([]);
@@ -242,9 +276,17 @@ export class QualifySessionComponent implements OnInit {
       next: (res) => {
         this.loading.set(false);
         // Only businesses nobody has dealt with yet: not in Leadzaro, not being researched by a teammate.
-        const items = res.data.items.filter((l) => !l.pipeline && !(l.researching && !l.researching.mine));
-        if (!items.length) { this.error.set('Every business in that search is already in Leadzaro or being researched. Try another area or type.'); return; }
-        this.save({ label, items, index: 0, results: {} });
+        const open = res.data.items.filter((l) => !l.pipeline && !(l.researching && !l.researching.mine));
+        // Obvious chains are set aside (with why), not deleted — they can be brought back.
+        const excluded = open.filter((l) => l.chain?.status === 'excluded');
+        const items = open.filter((l) => l.chain?.status !== 'excluded');
+        if (!items.length) {
+          this.error.set(excluded.length
+            ? `Every new business in that search looks like a chain (${excluded.length} left out). Try another area or type.`
+            : 'Every business in that search is already in Leadzaro or being researched. Try another area or type.');
+          return;
+        }
+        this.save({ label, items, index: 0, results: {}, excluded });
       },
       error: (err) => { this.loading.set(false); this.error.set(err.error?.message || 'The search didn’t work. Try again in a moment.'); },
     });
@@ -268,7 +310,27 @@ export class QualifySessionComponent implements OnInit {
       longitude: lead.longitude ?? null,
       source: lead.source ?? 'google',
       facebookUrl: lead.discovery?.facebook?.url ?? null,
+      chain: lead.chain ?? null,
     };
+  }
+
+  /** Brings an excluded result back as the next business; "always" also saves an exception for everyone. */
+  restore(lead: Lead, always: boolean): void {
+    const s = this.session();
+    if (!s) return;
+    const add = () => {
+      const items = [...s.items];
+      items.splice(Math.min(s.index + 1, items.length), 0, always && lead.chain ? { ...lead, chain: { ...lead.chain, status: 'allowed' } } : lead);
+      this.save({ ...s, items, excluded: (s.excluded ?? []).filter((x) => x.id !== lead.id) });
+      this.flash.set(`${lead.name} is up next.`);
+      setTimeout(() => this.flash.set(''), 3000);
+    };
+    if (!always) { add(); return; }
+    this.allowing.set(true);
+    this.workflow.allowPlace(lead.googlePlaceId || lead.id, lead.name).subscribe({
+      next: () => { this.allowing.set(false); add(); },
+      error: (err) => { this.allowing.set(false); this.error.set(err.error?.message || 'The exception wasn’t saved — try again.'); },
+    });
   }
 
   decided(result: QualifyResult): void {

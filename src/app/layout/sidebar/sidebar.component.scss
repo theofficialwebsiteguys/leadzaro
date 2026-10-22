@@ -156,7 +156,7 @@
     color: #cbd5e1;
   }
 
-  &.active {
+  &.active, &.also-active {
     background: var(--sidebar-active);
     color: var(--sidebar-text-active);
 

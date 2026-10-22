@@ -7,6 +7,7 @@ const {
 const { recordAudit } = require('../../core/audit/auditService');
 const { invalid, assertNoSecrets } = require('./salesCommon');
 const contactDiscovery = require('./contactDiscoveryService');
+const emailSources = require('./emailSources');
 
 /**
  * The introduction email (ADR 0014): a reason for outreach the employee
@@ -105,6 +106,114 @@ async function previousEmails(agencyId, organizationId, email, { limit = 5 } = {
   }));
 }
 
+/**
+ * What each quick-pick reason can mean for sales (ADR 0017). `why` is a
+ * general point — not something checked for this business — and is shown
+ * as such. `opener` turns what the qualifier recorded into a first line
+ * for the customer, in plain first-person wording that claims no more than
+ * was observed. `ask` is an open question for a call.
+ */
+const TAG_BRIEFS = {
+  no_website: {
+    label: 'No website found',
+    why: 'People who look them up online have nowhere to go beyond the listing.',
+    opener: (name) => `When I looked ${name} up online, I couldn’t find a website for the business.`,
+    ask: 'How do new customers usually find you right now?',
+  },
+  broken_links: {
+    label: 'Broken links',
+    why: 'Links that don’t work tend to make visitors give up.',
+    opener: () => 'I was looking at your website and noticed a few links that don’t seem to work.',
+    ask: 'Is anyone looking after the website for you at the moment?',
+  },
+  outdated_info: {
+    label: 'Outdated information',
+    why: 'Out-of-date details (hours, services, prices) can cost calls and visits.',
+    opener: () => 'I noticed some of the information on your website looks like it might be out of date.',
+    ask: 'Is it easy for you to update the website yourselves?',
+  },
+  mobile_navigation: {
+    label: 'Hard to use on mobile',
+    why: 'Many people look businesses up on a phone; a site that’s hard to use there can lose them.',
+    opener: () => 'I looked at your website on my phone and found it a little hard to get around.',
+    ask: 'Do many customers find you from their phones?',
+  },
+  no_contact_action: {
+    label: 'No clear contact or booking',
+    why: 'Visitors who can’t quickly call, book or send a message often move on.',
+    opener: () => 'I couldn’t find an easy way to get in touch or book through your website.',
+    ask: 'How do most customers book with you today?',
+  },
+  relies_on_facebook: {
+    label: 'Relies mainly on Facebook',
+    why: 'A Facebook page on its own is harder to find on Google, and isn’t fully theirs to control.',
+    opener: (name) => `It looks like Facebook is the main place people find ${name} online.`,
+    ask: 'Has Facebook been working well for bringing in new customers?',
+  },
+};
+
+function openerFor(opportunity, organization) {
+  const tags = (opportunity.research?.reasonTags || []).filter((t) => TAG_BRIEFS[t]);
+  if (tags.length) return { text: tags.slice(0, 2).map((t) => TAG_BRIEFS[t].opener(organization.name)).join(' '), fromNote: false };
+  if (opportunity.outreachReason) return { text: sentence(opportunity.outreachReason), fromNote: true };
+  return { text: null, fromNote: false };
+}
+
+/**
+ * The sales handoff (ADR 0017): what the qualifier observed, why it may
+ * matter, the supporting links, who researched it and when, the original
+ * reason and later additions — plus a first line for an email and a short
+ * call talking point built only from those facts. Missing is said plainly.
+ */
+async function briefingFor(ctx, opportunity, organization) {
+  const research = opportunity.research || {};
+  const tags = (research.reasonTags || []).filter((t) => TAG_BRIEFS[t]);
+  const ids = new Set([opportunity.qualifiedByUserId, opportunity.researcherUserId, research.reasonBy?.userId, research.reasonOriginal?.by]
+    .concat((research.reasonAdditions || []).map((a) => a.by), (research.reasonHistory || []).map((h) => h.replacedBy)).filter(Boolean));
+  const users = ids.size ? await User.findAll({ where: { id: [...ids] }, attributes: ['id', 'name'] }) : [];
+  const who = (id) => {
+    const u = users.find((x) => x.id === id);
+    return u ? { id: u.id, name: u.name } : null;
+  };
+  const opener = openerFor(opportunity, organization);
+  const links = [];
+  if (organization.website) links.push({ label: 'Website', url: organization.website });
+  if (organization.facebookUrl) links.push({ label: 'Facebook', url: organization.facebookUrl });
+  const google = research.sources?.google?.url;
+  if (google) links.push({ label: 'Google listing', url: google });
+  const context = research.reasonContext || null;
+  const contextLink = context && /^https?:\/\/\S+$/i.test(context.trim()) ? context.trim() : null;
+  const original = research.reasonOriginal && research.reasonOriginal.text !== opportunity.outreachReason ? {
+    text: research.reasonOriginal.text, by: who(research.reasonOriginal.by), at: research.reasonOriginal.at,
+  } : null;
+  const observed = opportunity.outreachReason || null;
+  const firstAsk = tags.length ? TAG_BRIEFS[tags[0]].ask : 'How do customers usually find you today?';
+  return {
+    observed,
+    missing: !observed,
+    tags: tags.map((t) => ({ key: t, label: TAG_BRIEFS[t].label })),
+    relevance: tags.map((t) => TAG_BRIEFS[t].why),
+    context: contextLink ? null : context,
+    contextLink,
+    evidence: opportunity.outreachEvidence || null,
+    links,
+    researchedBy: who(opportunity.qualifiedByUserId) || who(opportunity.researcherUserId),
+    researchedAt: opportunity.qualifiedAt || research.updatedAt || null,
+    editedBy: research.reasonBy?.userId && research.reasonBy.userId !== (opportunity.qualifiedByUserId || opportunity.researcherUserId) ? who(research.reasonBy.userId) : null,
+    editedAt: research.reasonBy?.at || null,
+    original,
+    additions: (research.reasonAdditions || []).slice(-5).map((a) => ({ text: a.text, context: a.context || null, by: who(a.by), at: a.at })),
+    emailSource: organization.email ? emailSources.sourceFor(organization, organization.email) : null,
+    emailOpener: opener.text,
+    openerFromNote: opener.fromNote,
+    talkingPoint: observed ? {
+      opening: opener.text,
+      ask: firstAsk,
+      reminder: 'Say what you saw, then ask — don’t tell them what’s wrong with their business or promise results.',
+    } : null,
+  };
+}
+
 async function outreachContext(ctx, opportunity, organization) {
   return {
     observations: observations(organization),
@@ -119,19 +228,50 @@ async function load(ctx, opportunityId) {
   return { opportunity, organization };
 }
 
+/**
+ * Edits the reason to reach out. The qualifier's original is kept (and
+ * every earlier version, with who replaced it), so an edit never erases
+ * the research it came from.
+ */
 async function updateReason(ctx, opportunityId, input) {
   const { opportunity } = await load(ctx, opportunityId);
   const reason = String(input.reason ?? '').trim();
-  const evidence = String(input.evidence ?? '').trim();
-  if (reason.length > 1000) throw invalid('Keep the reason under 1,000 characters.');
-  if (evidence.length > 2000) throw invalid('Keep the supporting notes under 2,000 characters.');
+  const evidence = input.evidence === undefined ? opportunity.outreachEvidence || '' : String(input.evidence ?? '').trim();
+  if (reason.length > 1000) throw invalid('Keep the reason under 1,000 characters.', 422, { field: 'reason' });
+  if (evidence.length > 2000) throw invalid('Keep the supporting notes under 2,000 characters.', 422, { field: 'evidence' });
   assertNoSecrets(reason, 'Reason for outreach');
   assertNoSecrets(evidence, 'Supporting notes');
-  await opportunity.update({ outreachReason: reason || null, outreachEvidence: evidence || null });
+  const previous = String(opportunity.outreachReason || '').trim();
+  const research = { ...(opportunity.research || {}) };
+  const now = new Date().toISOString();
+  if (previous && previous !== reason) {
+    if (!research.reasonOriginal) research.reasonOriginal = { text: previous, tags: research.reasonTags || [], by: research.reasonBy?.userId || opportunity.qualifiedByUserId || opportunity.researcherUserId || null, at: research.reasonBy?.at || opportunity.qualifiedAt || null };
+    research.reasonHistory = [...(research.reasonHistory || []), {
+      text: previous, by: research.reasonBy?.userId || null, at: research.reasonBy?.at || null, replacedBy: ctx.userId, replacedAt: now,
+    }].slice(-20);
+  }
+  if (previous !== reason) research.reasonBy = { userId: ctx.userId, at: now };
+  await opportunity.update({ outreachReason: reason || null, outreachEvidence: evidence || null, research });
   await recordAudit({
     organizationId: ctx.agencyId, actorUserId: ctx.userId, action: 'sales.outreach_reason_updated', targetType: 'Opportunity', targetId: opportunity.id, req: ctx.req,
   });
   return { outreachReason: opportunity.outreachReason, outreachEvidence: opportunity.outreachEvidence };
+}
+
+/** Adds context to the reason (e.g. what sales learned on a call), attributed, without changing the original. */
+async function addReasonNote(ctx, opportunityId, input) {
+  const { opportunity } = await load(ctx, opportunityId);
+  const textNote = String(input.text ?? '').trim();
+  if (!textNote) throw invalid('Write what you’d like to add.', 422, { field: 'text' });
+  if (textNote.length > 500) throw invalid('Keep it under 500 characters.', 422, { field: 'text' });
+  assertNoSecrets(textNote, 'Note');
+  const research = { ...(opportunity.research || {}) };
+  research.reasonAdditions = [...(research.reasonAdditions || []), { text: textNote, by: ctx.userId, at: new Date().toISOString() }].slice(-20);
+  await opportunity.update({ research });
+  await recordAudit({
+    organizationId: ctx.agencyId, actorUserId: ctx.userId, action: 'sales.outreach_reason_note_added', targetType: 'Opportunity', targetId: opportunity.id, req: ctx.req,
+  });
+  return { added: true };
 }
 
 function money(cents) {
@@ -150,6 +290,7 @@ function sentence(text) {
  */
 async function draftIntro(ctx, opportunityId, input = {}) {
   const { opportunity, organization } = await load(ctx, opportunityId);
+  if (opportunity.doNotContact) throw invalid('This business is marked do not contact, so no email is drafted.', 409, { code: 'do_not_contact' });
   const user = await User.findByPk(ctx.userId, { attributes: ['name', 'email', 'phone', 'preferences'] });
   const contact = input.contactId
     ? await Contact.findOne({ where: { id: input.contactId, organizationId: organization.id, deletedAt: null } })
@@ -163,6 +304,7 @@ async function draftIntro(ctx, opportunityId, input = {}) {
   const myFirst = myName.split(' ')[0] || myName;
   const company = ctx.agencyName || 'our team';
   const reason = opportunity.outreachReason ? sentence(opportunity.outreachReason) : null;
+  const opening = openerFor(opportunity, organization);
   const facts = observations(organization);
   const noWebsite = !organization.website || contactDiscovery.isSocialUrl(organization.website);
   const unreachable = facts.some((f) => f.key === 'website_unreachable');
@@ -177,8 +319,10 @@ async function draftIntro(ctx, opportunityId, input = {}) {
   const greeting = contact?.name ? `Hi ${contact.name.split(' ')[0]},` : 'Hi there,';
   let opener;
   if (reason) {
-    opener = reason;
+    opener = opening.text || reason;
     evidence.push({ label: 'Reason for outreach', value: opportunity.outreachReason, source: opportunity.outreachEvidence || 'Entered by an employee' });
+    // The qualifier's note, word for word, was written for the team — say so, so it gets reworded.
+    if (opening.fromNote) warnings.push('The opening line is the qualifier’s note word for word. Reword it for the customer before sending.');
   } else {
     opener = `I’m reaching out to a few local businesses${organization.city ? ` in ${organization.city}` : ''} about their websites.`;
     warnings.push('No reason for outreach is saved yet, so the opening is general. Add a specific, supported reason for a better email.');
@@ -235,5 +379,5 @@ async function saveDraft(ctx, opportunityId, input) {
 }
 
 module.exports = {
-  observations, previousEmails, outreachContext, updateReason, draftIntro, saveDraft,
+  observations, previousEmails, outreachContext, updateReason, addReasonNote, draftIntro, saveDraft, briefingFor, openerFor, TAG_BRIEFS,
 };

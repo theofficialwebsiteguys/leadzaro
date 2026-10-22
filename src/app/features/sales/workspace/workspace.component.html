@@ -89,7 +89,7 @@
                   }
                 }
                 <hr />
-                <button role="menuitem" [class.danger]="!w.opportunity.doNotContact" (click)="menuOpen.set(false); toggleDnc()">{{ w.opportunity.doNotContact ? 'Allow contact again' : 'Mark do not contact' }}</button>
+                @if (!w.opportunity.doNotContact || w.permissions.clearDoNotContact) { <button role="menuitem" [class.danger]="!w.opportunity.doNotContact" (click)="menuOpen.set(false); toggleDnc()">{{ w.opportunity.doNotContact ? 'Lift do-not-contact' : 'Mark do not contact' }}</button> }
                 @if (w.permissions.archive) { <button role="menuitem" (click)="menuOpen.set(false); archiveToggle()">{{ w.opportunity.archivedAt ? 'Restore lead' : 'Archive lead' }}</button> }
               </div>
             }
@@ -459,9 +459,9 @@
       </div>
     </app-dialog>
 
-    <app-dialog [open]="dncDialog()" title="Mark do not contact" (closed)="dncDialog.set(false)">
+    <app-dialog [open]="dncDialog()" [title]="dncLifting() ? 'Lift do-not-contact' : 'Mark do not contact'" (closed)="dncDialog.set(false)">
       <p class="text-sm">This stops all calls, texts and emails to {{ w.business.name }} from Leadzaro and removes it from every queue. The stage stays as it is.</p>
-      <div class="form-group mt-2"><label class="form-label" for="dnc-r">Reason</label><input id="dnc-r" class="form-control" [(ngModel)]="dncReason" placeholder="e.g. Asked us to stop calling" /></div>
+      <div class="form-group mt-2"><label class="form-label" for="dnc-r">Reason</label><input id="dnc-r" class="form-control" [(ngModel)]="dncReason" [placeholder]="dncLifting() ? 'Needed — e.g. They called and asked for a quote' : 'e.g. Asked us to stop calling'" /></div>
       <div dialog-actions>
         <button class="btn btn-ghost" (click)="dncDialog.set(false)">Cancel</button>
         <button class="btn btn-danger" (click)="saveDnc()" [disabled]="busy()">Mark do not contact</button>

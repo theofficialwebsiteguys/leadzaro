@@ -106,7 +106,46 @@ export interface QueueItem {
   reason: string;
   label: string;
   dueAt: string | null;
+  // ADR 0017: what a row needs to be useful on its own.
+  outreachReason?: string | null;
+  lifecycleLabel?: string;
+  lastInteractionAt?: string | null;
+  lastInteractionSummary?: string | null;
+  nextActionType?: string | null;
+  nextActionNote?: string | null;
+  pendingAcceptance?: boolean;
 }
+
+/** The sales handoff (ADR 0017): what the qualifier saw, and how to use it. */
+export interface Briefing {
+  observed: string | null;
+  missing: boolean;
+  tags: { key: string; label: string }[];
+  relevance: string[];
+  context: string | null;
+  contextLink: string | null;
+  evidence: string | null;
+  links: { label: string; url: string }[];
+  researchedBy: UserRef | null;
+  researchedAt: string | null;
+  editedBy: UserRef | null;
+  editedAt: string | null;
+  original: { text: string; by: UserRef | null; at: string | null } | null;
+  additions: { text: string; context: string | null; by: UserRef | null; at: string }[];
+  emailSource: EmailSourceInfo | null;
+  emailOpener: string | null;
+  openerFromNote: boolean;
+  talkingPoint: { opening: string | null; ask: string; reminder: string } | null;
+}
+
+export interface EmailSourceInfo { type: string; label: string; url: string | null; by?: string | null; at?: string | null; legacyText?: string | null }
+
+export interface HistoryItem { key: string; label: string; detail: string | null; by: string | null; at: string }
+
+export const LIFECYCLE_LABELS: Record<string, string> = {
+  research: 'Research', needs_info: 'Needs information', needs_review: 'Duplicate check', ready: 'Qualified — ready for outreach', active: 'Active outreach',
+  opportunity: 'Interested', nurture: 'Nurture / on hold', client: 'Won — client', lost: 'Closed lost', disqualified: 'Disqualified',
+};
 
 export interface LeadRow {
   opportunityId: string;
@@ -463,7 +502,11 @@ export interface Workspace {
     closingReviewNote: string | null;
     closingException: string | null;
     clientManager: UserRef | null;
+    lifecycle: string;
+    lifecycleLabel: string;
   };
+  briefing: Briefing;
+  history: HistoryItem[];
   qualificationBrief: QualificationBrief | null;
   closing: { milestones: ClosingMilestone[] };
   business: Business;
@@ -487,6 +530,7 @@ export interface Workspace {
     send: boolean; logOutreach: boolean; createPayment: boolean; customOffer: boolean; recordManualPayment: boolean;
     assign: boolean; managePipeline: boolean; archive: boolean; editBusiness: boolean;
     approveClose: boolean; returnToQualifier: boolean; qualify: boolean;
+    clearDoNotContact: boolean; accept: boolean;
   };
 }
 
@@ -505,7 +549,7 @@ export interface MessageTemplate {
 
 export const TEMPLATE_CATEGORIES: Record<string, string> = {
   intro: 'First contact', voicemail: 'Voicemail', follow_up: 'Follow-up', meeting_confirmation: 'Meeting confirmation',
-  objection: 'Objection handling', payment_reminder: 'Offer & payment', welcome: 'Client welcome', other: 'Other',
+  objection: 'Objection handling', payment_reminder: 'Offer & payment', welcome: 'Client welcome', thank_you: 'Thank you', information: 'Information they asked for', other: 'Other',
 };
 
 export interface RenderedMessage { templateId: string | null; channel: string | null; subject: string | null; body: string; unresolved: string[]; paymentRequestId: string | null }
@@ -639,6 +683,9 @@ export interface ContactResearch {
   email: string | null;
   emailSource: string | null;
   emailSourceUrl: string | null;
+  /** Where the email was found (ADR 0017): a choice and its label, e.g. "Facebook". */
+  emailSourceType?: string | null;
+  emailSourceLabel?: string | null;
   checkedAt: string | null;
   checkedBy: string | null;
   candidates: DiscoveryCandidate[];

@@ -78,10 +78,10 @@ export class SalesService {
   // Contact research and the introduction email (ADR 0014)
   contactStatus(ids: string[]) { return this.get<Record<string, ContactResearch>>('/leads/contact-status', { ids: ids.join(',') }); }
   discoverEmail(id: string, force = false) { return this.send<ContactResearch>('post', `/leads/${id}/discover-email`, { force }); }
-  updateResearch(id: string, body: { email?: string | null; sourceUrl?: string | null; facebookUrl?: string | null; markNoEmail?: boolean; note?: string }) {
+  updateResearch(id: string, body: { email?: string | null; sourceType?: string | null; sourceNote?: string | null; sourceUrl?: string | null; facebookUrl?: string | null; markNoEmail?: boolean; note?: string }) {
     return this.send<ContactResearch>('put', `/leads/${id}/contact-research`, body);
   }
-  updateOutreachReason(id: string, body: { reason: string; evidence: string }) { return this.send<{ outreachReason: string | null; outreachEvidence: string | null }>('put', `/leads/${id}/outreach-reason`, body); }
+  updateOutreachReason(id: string, body: { reason: string; evidence?: string }) { return this.send<{ outreachReason: string | null; outreachEvidence: string | null }>('put', `/leads/${id}/outreach-reason`, body); }
   draftIntro(id: string, contactId: string | null = null) { return this.send<IntroDraft>('post', `/leads/${id}/draft-intro`, { contactId }); }
   saveEmailDraft(id: string, body: { subject?: string; body?: string; to?: string | null; clear?: boolean }) { return this.send<{ emailDraft: EmailDraft | null }>('put', `/leads/${id}/email-draft`, body); }
 

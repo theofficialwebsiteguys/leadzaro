@@ -196,6 +196,7 @@ async function createRequest(ctx, opportunityId, input) {
   if (!adapter.configured) throw invalid('Stripe is not connected. Ask an administrator to connect it in Settings.', 503);
   const opportunity = await loadOpportunity(ctx, opportunityId);
   if (opportunity.stage === 'won') throw invalid('This deal is already won. Start a new deal for this business to sell something else.', 409);
+  if (opportunity.doNotContact) throw invalid('This business is marked do not contact, so no payment link is created.', 409, { code: 'do_not_contact' });
   if (opportunity.archivedAt) throw invalid('Restore this lead before requesting a payment.', 409);
 
   const kind = input.delivery === 'checkout' ? 'checkout_session' : 'payment_link';
@@ -280,6 +281,8 @@ async function loadRequest(ctx, requestId) {
 async function markSent(ctx, requestId, via) {
   const request = await loadRequest(ctx, requestId);
   if (!OPEN_STATUSES.includes(request.status)) throw invalid('Only an open payment request can be marked as sent.', 409);
+  const suppressed = await Opportunity.findOne({ where: { id: request.opportunityId, agencyOrganizationId: ctx.agencyId, doNotContact: true }, attributes: ['id'] });
+  if (suppressed) throw invalid('This business is marked do not contact, so the link can’t be sent.', 409, { code: 'do_not_contact' });
   const channel = ['email', 'sms', 'in_person', 'other'].includes(via) ? via : 'other';
   await request.update({
     status: request.status === 'created' ? 'sent' : request.status, sentAt: new Date(), sentVia: channel, sentByUserId: ctx.userId,

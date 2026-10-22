@@ -42,6 +42,7 @@
           [routerLink]="item.route"
           routerLinkActive="active"
           [routerLinkActiveOptions]="{ exact: !!item.exact }"
+          [class.also-active]="alsoActive(item)"
           class="nav-item"
           (click)="closeMobile.emit()"
         >

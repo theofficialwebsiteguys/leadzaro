@@ -421,7 +421,7 @@ export class LeadSearchComponent implements OnInit, OnDestroy {
   inQualification(lead: Lead): boolean {
     const id = this.opportunityFor()[lead.id];
     const status = lead.pipeline?.qualificationStatus;
-    return !this.canOpenLeads() || this.drafts().has(id) || ['draft', 'needs_research', 'needs_correction', 'ready'].includes(status ?? '');
+    return !this.canOpenLeads() || this.drafts().has(id) || ['draft', 'needs_research', 'needs_correction', 'needs_review', 'ready'].includes(status ?? '');
   }
 
   // ---------------------------------------------------------------- email discovery

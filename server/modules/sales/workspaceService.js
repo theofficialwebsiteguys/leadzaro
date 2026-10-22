@@ -3,13 +3,13 @@
 const crypto = require('node:crypto');
 const { Op } = require('sequelize');
 const {
-  sequelize, Opportunity, Organization, Lead, Contact, LeadNote, OutreachActivity, User, InboundSubmission, PaymentLinkRequest, SalesPayment,
+  sequelize, Opportunity, Organization, Lead, Contact, LeadNote, OutreachActivity, User, InboundSubmission, PaymentLinkRequest, SalesPayment, AuditLog,
 } = require('../../models');
 const { recordAudit } = require('../../core/audit/auditService');
 const { notify } = require('../../core/notifications/notificationService');
 const {
   STAGES, STAGE_LABELS, OUTCOMES, CHANNELS, NEXT_ACTION_TYPES, isForward, QUALIFICATION_FIELDS, STAGE_GUIDE, CLOSE_REASONS, NURTURE_REASONS,
-  STALL_DAYS, stallInfo, missingForStage, INTEREST_LEVELS, QUALIFICATION_LABELS, IN_QUALIFICATION,
+  STALL_DAYS, stallInfo, missingForStage, INTEREST_LEVELS, QUALIFICATION_LABELS, IN_QUALIFICATION, LIFECYCLE_LABELS, lifecycleOf,
 } = require('../../core/crm/pipelineCatalog');
 const opportunityService = require('../crm/opportunityService');
 const handoffService = require('./handoffService');
@@ -410,6 +410,63 @@ async function claimForOutreach(ctx, opportunity, { confirmOwner = false, transa
   if (!opportunity.assignedToUserId) await opportunity.update({ assignedToUserId: ctx.userId }, transaction ? { transaction } : undefined);
 }
 
+const HISTORY_ACTIONS = {
+  'opportunity.created': 'Added to Leadzaro',
+  'qualification.completed': 'Qualified',
+  'qualification.merged': 'Qualified (research added to this lead)',
+  'qualification.research_added': 'Research added',
+  'qualification.review_requested': 'Saved for a duplicate check',
+  'qualification.review_resolved': 'Duplicate check settled',
+  'qualification.status_changed': 'Qualification status changed',
+  'qualification.returned': 'Returned to the qualifier',
+  'opportunity.assigned': 'Assigned',
+  'opportunity.stage_changed': 'Stage changed',
+  'sales.do_not_contact_set': 'Marked do not contact',
+  'sales.do_not_contact_cleared': 'Do-not-contact lifted',
+};
+
+/**
+ * Who researched, qualified, assigned, accepted, returned and contacted
+ * this lead, and when (ADR 0017) — from the audit log and the activity
+ * record, newest first. Read-only.
+ */
+async function handoffHistory(ctx, opportunity, activities) {
+  const rows = await AuditLog.findAll({
+    where: {
+      organizationId: ctx.agencyId, targetType: 'Opportunity', targetId: String(opportunity.id), action: Object.keys(HISTORY_ACTIONS),
+    },
+    order: [['createdAt', 'DESC']],
+    limit: 40,
+  });
+  const ids = new Set(rows.flatMap((r) => [r.actorUserId, r.metadata?.assigneeUserId, r.metadata?.userId]).filter(Boolean));
+  if (opportunity.salesAcceptedByUserId) ids.add(opportunity.salesAcceptedByUserId);
+  const users = ids.size ? await User.findAll({ where: { id: [...ids] }, attributes: ['id', 'name'] }) : [];
+  const who = (id) => users.find((u) => u.id === id)?.name || null;
+  const detail = (r) => {
+    const m = r.metadata || {};
+    switch (r.action) {
+      case 'qualification.completed':
+      case 'qualification.merged': return m.assigneeUserId ? `Handed to ${who(m.assigneeUserId) || 'sales'}` : 'Ready for assignment';
+      case 'qualification.returned': return m.reason || null;
+      case 'qualification.status_changed': return QUALIFICATION_LABELS[m.status] || null;
+      case 'qualification.review_resolved': return { separate: 'A separate business', merge: 'Merged into the existing lead', dismiss: 'Dismissed as a duplicate' }[m.resolution] || null;
+      case 'opportunity.assigned': return m.userId ? `To ${who(m.userId) || 'a teammate'}` : null;
+      case 'opportunity.stage_changed': return `${STAGE_LABELS[m.from] || m.from} → ${STAGE_LABELS[m.to] || m.to}${m.reason === 'outcome' ? ' (from a logged outcome)' : ''}`;
+      case 'sales.do_not_contact_set':
+      case 'sales.do_not_contact_cleared': return m.reason || null;
+      default: return null;
+    }
+  };
+  const items = rows.map((r) => ({
+    key: r.id, label: HISTORY_ACTIONS[r.action], detail: detail(r), by: who(r.actorUserId), at: r.createdAt,
+  }));
+  if (opportunity.salesAcceptedAt) items.push({ key: 'accepted', label: 'Accepted by sales', detail: null, by: who(opportunity.salesAcceptedByUserId), at: opportunity.salesAcceptedAt });
+  const outbound = activities.filter((a) => a.direction === 'outbound' && !['failed', 'undelivered'].includes(a.status || ''));
+  const first = outbound[outbound.length - 1];
+  if (first) items.push({ key: 'first_contact', label: 'First contacted', detail: first.outcomeLabel || first.subject || first.channel, by: first.user?.name || null, at: first.occurredAt });
+  return items.sort((a, b) => new Date(b.at) - new Date(a.at));
+}
+
 async function getWorkspace(ctx, opportunityId) {
   const opportunity = await Opportunity.findOne({
     where: { id: opportunityId, agencyOrganizationId: ctx.agencyId, deletedAt: null },
@@ -426,6 +483,8 @@ async function getWorkspace(ctx, opportunityId) {
   });
   if (!opportunity) throw invalid('Lead not found', 404);
   const organization = opportunity.organization;
+  const lifecycle = lifecycleOf(opportunity, { isClient: organization.type === 'client' });
+  const acceptedBy = opportunity.salesAcceptedByUserId ? await User.findByPk(opportunity.salesAcceptedByUserId, { attributes: ['id', 'name'] }) : null;
 
   const [contacts, activities, notes, requests, payments, handoff, others, stripeCustomer] = await Promise.all([
     Contact.findAll({ where: { organizationId: organization.id, archivedAt: null, deletedAt: null }, order: [['isPrimary', 'DESC'], ['createdAt', 'ASC']] }),
@@ -512,7 +571,11 @@ async function getWorkspace(ctx, opportunityId) {
       closingReviewNote: opportunity.closingReviewNote,
       closingException: opportunity.closingException,
       clientManager: opportunity.clientManager || null,
+      lifecycle,
+      lifecycleLabel: LIFECYCLE_LABELS[lifecycle],
     },
+    briefing: await introEmail.briefingFor(ctx, opportunity, organization),
+    history: await handoffHistory(ctx, opportunity, presentedActivities),
     qualificationBrief: opportunity.qualificationStatus ? {
       status: opportunity.qualificationStatus,
       statusLabel: QUALIFICATION_LABELS[opportunity.qualificationStatus],
@@ -522,6 +585,11 @@ async function getWorkspace(ctx, opportunityId) {
       qualifiedAt: opportunity.qualifiedAt,
       sources: opportunity.research?.sources || {},
       contacts: Object.fromEntries(Object.entries(opportunity.research?.contacts || {}).map(([k, v]) => [k, { status: v?.status || 'not_checked', sourceUrl: v?.sourceUrl || null }])),
+      // The qualifier's handoff and sales accepting it are separate steps (ADR 0017).
+      acceptedAt: opportunity.salesAcceptedAt,
+      acceptedBy,
+      pendingAcceptance: opportunity.qualificationStatus === 'assigned' && !opportunity.salesAcceptedAt && Boolean(opportunity.qualifiedByUserId),
+      returns: (opportunity.research?.returns || []).slice(-3),
     } : null,
     closing: {
       // eslint-disable-next-line global-require
@@ -562,6 +630,9 @@ async function getWorkspace(ctx, opportunityId) {
       approveClose: ctx.can('sales.approve_close'),
       returnToQualifier: Boolean(opportunity.researcherUserId) && !IN_QUALIFICATION.includes(opportunity.qualificationStatus),
       qualify: ctx.can('qualification.work'),
+      // A request not to be contacted is lifted only by a manager (ADR 0017).
+      clearDoNotContact: ctx.can('leads.assign'),
+      accept: opportunity.qualificationStatus === 'assigned' && (opportunity.assignedToUserId === ctx.userId || !opportunity.assignedToUserId || ctx.can('leads.assign')),
     },
   };
 }
@@ -785,18 +856,51 @@ async function updateQualification(ctx, opportunityId, input) {
   return getWorkspace(ctx, opportunityId);
 }
 
+/**
+ * Do-not-contact is a restriction on the business, not a stage (ADR 0017):
+ * it applies to every deal for the business, survives stage changes, and
+ * clears the scheduled next step. Turning it off is a separate, deliberate act.
+ */
+async function applyDoNotContact(ctx, opportunity, { on, reason, transaction }) {
+  const values = on
+    ? {
+      doNotContact: true, doNotContactAt: new Date(), doNotContactReason: reason || 'Asked not to be contacted', nextActionAt: null, nextActionType: null, nextActionNote: null,
+    }
+    : { doNotContact: false, doNotContactAt: null, doNotContactReason: null };
+  await Opportunity.update(values, { where: { agencyOrganizationId: ctx.agencyId, organizationId: opportunity.organizationId, deletedAt: null }, transaction });
+  await opportunity.reload({ transaction });
+}
+
 async function setDoNotContact(ctx, opportunityId, { doNotContact, reason }) {
   const opportunity = await loadOpportunity(ctx, opportunityId);
   const on = Boolean(doNotContact);
-  await opportunity.update({
-    doNotContact: on,
-    doNotContactAt: on ? new Date() : null,
-    doNotContactReason: on ? (String(reason || '').trim().slice(0, 255) || 'Asked not to be contacted') : null,
-    ...(on ? { nextActionAt: null, nextActionType: null, nextActionNote: null } : {}),
-  });
+  const why = String(reason || '').trim().slice(0, 255);
+  assertNoSecrets(why, 'Reason');
+  if (!on) {
+    if (!opportunity.doNotContact) return getWorkspace(ctx, opportunityId);
+    if (!ctx.can('leads.assign')) throw invalid('Only a manager can lift do-not-contact. Ask one if the business asked to be contacted again.', 403);
+    if (!why) throw invalid('Say why it’s being lifted — for example “They called and asked for a quote”.', 422, { field: 'reason' });
+  } else if (opportunity.doNotContact) return getWorkspace(ctx, opportunityId);
+  await sequelize.transaction((transaction) => applyDoNotContact(ctx, opportunity, { on, reason: why, transaction }));
   await recordAudit({
-    organizationId: ctx.agencyId, actorUserId: ctx.userId, action: on ? 'sales.do_not_contact_set' : 'sales.do_not_contact_cleared', targetType: 'Opportunity', targetId: opportunity.id, req: ctx.req,
+    organizationId: ctx.agencyId, actorUserId: ctx.userId, action: on ? 'sales.do_not_contact_set' : 'sales.do_not_contact_cleared', targetType: 'Opportunity', targetId: opportunity.id, metadata: { reason: why || null }, req: ctx.req,
   });
+  return getWorkspace(ctx, opportunityId);
+}
+
+/** Sales accepts a qualifier's handoff (ADR 0017). Contacting the lead also counts as accepting it. */
+async function acceptLead(ctx, opportunityId) {
+  const opportunity = await loadOpportunity(ctx, opportunityId);
+  if (opportunity.qualificationStatus !== 'assigned') throw invalid('This lead isn’t waiting for sales to accept it.', 409);
+  if (opportunity.assignedToUserId && opportunity.assignedToUserId !== ctx.userId && !ctx.can('leads.assign')) {
+    throw invalid('This lead is assigned to someone else.', 403);
+  }
+  if (!opportunity.salesAcceptedAt) {
+    await opportunity.update({ salesAcceptedAt: new Date(), salesAcceptedByUserId: ctx.userId, ...(opportunity.assignedToUserId ? {} : { assignedToUserId: ctx.userId }) });
+    await recordAudit({
+      organizationId: ctx.agencyId, actorUserId: ctx.userId, action: 'sales.lead_accepted', targetType: 'Opportunity', targetId: opportunity.id, req: ctx.req,
+    });
+  }
   return getWorkspace(ctx, opportunityId);
 }
 
@@ -811,6 +915,11 @@ async function recordInteraction(ctx, opportunity, {
   const updates = { lastInteractionAt: occurredAt, lastInteractionSummary: String(summary || '').slice(0, 255) };
   if (direction === 'inbound') updates.replyNeededSince = opportunity.replyNeededSince || occurredAt;
   else updates.replyNeededSince = null;
+  // The owner reaching out accepts a handoff they hadn't accepted yet.
+  if (direction === 'outbound' && opportunity.qualificationStatus === 'assigned' && !opportunity.salesAcceptedAt && opportunity.assignedToUserId === ctx.userId) {
+    updates.salesAcceptedAt = occurredAt;
+    updates.salesAcceptedByUserId = ctx.userId;
+  }
   await opportunity.update(updates, transaction ? { transaction } : undefined);
   if (advanceTo && isForward(opportunity.stage, advanceTo) && opportunity.stage !== 'won') {
     await applyStage(ctx, opportunity, advanceTo, { reason: 'outcome', transaction });
@@ -883,10 +992,15 @@ async function logOutcome(ctx, opportunityId, input) {
       });
 
       if (outcome === 'do_not_contact') {
-        await opportunity.update({
-          doNotContact: true, doNotContactAt: new Date(), doNotContactReason: note || 'Asked not to be contacted', nextActionAt: null, nextActionType: null, nextActionNote: null,
-        }, { transaction });
+        await applyDoNotContact(ctx, opportunity, { on: true, reason: note || 'Asked not to be contacted', transaction });
         if (contact) await contact.update({ doNotContact: true }, { transaction });
+        return;
+      }
+      // Not a business we can help: disqualified with its reason, history kept.
+      if (outcome === 'not_a_fit') {
+        await applyStage(ctx, opportunity, 'lost', {
+          lostReason: note || CLOSE_REASONS.not_a_fit, closeReasonCode: 'not_a_fit', reason: 'outcome', transaction,
+        });
         return;
       }
       if (outcome === 'wrong_contact' && contact) await contact.update({ archivedAt: new Date(), isPrimary: false }, { transaction });
@@ -916,6 +1030,8 @@ async function logOutcome(ctx, opportunityId, input) {
           });
         }
       }
+      // They asked for information: a follow-up is set unless one was chosen.
+      if (outcome === 'info_requested' && !next) revisit = { nextActionAt: new Date(Date.now() + 2 * 86400000), nextActionType: 'follow_up', nextActionNote: 'Follow up on the information they asked for' };
       if (revisit) await opportunity.update(revisit, { transaction });
       else if (next && opportunity.stage !== 'lost') await opportunity.update(next, { transaction });
       else if (dueFollowUp || ['lost'].includes(opportunity.stage)) await opportunity.update({ nextActionAt: null, nextActionType: null, nextActionNote: null }, { transaction });
@@ -927,6 +1043,11 @@ async function logOutcome(ctx, opportunityId, input) {
   await recordAudit({
     organizationId: ctx.agencyId, actorUserId: ctx.userId, action: 'outreach.created', targetType: 'Opportunity', targetId: opportunityId, metadata: { channel, outcome }, req: ctx.req,
   });
+  if (outcome === 'do_not_contact') {
+    await recordAudit({
+      organizationId: ctx.agencyId, actorUserId: ctx.userId, action: 'sales.do_not_contact_set', targetType: 'Opportunity', targetId: opportunityId, metadata: { reason: note || null, via: 'outcome' }, req: ctx.req,
+    });
+  }
   // Wrong details from qualification go back to the qualifier (ADR 0016).
   if (outcome === 'wrong_contact' && input.returnToQualification) {
     // eslint-disable-next-line global-require
@@ -961,6 +1082,10 @@ async function createAdditionalOpportunity(ctx, opportunityId, { title }) {
     createdByUserId: ctx.userId,
     stageChangedAt: new Date(),
     isTest: opportunity.isTest,
+    // A business that asked not to be contacted stays that way for every new deal (ADR 0017).
+    doNotContact: opportunity.doNotContact,
+    doNotContactAt: opportunity.doNotContactAt,
+    doNotContactReason: opportunity.doNotContactReason,
   });
   await recordAudit({
     organizationId: ctx.agencyId, actorUserId: ctx.userId, action: 'opportunity.created', targetType: 'Opportunity', targetId: created.id, metadata: { fromOpportunityId: opportunityId }, req: ctx.req,
@@ -1202,6 +1327,8 @@ module.exports = {
   updateQualification,
   claimForOutreach,
   setDoNotContact,
+  applyDoNotContact,
+  acceptLead,
   logOutcome,
   logReply,
   markReplyHandled,

@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SalesService } from '../../../core/services/sales.service';
 import { IconComponent } from '../../../shared/icon/icon.component';
+import { EmailSourceComponent } from '../../../shared/email-source/email-source.component';
 import { ContactResearch, DISCOVERY_TONES, OutreachObservation, Workspace, facebookSearchUrl } from '../../../core/models/sales.model';
 
 const FACEBOOK_MATCH: Record<string, string> = {
@@ -22,7 +23,7 @@ const FACEBOOK_MATCH: Record<string, string> = {
 @Component({
   selector: 'app-contact-research',
   standalone: true,
-  imports: [FormsModule, DatePipe, IconComponent],
+  imports: [FormsModule, DatePipe, IconComponent, EmailSourceComponent],
   template: `
     @let w = ws();
     @let r = research();
@@ -40,7 +41,7 @@ const FACEBOOK_MATCH: Record<string, string> = {
         <div class="val">
           @if (r.email && !editingEmail()) {
             <a [href]="'mailto:' + r.email" class="email">{{ r.email }}</a>
-            <span class="note">{{ sourceLabel(r) }}@if (safeLink(r.emailSourceUrl)) { · <a [href]="safeLink(r.emailSourceUrl)" target="_blank" rel="noopener">source ↗</a> }
+            <span class="note">@if (r.emailSourceLabel) { found on: {{ r.emailSourceLabel }} } @else { {{ sourceLabel(r) }} }@if (safeLink(r.emailSourceUrl)) { · <a [href]="safeLink(r.emailSourceUrl)" target="_blank" rel="noopener">see where ↗</a> }
               @if (w.permissions.editBusiness) { · <button class="link-btn" (click)="startEmail(r.email)">change</button> }</span>
           } @else if (!editingEmail()) {
             <span [class]="'tag ' + tones[r.status]">@if (r.status === 'checking') { <span class="spinner spinner-sm"></span> } {{ r.statusLabel }}</span>
@@ -49,7 +50,9 @@ const FACEBOOK_MATCH: Record<string, string> = {
           @if (editingEmail()) {
             <form class="mini-form" (ngSubmit)="saveEmail()">
               <input class="form-control" type="email" name="email" [(ngModel)]="emailInput" placeholder="name@business.com" aria-label="Email address" required />
-              <input class="form-control" name="source" [(ngModel)]="sourceInput" placeholder="Where you found it (optional)" aria-label="Where you found it" />
+              <app-email-source [(type)]="sourceType" [(note)]="sourceNote" [(url)]="sourceInput" [email]="emailInput"
+                [typeError]="fieldError() === 'sourceType' ? error() : null" [noteError]="fieldError() === 'sourceNote' ? error() : null" [urlError]="fieldError() === 'sourceUrl' ? error() : null"
+                (changed)="fieldError.set(null)" />
               <div class="actions">
                 <button type="button" class="btn btn-ghost btn-sm" (click)="editingEmail.set(false)">Cancel</button>
                 <button type="submit" class="btn btn-primary btn-sm" [disabled]="busy() || !emailInput.trim()">Save</button>
@@ -195,6 +198,10 @@ export class ContactResearchComponent implements OnChanges, OnDestroy {
 
   emailInput = '';
   sourceInput = '';
+  sourceType = '';
+  sourceNote = '';
+  /** Which form field the last error belongs to, so it's shown there (ADR 0017). */
+  readonly fieldError = signal<string | null>(null);
   facebookInput = '';
   reasonInput = '';
   evidenceInput = '';
@@ -251,8 +258,12 @@ export class ContactResearchComponent implements OnChanges, OnDestroy {
   }
 
   startEmail(current: string): void {
+    const r = this.research();
     this.emailInput = current;
-    this.sourceInput = this.research().facebookUrl ?? '';
+    this.sourceType = r.emailSourceType ?? '';
+    this.sourceNote = r.emailSourceType === 'other' ? (r.emailSourceLabel ?? '').replace(/^Other — /, '') : '';
+    this.sourceInput = r.emailSourceUrl ?? '';
+    this.fieldError.set(null);
     this.editingEmail.set(true);
   }
 
@@ -271,16 +282,19 @@ export class ContactResearchComponent implements OnChanges, OnDestroy {
         after?.();
         this.changed.emit();
       },
-      error: (err) => { this.busy.set(false); this.error.set(err.error?.message || 'Not saved — try again.'); },
+      error: (err) => { this.busy.set(false); this.fieldError.set(err.error?.field ?? null); this.error.set(err.error?.message || 'Not saved — try again.'); },
     });
   }
 
   saveEmail(): void {
-    this.update({ email: this.emailInput.trim(), sourceUrl: this.sourceInput.trim() || null }, () => this.editingEmail.set(false));
+    this.update({
+      email: this.emailInput.trim(), sourceType: this.sourceType || null, sourceNote: this.sourceNote.trim() || null, sourceUrl: this.sourceInput.trim() || null,
+    }, () => this.editingEmail.set(false));
   }
 
+  /** A candidate from the website check: the page it was on is where it was found. */
   useCandidate(email: string, sourceUrl: string): void {
-    this.update({ email, sourceUrl });
+    this.update({ email, sourceType: /facebook\.com|fb\.com/i.test(sourceUrl || '') ? 'facebook' : 'website', sourceUrl });
   }
 
   saveFacebook(): void {

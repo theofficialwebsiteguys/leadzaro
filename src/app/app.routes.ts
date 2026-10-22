@@ -50,6 +50,7 @@ export const routes: Routes = [
       { path: '', redirectTo: 'my-work', pathMatch: 'full' },
       {
         path: 'my-work',
+        title: 'My Work · Leadzaro',
         loadComponent: () => import('./features/my-work/my-work.component').then((m) => m.MyWorkComponent),
       },
       {
@@ -60,6 +61,7 @@ export const routes: Routes = [
       // Work one lead at a time, one step at a time (ADR 0016).
       {
         path: 'work/:id',
+        title: 'Lead · Leadzaro',
         loadComponent: () => import('./features/work/work.component').then((m) => m.WorkComponent),
       },
       // Today was folded into My Work; old links keep working.
@@ -68,11 +70,19 @@ export const routes: Routes = [
       {
         path: 'qualify',
         pathMatch: 'full',
+        title: 'Qualifying · Leadzaro',
         loadComponent: () => import('./features/qualify/qualify-session.component').then((m) => m.QualifySessionComponent),
+      },
+      // Research saved part-way (ADR 0017), resumed from My Work or a link.
+      {
+        path: 'qualify/resume/:key',
+        title: 'Research · Leadzaro',
+        loadComponent: () => import('./features/qualify/qualify.component').then((m) => m.QualifyComponent),
       },
       // Manual entry (/qualify/new) and leads already saved (corrections, parked research).
       {
         path: 'qualify/:id',
+        title: 'Research · Leadzaro',
         loadComponent: () => import('./features/qualify/qualify.component').then((m) => m.QualifyComponent),
       },
       {
@@ -96,6 +106,7 @@ export const routes: Routes = [
       },
       {
         path: 'leads',
+        title: 'Leads · Leadzaro',
         loadComponent: () => import('./features/sales/leads/leads.component').then((m) => m.LeadsComponent),
       },
       {
@@ -215,6 +226,8 @@ export const routes: Routes = [
             loadComponent: () => import('./features/settings/sections/sales-kit-settings.component').then((m) => m.SalesKitSettingsComponent),
           },
           { path: 'team', loadComponent: () => import('./features/settings/sections/team-settings.component').then((m) => m.TeamSettingsComponent) },
+          // Chain filter for qualifying searches (ADR 0017).
+          { path: 'search-filters', loadComponent: () => import('./features/settings/sections/search-filters-settings.component').then((m) => m.SearchFiltersSettingsComponent) },
           {
             path: 'sales',
             canDeactivate: [unsavedChangesGuard],

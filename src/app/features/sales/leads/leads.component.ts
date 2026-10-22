@@ -3,6 +3,7 @@ import { Component, HostListener, OnInit, computed, inject, signal } from '@angu
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SalesService } from '../../../core/services/sales.service';
+import { NavOriginService } from '../../../core/services/nav-origin.service';
 import { CrmService } from '../../../core/services/crm.service';
 import { OrganizationContextService } from '../../../core/services/organization-context.service';
 import { AuthService } from '../../../core/services/auth.service';
@@ -42,6 +43,7 @@ export class LeadsComponent implements OnInit {
   private readonly crm = inject(CrmService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly origin = inject(NavOriginService);
   readonly org = inject(OrganizationContextService);
   readonly auth = inject(AuthService);
 
@@ -145,7 +147,9 @@ export class LeadsComponent implements OnInit {
 
   open(row: LeadRow): void {
     // Rows open the step-by-step view; the full record is one click from there (ADR 0016).
-    this.router.navigate(['/app/work', row.opportunityId]);
+    // "Back" returns to this list with the same filters (ADR 0017).
+    this.origin.remember('leads', this.router.url);
+    this.router.navigate(['/app/work', row.opportunityId], { queryParams: { from: 'leads' } });
   }
 
   toggleMenu(event: Event, id: string): void {

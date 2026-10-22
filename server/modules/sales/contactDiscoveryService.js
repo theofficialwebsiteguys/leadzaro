@@ -345,6 +345,8 @@ async function discoverForSearchResult({
 
 /** The discovery record as the UI should see it (a check interrupted by a restart reads as failed). */
 function present(organization) {
+  // eslint-disable-next-line global-require
+  const source = organization.email ? require('./emailSources').sourceFor(organization, organization.email) : null;
   const d = organization.emailDiscovery || null;
   const manualEmail = ['manual', 'verified'].includes(organization.detailsSource?.email);
   let status = d?.status || (organization.email ? 'found' : 'not_checked');
@@ -360,7 +362,10 @@ function present(organization) {
     summary,
     email: organization.email || null,
     emailSource: organization.email ? (manualEmail ? 'manual' : (organization.detailsSource?.email || d?.emailSource || null)) : null,
-    emailSourceUrl: organization.email ? (d?.email === organization.email ? d.emailSourceUrl : (d?.manualSourceUrl || null)) : null,
+    // Where the email was found (ADR 0017): a choice like "Facebook", and a link only when there is one.
+    emailSourceUrl: source?.url || null,
+    emailSourceType: source?.type || null,
+    emailSourceLabel: source?.label || null,
     checkedAt: d?.checkedAt || null,
     checkedBy: d?.checkedBy || null,
     candidates: d?.candidates || [],
@@ -498,12 +503,21 @@ async function updateResearch(ctx, opportunityId, input) {
   if (input.email !== undefined) {
     const email = String(input.email || '').trim().toLowerCase();
     if (email) {
-      if (!isEmail(email) || email.length > 255) throw invalid('That email address does not look valid.');
+      if (!isEmail(email) || email.length > 255) throw invalid('That email address does not look valid.', 422, { field: 'email' });
+      // eslint-disable-next-line global-require
+      const emailSources = require('./emailSources');
+      // A choice from the list (Website, Facebook, …), an optional link, and a note for "Other";
+      // older clients sent free text as "sourceUrl", which is mapped to the nearest choice.
+      const result = emailSources.normalizeEmailSource({
+        sourceType: input.sourceType, sourceNote: input.sourceNote, sourceUrl: input.sourceUrl ?? input.source,
+      }, { websiteUrl: organization.website });
+      if (result.problem) throw invalid(result.problem, 422, { field: result.field });
       updates.email = email;
       detailsSource.email = 'manual';
-      const source = String(input.sourceUrl || input.source || '').trim().slice(0, 500) || null;
+      updates.emailSources = emailSources.withSource(organization.emailSources, email, result.source, { userId: ctx.userId });
+      const label = result.source ? emailSources.describe(result.source).label : null;
       Object.assign(discovery, {
-        status: 'found', email, emailSource: 'manual', manualSourceUrl: source, emailSourceUrl: source, checkedAt: discovery.checkedAt || null, enteredAt: new Date().toISOString(), enteredBy: ctx.userId, summary: `Added by hand${source ? ` from ${source}` : ''}.`, markedNoEmail: null,
+        status: 'found', email, emailSource: 'manual', manualSourceUrl: result.source?.url || null, emailSourceUrl: result.source?.url || null, checkedAt: discovery.checkedAt || null, enteredAt: new Date().toISOString(), enteredBy: ctx.userId, summary: `Added by hand${label ? ` (found on: ${label})` : ''}.`, markedNoEmail: null,
       });
     } else {
       updates.email = null;

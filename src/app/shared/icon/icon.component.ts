@@ -23,6 +23,9 @@ import { Component, input } from '@angular/core';
           <rect x="3" y="14" width="7" height="7" rx="1.5"/>
           <rect x="14" y="14" width="7" height="7" rx="1.5"/>
         }
+        @case ('chevron-right') {
+          <path d="m9 18 6-6-6-6"/>
+        }
         @case ('search') {
           <circle cx="11" cy="11" r="7"/>
           <path d="m21 21-4.35-4.35"/>

@@ -37,7 +37,9 @@ async function member(key, roleKeys) {
 const key = () => crypto.randomUUID();
 const MAPS = 'https://www.google.com/maps/place/Test+Business';
 
-function research({ phone = '(914) 555-0100' } = {}) {
+// Each business gets its own number: a shared phone is a strong duplicate match (ADR 0017).
+let phoneSeq = 2000;
+function research({ phone = `(914) 555-${phoneSeq++}` } = {}) {
   return {
     sources: { google: { status: 'found', url: MAPS }, website: { status: 'not_found' }, facebook: { status: 'unable' } },
     contacts: { email: { status: 'not_found' }, phone: phone ? { status: 'found', value: phone } : { status: 'not_found' }, owner: { status: 'not_found' } },
@@ -150,9 +152,14 @@ describe('Guided workflow (ADR 0016)', () => {
     expect(contacts.map((c) => c.name)).toEqual(expect.arrayContaining(['Rosa Bianchi', 'Luca Bianchi']));
     expect(await Opportunity.count({ where: { organizationId: opp.organizationId } })).toBe(1);
 
-    // Already qualified: no second merge.
+    // Already qualified: more research is added for its owner (ADR 0017) — no new credit, no change of status or owner.
     const again = await qualifier.call('post', '/sales/qualification', { ...body, mergeIntoOpportunityId: existingId });
-    expect(again.status).toBe(409);
+    expect(again.status).toBe(200);
+    expect(again.body.data.outcome).toBe('updated');
+    expect(await WorkCredit.count({ where: { opportunityId: existingId } })).toBe(1);
+    await opp.reload();
+    expect(opp.assignedToUserId).toBe(sales.user.id);
+    expect(opp.qualificationStatus).toBe('assigned');
   });
 
   test('without a usable email or phone the lead cannot go to sales, but can be parked', async () => {

@@ -29,6 +29,7 @@ const onboarding = require('./onboardingService');
 const workSessions = require('./workSessionService');
 const teamWork = require('./teamWorkService');
 const myWork = require('./myWorkService');
+const chainFilter = require('./chainFilterService');
 const { discoveryLimiter } = require('../../middleware/rateLimiter');
 
 /**
@@ -38,7 +39,7 @@ const { discoveryLimiter } = require('../../middleware/rateLimiter');
  * custom offers, team scope, reassignment).
  */
 
-const PASSTHROUGH = ['existing', 'existingOpportunityId', 'possibleDuplicates', 'candidates', 'unresolved', 'activityId', 'code', 'owner', 'missing', 'previous'];
+const PASSTHROUGH = ['existing', 'existingOpportunityId', 'possibleDuplicates', 'matches', 'candidates', 'unresolved', 'activityId', 'code', 'owner', 'missing', 'previous', 'field', 'fields', 'step'];
 
 function handle(fn) {
   return async (req, res, next) => {
@@ -130,6 +131,12 @@ router.post('/leads/:id/opportunities', requirePermission('leads.save'), read, h
 router.post('/leads/:id/discover-email', discoveryLimiter, update, handle((ctx, req) => contactDiscovery.requestForLead(ctx, req.params.id, { force: Boolean(req.body?.force) })));
 router.put('/leads/:id/contact-research', update, handle((ctx, req) => contactDiscovery.updateResearch(ctx, req.params.id, req.body || {})));
 router.put('/leads/:id/outreach-reason', update, handle((ctx, req) => introEmail.updateReason(ctx, req.params.id, req.body || {})));
+router.post('/leads/:id/outreach-reason/notes', update, handle(async (ctx, req) => {
+  await introEmail.addReasonNote(ctx, req.params.id, req.body || {});
+  return workspace.getWorkspace(ctx, req.params.id);
+}));
+// Sales accepting a qualifier's handoff (ADR 0017).
+router.post('/leads/:id/accept', requirePermission('outreach.create'), handle((ctx, req) => workspace.acceptLead(ctx, req.params.id)));
 router.post('/leads/:id/draft-intro', requirePermission('outreach.read'), handle((ctx, req) => introEmail.draftIntro(ctx, req.params.id, req.body || {})));
 router.put('/leads/:id/email-draft', requirePermission('outreach.create'), handle((ctx, req) => introEmail.saveDraft(ctx, req.params.id, req.body || {})));
 
@@ -198,18 +205,34 @@ const qualifyWrite = requireAnyPermission(['qualification.work', 'leads.assign']
 const qualify = requirePermission('qualification.work');
 router.get('/qualification-setup', qualify, handle((ctx) => qualification.setup(ctx)));
 router.post('/qualification', qualify, requirePermission('leads.save'), handle((ctx, req) => qualification.createQualified(ctx, req.body || {})));
+// Is this business already in Leadzaro? Read-only, within the caller's agency.
+router.post('/qualification/check', qualify, handle((ctx, req) => qualification.checkExisting(ctx, req.body || {})));
+// Saved progress (ADR 0017): the caller's own research that isn't decided yet.
+router.get('/qualification/drafts', qualify, handle(async (ctx) => ({ items: await qualification.myDrafts(ctx) })));
+router.get('/qualification/drafts/:key', qualify, handle((ctx, req) => qualification.getDraft(ctx, req.params.key)));
+router.put('/qualification/drafts/:key', qualify, handle((ctx, req) => qualification.saveDraft(ctx, req.params.key, req.body || {})));
+router.delete('/qualification/drafts/:key', qualify, handle((ctx, req) => qualification.release(ctx, req.params.key)));
 router.post('/qualification/claim', qualify, handle((ctx, req) => qualification.claim(ctx, req.body || {})));
 router.delete('/qualification/claim/:placeId', qualify, handle((ctx, req) => qualification.release(ctx, req.params.placeId)));
 router.get('/qualification/:id', qualifyRead, handle((ctx, req) => qualification.getQualification(ctx, req.params.id)));
 router.put('/qualification/:id', qualifyWrite, handle((ctx, req) => qualification.saveResearch(ctx, req.params.id, req.body || {})));
 router.put('/qualification/:id/status', qualifyWrite, handle((ctx, req) => qualification.setStatus(ctx, req.params.id, req.body || {})));
 router.post('/qualification/:id/complete', qualifyWrite, handle((ctx, req) => qualification.complete(ctx, req.params.id, req.body || {})));
+// A manager settles a possible duplicate (checked again in the service).
+router.post('/qualification/:id/review', requireAnyPermission(['leads.assign', 'team.review_work']), handle((ctx, req) => qualification.resolveReview(ctx, req.params.id, req.body || {})));
 router.post('/qualification/:id/discover-email', discoveryLimiter, qualifyWrite, handle(async (ctx, req) => {
   await qualification.getQualification(ctx, req.params.id);
   await contactDiscovery.requestForLead(ctx, req.params.id, { force: Boolean(req.body?.force) });
   return qualification.getQualification(ctx, req.params.id);
 }));
 router.post('/leads/:id/return-to-qualifier', requirePermission('outreach.create'), handle((ctx, req) => qualification.returnForCorrection(ctx, req.params.id, req.body || {})));
+
+// Chain filter for searches (ADR 0017): anyone who searches sees it; who can change what is checked in the service.
+const filters = requireAnyPermission(['qualification.work', 'leads.search', 'leads.assign', 'workspace.manage']);
+router.get('/chain-filter', filters, handle((ctx) => chainFilter.getSettings(ctx)));
+router.put('/chain-filter/brands', filters, handle((ctx, req) => chainFilter.updateBrands(ctx, req.body || {})));
+router.post('/chain-filter/allowed-places', filters, handle((ctx, req) => chainFilter.allowPlace(ctx, req.body || {})));
+router.delete('/chain-filter/allowed-places/:placeId', filters, handle((ctx, req) => chainFilter.removeAllowedPlace(ctx, req.params.placeId)));
 
 // Deal steps: interest, meeting, pricing.
 router.put('/leads/:id/interest', update, handle((ctx, req) => workspace.setInterest(ctx, req.params.id, req.body || {})));

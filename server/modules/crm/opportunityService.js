@@ -45,27 +45,34 @@ function businessDetailsFromLead(lead) {
  * Rejects if an active Opportunity already exists for this
  * (agency, lead) pair — the DB-level partial unique index backs this up,
  * but a pre-check gives a clean 409 instead of a raw constraint error.
+ *
+ * Pass `transaction` to create everything inside the caller's transaction
+ * (a qualification is written all at once or not at all — ADR 0017), and
+ * `leaveUnassigned` to create it with no owner.
  */
 async function createFromLead({
-  agencyOrganizationId, leadData, assignedToUserId, actorUserId,
+  agencyOrganizationId, leadData, assignedToUserId, actorUserId, transaction: outer = null, leaveUnassigned = false,
 }) {
   const leadDefaults = { ...leadData };
   delete leadDefaults.id;
   delete leadDefaults.isSaved;
+  const tx = outer ? { transaction: outer } : {};
 
   let lead;
   if (leadDefaults.googlePlaceId) {
-    [lead] = await Lead.findOrCreate({ where: { googlePlaceId: leadDefaults.googlePlaceId }, defaults: leadDefaults });
+    [lead] = await Lead.findOrCreate({ where: { googlePlaceId: leadDefaults.googlePlaceId }, defaults: leadDefaults, ...tx });
   } else {
-    lead = await Lead.create(leadDefaults);
+    lead = await Lead.create(leadDefaults, tx);
   }
 
   const existing = await Opportunity.findOne({
     where: { agencyOrganizationId, sourceLeadId: lead.id, archivedAt: null, deletedAt: null },
+    ...tx,
   });
   if (existing) throw invalid('An active opportunity already exists for this business', 409);
 
-  return sequelize.transaction(async (transaction) => {
+  const run = (fn) => (outer ? fn(outer) : sequelize.transaction(fn));
+  return run(async (transaction) => {
     const orgId = crypto.randomUUID();
     const prospectOrg = await Organization.create({
       id: orgId,
@@ -90,7 +97,7 @@ async function createFromLead({
       agencyOrganizationId,
       sourceLeadId: lead.id,
       stage: STAGES[0],
-      assignedToUserId: assignedToUserId || actorUserId,
+      assignedToUserId: leaveUnassigned ? null : (assignedToUserId || actorUserId),
       score: initialScore.score,
       scoreReason: initialScore.reason,
       createdByUserId: actorUserId || null,

@@ -29,6 +29,7 @@ const PLACEHOLDERS = {
   payment_link: 'The open payment link',
   meeting_time: 'Meeting time (always typed in)',
   their_need: 'Their need, from the lead’s qualification',
+  outreach_reason: 'Why we’re reaching out — a first line built from what the qualifier recorded',
   portfolio_link: 'First portfolio link in the Sales kit (Settings → Sales kit & goals)',
   services_list: 'Approved services and prices from the Sales kit',
 };
@@ -165,6 +166,9 @@ async function valuesFor(ctx, opportunityId, { contactId, paymentRequestId } = {
   const organization = await Organization.findByPk(opportunity.organizationId);
   values.business_name = organization.name;
   if (opportunity.qualNeed) values.their_need = opportunity.qualNeed;
+  // eslint-disable-next-line global-require
+  const opener = require('./introEmailService').openerFor(opportunity, organization);
+  if (opener.text) values.outreach_reason = opener.text;
   if (organization.website) values.website = organization.website;
   if (organization.city) values.city = organization.city;
   const contact = contactId

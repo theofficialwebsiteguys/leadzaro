@@ -48,6 +48,8 @@ export interface Lead {
   possibleMatch?: { organizationId: string; name: string; isClient: boolean; reasons: string[] } | null;
   /** A teammate has this listing open in qualification (nothing saved yet). */
   researching?: { name: string; mine: boolean; since: string } | null;
+  /** Chain filter (ADR 0017): an obvious chain (hidden by default), a hint, or an exception someone allowed. */
+  chain?: { status: 'excluded' | 'possible' | 'allowed' | null; reasons: string[]; brandKey: string | null; brandName: string | null };
   /** Guided search (ADR 0014): which selections found it, and an email check already run on it. */
   matchedQueries?: string[];
   searchArea?: string;

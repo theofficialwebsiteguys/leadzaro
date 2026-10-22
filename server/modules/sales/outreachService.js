@@ -50,9 +50,12 @@ function checkKey(input) {
   return key;
 }
 
-async function afterSend(ctx, opportunity, activity, { channel, paymentRequestId, body }) {
+async function afterSend(ctx, opportunity, activity, {
+  channel, paymentRequestId, body, courtesy = false,
+}) {
+  // A courtesy note (a thank-you after "not right now") doesn't pull a parked lead back into active outreach (ADR 0017).
   await workspaceService.recordInteraction(ctx, opportunity, {
-    direction: 'outbound', summary: `${channel === 'email' ? 'Email' : 'Text'} sent: ${activity.subject || String(body).slice(0, 60)}`, advanceTo: 'contacting',
+    direction: 'outbound', summary: `${channel === 'email' ? 'Email' : 'Text'} sent: ${activity.subject || String(body).slice(0, 60)}`, advanceTo: courtesy ? null : 'contacting',
   });
   if (paymentRequestId) {
     const request = await PaymentLinkRequest.findOne({ where: { id: paymentRequestId, opportunityId: opportunity.id } });
@@ -190,7 +193,9 @@ async function send(ctx, opportunityId, input) {
     status: result.status, providerMessageId: result.providerMessageId || null, fromAddress: result.from || null, provider: result.provider || activity.provider,
   });
   if (channel === 'email' && opportunity.emailDraft) await opportunity.update({ emailDraft: null });
-  await afterSend(ctx, opportunity, activity, { channel, paymentRequestId: input.paymentRequestId, body });
+  await afterSend(ctx, opportunity, activity, {
+    channel, paymentRequestId: input.paymentRequestId, body, courtesy: input.intent === 'courtesy',
+  });
   if (input.nextAction?.at) await workspaceService.setNextAction(ctx, opportunity.id, input.nextAction);
   await recordAudit({
     organizationId: ctx.agencyId, actorUserId: ctx.userId, action: 'outreach.sent', targetType: 'Opportunity', targetId: opportunity.id, metadata: { channel, activityId: activity.id }, req: ctx.req,
@@ -434,6 +439,10 @@ async function handleTwilioInbound(params) {
     await opportunity.update({
       doNotContact: true, doNotContactAt: new Date(), doNotContactReason: `Replied “${body.trim()}” by text`, nextActionAt: null, nextActionType: null, nextActionNote: null, replyNeededSince: null, lastInteractionAt: new Date(), lastInteractionSummary: 'Opted out by text',
     });
+    // An opt-out covers the business, so its other deals stop too (ADR 0017).
+    await Opportunity.update({
+      doNotContact: true, doNotContactAt: new Date(), doNotContactReason: `Replied “${body.trim()}” by text`, nextActionAt: null, nextActionType: null, nextActionNote: null,
+    }, { where: { agencyOrganizationId: opportunity.agencyOrganizationId, organizationId: opportunity.organizationId, doNotContact: false, deletedAt: null } });
     if (lastOutbound.contactId) await Contact.update({ doNotContact: true }, { where: { id: lastOutbound.contactId } });
     return;
   }

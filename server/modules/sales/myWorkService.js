@@ -2,13 +2,13 @@
 
 const { Op } = require('sequelize');
 const {
-  Opportunity, Organization, User, WorkCredit, WorkSession, SalesHandoff,
+  Opportunity, Organization, User, WorkCredit, WorkSession, SalesHandoff, OutreachActivity,
 } = require('../../models');
 const today = require('./todayService');
 const qualification = require('./qualificationService');
 const onboarding = require('./onboardingService');
 const workSessions = require('./workSessionService');
-const { inSalesWhere, STAGE_LABELS } = require('../../core/crm/pipelineCatalog');
+const { inSalesWhere } = require('../../core/crm/pipelineCatalog');
 
 /**
  * My Work (ADR 0016): the one home page, built from the caller's own
@@ -69,11 +69,11 @@ async function qualifierSection(ctx) {
 
 async function salesSection(ctx, query) {
   const t = await today.getToday(ctx, { scope: 'mine', tzOffset: query.tzOffset });
-  const include = [{ model: Organization, as: 'organization', attributes: ['id', 'name', 'city', 'state'] }];
+  const include = [{ model: Organization, as: 'organization', attributes: ['id', 'name', 'city', 'state', 'type', 'phone', 'email'] }];
   const base = {
     agencyOrganizationId: ctx.agencyId, deletedAt: null, archivedAt: null, assignedToUserId: ctx.userId, [Op.and]: [inSalesWhere()],
   };
-  const [meetings, closing, qualifiedNew] = await Promise.all([
+  const [meetings, closing, qualifiedNew, awaiting, lastActivity] = await Promise.all([
     Opportunity.findAll({
       where: { ...base, stage: { [Op.notIn]: ['won', 'lost'] }, meeting: { status: { [Op.in]: ['scheduled', 'rescheduled'] } } },
       include,
@@ -98,10 +98,40 @@ async function salesSection(ctx, query) {
       order: [['qualifiedAt', 'DESC']],
       limit: 25,
     }),
+    // Conversations underway: we reached out and the next step is later — waiting on them.
+    Opportunity.findAll({
+      where: {
+        ...base,
+        doNotContact: false,
+        stage: ['contacting', 'qualified', 'proposal', 'awaiting_payment'],
+        replyNeededSince: null,
+        lastInteractionAt: { [Op.ne]: null },
+        nextActionAt: { [Op.gt]: new Date() },
+      },
+      include,
+      order: [['lastInteractionAt', 'DESC']],
+      limit: 25,
+    }),
+    // Where you left off: the lead you last did something on, if it's still open.
+    OutreachActivity.findOne({
+      where: {
+        organizationId: ctx.agencyId, userId: ctx.userId, deletedAt: null, opportunityId: { [Op.ne]: null }, createdAt: { [Op.gte]: new Date(Date.now() - 3 * 86400000) },
+      },
+      order: [['createdAt', 'DESC']],
+      attributes: ['opportunityId', 'createdAt'],
+    }),
   ]);
-  const card = (o, extra = {}) => ({
-    opportunityId: o.id, businessName: o.organization?.name, city: o.organization?.city, state: o.organization?.state, stageLabel: STAGE_LABELS[o.stage], ...extra,
-  });
+  const card = (o, extra = {}) => today.card(o, extra);
+  let continueWith = null;
+  if (lastActivity) {
+    const o = await Opportunity.findOne({
+      where: {
+        ...base, id: lastActivity.opportunityId, doNotContact: false, stage: { [Op.notIn]: ['won', 'lost'] },
+      },
+      include,
+    });
+    if (o) continueWith = card(o, { at: lastActivity.createdAt });
+  }
   return {
     replies: t.replies,
     overdue: t.overdue,
@@ -111,6 +141,8 @@ async function salesSection(ctx, query) {
     // Leads added by sales directly (not through qualification) that haven't been contacted.
     newLeads: t.newLeads.filter((l) => !qualifiedNew.some((o) => o.id === l.opportunityId)),
     newlyAssigned: qualifiedNew.map((o) => card(o, { qualifiedBy: o.qualifiedBy, reason: o.outreachReason, qualifiedAt: o.qualifiedAt })),
+    awaitingReply: awaiting.map((o) => card(o)),
+    continueWith,
     meetings: meetings.map((o) => card(o, { at: o.meeting?.at, method: o.meeting?.methodLabel })),
     closing: closing.map((o) => card(o, {
       closingStatus: o.closingStatus, paymentConfirmedAt: o.paymentConfirmedAt, reviewNote: o.closingReviewNote,
@@ -122,7 +154,8 @@ async function salesSection(ctx, query) {
 }
 
 async function adminSection(ctx) {
-  const [closings, ready, pendingCredits, abandoned, failedHandoffs] = await Promise.all([
+  const manager = qualification.isManager(ctx);
+  const [closings, ready, pendingCredits, abandoned, failedHandoffs, reviews] = await Promise.all([
     ctx.can('sales.approve_close') ? Opportunity.count({ where: { agencyOrganizationId: ctx.agencyId, deletedAt: null, closingStatus: 'submitted' } }) : 0,
     Opportunity.count({
       where: {
@@ -132,9 +165,10 @@ async function adminSection(ctx) {
     ctx.can('team.review_work') ? WorkCredit.count({ where: { agencyOrganizationId: ctx.agencyId, status: 'pending' } }) : 0,
     ctx.can('team.review_work') ? WorkSession.count({ where: { agencyOrganizationId: ctx.agencyId, status: 'abandoned' } }) : 0,
     SalesHandoff.count({ where: { agencyOrganizationId: ctx.agencyId, status: 'failed' } }),
+    manager ? qualification.reviewQueue(ctx) : [],
   ]);
   return {
-    closingsToApprove: closings, readyForAssignment: ready, creditsToReview: pendingCredits, abandonedTimers: abandoned, failedHandoffs,
+    closingsToApprove: closings, readyForAssignment: ready, creditsToReview: pendingCredits, abandonedTimers: abandoned, failedHandoffs, duplicatesToReview: reviews.length, reviews,
   };
 }
 

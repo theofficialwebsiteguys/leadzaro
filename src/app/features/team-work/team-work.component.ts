@@ -93,7 +93,8 @@ function isoDay(d: Date): string {
                 <tr>
                   <td><strong>{{ p.user.name }}</strong><br /><span class="muted">{{ p.user.roles.join(', ') }}</span></td>
                   <td>{{ p.qualifier.researched }}</td>
-                  <td><button class="link-btn" (click)="drill(p, 'qualifications')">{{ p.qualifier.completed }}</button>@if (p.qualifier.assigned) { <span class="muted"> ({{ p.qualifier.assigned }} assigned)</span> }</td>
+                  <td><button class="link-btn" (click)="drill(p, 'qualifications')">{{ p.qualifier.completed }}</button>@if (p.qualifier.assigned) { <span class="muted"> ({{ p.qualifier.assigned }} assigned)</span> }
+                    @if (p.qualifier.salesAccepted) { <br /><span class="muted">{{ p.qualifier.salesAccepted }} accepted by sales</span> }@if (p.qualifier.addedToExisting) { <br /><span class="muted">{{ p.qualifier.addedToExisting }} added to existing leads</span> }</td>
                   <td>{{ p.qualifier.accepted }}@if (p.qualifier.pending) { <span class="muted"> · {{ p.qualifier.pending }} pending</span> }</td>
                   <td>{{ p.qualifier.returned }} / {{ p.qualifier.rejected }}</td>
                   <td>{{ p.qualifier.unsuitable }} / {{ p.qualifier.duplicates }}</td>
@@ -145,9 +146,9 @@ function isoDay(d: Date): string {
                   <td><input type="checkbox" [checked]="selected().has(c.id)" (change)="toggle(c.id)" [attr.aria-label]="'Select ' + c.businessName" /></td>
                   <td>{{ c.earnedAt | date: 'MMM d' }}</td>
                   <td>{{ c.user.name }}</td>
-                  <td><a [routerLink]="['/app/qualify', c.opportunityId]">{{ c.businessName }}</a><br /><span class="muted">{{ c.location }}</span></td>
+                  <td><a [routerLink]="['/app/qualify', c.opportunityId]">{{ c.businessName }}</a><br /><span class="muted">{{ c.location }}</span>@if (c.note) { <br /><span class="muted">{{ c.note }}</span> }</td>
                   <td class="reason">{{ c.reason }}</td>
-                  <td class="muted">{{ c.qualificationLabel }} · {{ c.stageLabel }}@if (c.salesperson) { · {{ c.salesperson.name }} }@if (c.contacted) { · contacted }@if (c.paymentConfirmed) { · paid }</td>
+                  <td class="muted">{{ c.qualificationLabel }} · {{ c.stageLabel }}@if (c.salesperson) { · {{ c.salesperson.name }} }@if (c.salesAcceptedAt) { · accepted by sales }@if (c.contacted) { · contacted }@if (c.paymentConfirmed) { · paid }</td>
                   <td>{{ c.correctionCount }}@if (c.lastCorrectionReason) { <br /><span class="muted">{{ c.lastCorrectionReason }}</span> }</td>
                   <td><span class="tag" [attr.data-status]="c.status">{{ creditLabels[c.status] }}</span>@if (c.reviewNote) { <br /><span class="muted">{{ c.reviewNote }}</span> }</td>
                 </tr>

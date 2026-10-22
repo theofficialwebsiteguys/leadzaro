@@ -1,8 +1,47 @@
-import { HandoffData, Handoff, UserRef } from './sales.model';
+import { EmailSourceInfo, HandoffData, Handoff, UserRef } from './sales.model';
+
+/** Where an email was found (ADR 0017): a choice, a note for "Other", and an optional link. */
+export const EMAIL_SOURCE_TYPES: { key: string; label: string }[] = [
+  { key: 'website', label: 'Website / contact page' },
+  { key: 'facebook', label: 'Facebook' },
+  { key: 'privacy_policy', label: 'Privacy policy' },
+  { key: 'social', label: 'Instagram / other social profile' },
+  { key: 'google_business', label: 'Google Business Profile' },
+  { key: 'directory', label: 'Business directory' },
+  { key: 'referral', label: 'Referral / direct conversation' },
+  { key: 'other', label: 'Other' },
+];
+
+/** A business that may already be in Leadzaro, and what research can do with it (ADR 0017). */
+export interface ExistingMatch {
+  opportunityId: string | null;
+  organizationId?: string | null;
+  name: string;
+  location?: string | null;
+  isClient: boolean;
+  doNotContact: boolean;
+  qualificationStatus?: string | null;
+  label: string;
+  stageLabel?: string;
+  lifecycle?: string;
+  assignedTo: UserRef | null;
+  researcher?: UserRef | null;
+  qualifiedBy?: UserRef | null;
+  mine?: boolean;
+  mergeable: boolean;
+  mode: 'qualify' | 'update' | null;
+  reason: string | null;
+  canOpen: boolean;
+  archived?: boolean;
+  confidence?: 'same_listing' | 'strong' | 'possible';
+  reasons?: string[];
+}
+
+export interface DraftSummary { key: string; businessName: string; city: string | null; step: number; updatedAt: string }
 
 /** Guided role-based workflow (ADR 0016). */
 
-export type QualificationStatus = 'draft' | 'needs_research' | 'needs_correction' | 'ready' | 'assigned' | 'unsuitable';
+export type QualificationStatus = 'draft' | 'needs_research' | 'needs_correction' | 'needs_review' | 'ready' | 'assigned' | 'unsuitable';
 export type SourceStatus = 'not_checked' | 'found' | 'not_found' | 'unable';
 export type ContactStatus = 'not_checked' | 'found' | 'not_found';
 export type SourceKey = 'google' | 'website' | 'facebook';
@@ -10,7 +49,7 @@ export type InterestLevel = 'unknown' | 'cold' | 'warm' | 'hot';
 export type WorkRole = 'qualifier' | 'sales' | 'client_manager' | 'admin';
 
 export interface SourceCheck { status: SourceStatus; url: string | null; label: string; note?: string | null; from?: string | null }
-export interface ContactCheck { status: ContactStatus; value?: string | null; sourceUrl: string | null; from?: string | null }
+export interface ContactCheck { status: ContactStatus; value?: string | null; sourceUrl: string | null; from?: string | null; source?: EmailSourceInfo | null; values?: { value: string; source?: EmailSourceInfo | null }[] }
 export interface OwnerCheck { status: ContactStatus; contactId: string | null; name: string | null; title: string | null; sourceUrl: string | null }
 
 export interface Qualification {
@@ -29,7 +68,12 @@ export interface Qualification {
   sources: Record<SourceKey, SourceCheck>;
   contacts: { email: ContactCheck; phone: ContactCheck; owner: OwnerCheck };
   emailDiscovery: { status: string; statusLabel: string; summary: string | null; email: string | null; emailSourceUrl: string | null; candidates: { email: string; sourceUrl?: string }[] };
-  reason: { tags: string[]; text: string; evidence: string };
+  reason: { tags: string[]; text: string; evidence: string; context?: string };
+  lifecycle?: string;
+  review: {
+    requestedBy: UserRef | null; requestedAt: string; note: string | null; assignee: UserRef | null; intended: string; matches: ExistingMatch[];
+  } | null;
+  canResolveReview: boolean;
   researcher: UserRef | null;
   qualifiedBy: UserRef | null;
   qualifiedAt: string | null;
@@ -47,6 +91,15 @@ export interface QualificationResponse {
 }
 
 export interface WorkCard {
+  lifecycle?: string;
+  lifecycleLabel?: string;
+  outreachReason?: string | null;
+  pendingAcceptance?: boolean;
+  acceptedAt?: string | null;
+  contactedAt?: string | null;
+  lastInteractionAt?: string | null;
+  stage?: string;
+  matches?: string[];
   opportunityId: string;
   businessName: string;
   city?: string | null;
@@ -108,18 +161,19 @@ export interface TimerState { session: WorkSessionItem | null; abandoned: number
 export interface MyWork {
   roles: WorkRole[];
   qualifier: {
+    drafts: DraftSummary[]; needsReview: WorkCard[]; handoffs: WorkCard[];
     inProgress: WorkCard[]; corrections: WorkCard[]; ready: WorkCard[];
     feedback: { opportunityId: string; businessName: string; status: string; note: string | null; reviewedAt: string }[];
     stats: { startedThisWeek: number; completedThisWeek: number; completedTotal: number; pendingReview: number; accepted: number };
   } | null;
   sales: {
     replies: WorkCard[]; overdue: WorkCard[]; dueToday: WorkCard[]; payments: WorkCard[]; stalled: WorkCard[]; newLeads: WorkCard[];
-    newlyAssigned: WorkCard[]; meetings: WorkCard[]; closing: WorkCard[];
+    newlyAssigned: WorkCard[]; meetings: WorkCard[]; closing: WorkCard[]; awaitingReply: WorkCard[]; continueWith: WorkCard | null;
     goals: { metric: string; label: string; actual: number; target: number | null }[];
     queueSize: number; unclaimed: number;
   } | null;
   clientManager: { newHandoffs: WorkCard[]; incomplete: WorkCard[]; clients: { id: string; name: string; nextActionAt: string | null; nextActionNote: string | null; waitingOn: string | null }[] } | null;
-  admin: { closingsToApprove: number; readyForAssignment: number; creditsToReview: number; abandonedTimers: number; failedHandoffs: number } | null;
+  admin: { closingsToApprove: number; readyForAssignment: number; creditsToReview: number; abandonedTimers: number; failedHandoffs: number; duplicatesToReview: number; reviews: WorkCard[] } | null;
   timer: TimerState;
 }
 
@@ -148,6 +202,10 @@ export interface Proposal {
 export interface ClosingMilestone { key: string; label: string; done: boolean; at: string | null }
 
 export interface QualificationBrief {
+  acceptedAt: string | null;
+  acceptedBy: UserRef | null;
+  pendingAcceptance: boolean;
+  returns: { by: string; at: string; reason: string }[];
   status: QualificationStatus;
   statusLabel: string;
   note: string | null;
@@ -195,6 +253,7 @@ export interface PersonWork {
   does: { qualifying: boolean; selling: boolean };
   qualifier: {
     researched: number; completed: number; assigned: number; pending: number; accepted: number; needsCorrection: number; rejected: number; paid: number; returned: number; unsuitable: number; duplicates: number;
+    salesAccepted: number; addedToExisting: number;
     downstream: { contacted: number; meetings: number; paymentConfirmed: number; won: number };
   };
   sales: {
@@ -224,6 +283,8 @@ export interface CreditItem {
   salesperson: UserRef | null;
   contacted: boolean;
   paymentConfirmed: boolean;
+  salesAcceptedAt: string | null;
+  note: string | null;
 }
 
 export const WORK_TYPE_LABELS: Record<string, string> = {

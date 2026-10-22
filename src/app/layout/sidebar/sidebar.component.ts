@@ -1,5 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, inject, output, signal } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { filter, map, startWith } from 'rxjs';
 import { MODE_LABELS, WorkModeService } from '../../core/services/work-mode.service';
 import { WorkRole } from '../../core/models/workflow.model';
 import { AuthService } from '../../core/services/auth.service';
@@ -18,7 +20,15 @@ interface NavItem {
   exact?: boolean;
   // Agency-only areas a client membership never sees, even with the permission.
   employeeOnly?: boolean;
+  /** Other pages that belong to this item (ADR 0017): a lead opened from it, research resumed from it. */
+  also?: (url: string) => boolean;
 }
+
+// A lead or a piece of research keeps the menu item it was opened from selected.
+const fromLeads = (url: string) => url.startsWith('/app/work/') && /[?&]from=leads\b/.test(url);
+const fromConversations = (url: string) => url.startsWith('/app/work/') && /[?&]from=conversations\b/.test(url);
+const leadFromMyWork = (url: string) => url.startsWith('/app/work/') && !fromLeads(url) && !fromConversations(url);
+const research = (url: string) => /^\/app\/qualify\/(?!new)/.test(url);
 
 interface NavSection {
   title: string | null;
@@ -41,19 +51,25 @@ export class SidebarComponent implements OnInit, OnDestroy {
 
   readonly workMode = inject(WorkModeService);
   readonly modeLabels = MODE_LABELS;
+  /** The current address, for items that also cover pages opened from them. */
+  readonly url = toSignal(this.router.events.pipe(filter((e) => e instanceof NavigationEnd), map(() => this.router.url), startWith(this.router.url)), { initialValue: this.router.url });
+
+  alsoActive(item: NavItem): boolean {
+    return Boolean(item.also?.(this.url()));
+  }
 
   // A short menu per role (ADR 0016): someone with several roles picks one
   // under "Working as" and sees only that role's few pages. The server
   // enforces the real boundaries.
   private readonly menus: Record<WorkRole, NavItem[]> = {
     sales: [
-      { label: 'My Work', icon: 'sun', route: '/app/my-work' },
-      { label: 'My leads', icon: 'leads', route: '/app/leads', permission: 'leads.read' },
-      { label: 'Conversations', icon: 'outreach', route: '/app/outreach', permission: 'outreach.read' },
+      { label: 'My Work', icon: 'sun', route: '/app/my-work', also: leadFromMyWork },
+      { label: 'My leads', icon: 'leads', route: '/app/leads', permission: 'leads.read', also: fromLeads },
+      { label: 'Conversations', icon: 'outreach', route: '/app/outreach', permission: 'outreach.read', also: fromConversations },
       { label: 'My numbers', icon: 'chart-bar', route: '/app/sales/reports', permission: 'outreach.read' },
     ],
     qualifier: [
-      { label: 'My Work', icon: 'sun', route: '/app/my-work' },
+      { label: 'My Work', icon: 'sun', route: '/app/my-work', also: research },
       { label: 'Qualify businesses', icon: 'play', route: '/app/qualify', permission: 'qualification.work', exact: true },
       { label: 'Add a business', icon: 'plus', route: '/app/qualify/new', permission: 'qualification.work' },
     ],
@@ -63,10 +79,10 @@ export class SidebarComponent implements OnInit, OnDestroy {
       { label: 'Domains', icon: 'globe', route: '/app/domains', permission: 'domains.view' },
     ],
     admin: [
-      { label: 'My Work', icon: 'sun', route: '/app/my-work' },
+      { label: 'My Work', icon: 'sun', route: '/app/my-work', also: (url) => leadFromMyWork(url) || research(url) },
       { label: 'Team work', icon: 'users', route: '/app/team-work', permission: ['team.review_work', 'sales.approve_close'] },
       { label: 'Dashboard', icon: 'dashboard', route: '/app/dashboard', permission: 'dashboard.view' },
-      { label: 'All leads', icon: 'leads', route: '/app/leads', permission: 'leads.read' },
+      { label: 'All leads', icon: 'leads', route: '/app/leads', permission: 'leads.read', also: fromLeads },
       { label: 'Clients', icon: 'folder', route: '/app/clients', permission: ['projects.manage', 'clients.onboard'] },
       { label: 'Domains', icon: 'globe', route: '/app/domains', permission: 'domains.view' },
     ],

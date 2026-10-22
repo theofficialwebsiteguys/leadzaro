@@ -88,6 +88,7 @@ function price(cents: number | null, billing: string | null): string {
               </select>
             }
             @if (openLink()) { <button type="button" class="btn btn-ghost btn-sm" (click)="insertLink()">Insert payment link</button> }
+            @if (ws().briefing.emailOpener && !body.includes(ws().briefing.emailOpener!)) { <button type="button" class="btn btn-ghost btn-sm" (click)="insertReason()" title="Inserts the first line built from what the qualifier recorded">Insert why we’re reaching out</button> }
           </span>
         </div>
       </div>
@@ -109,7 +110,7 @@ function price(cents: number | null, billing: string | null): string {
       }
 
       <details class="next">
-        <summary>Schedule the follow-up ({{ nextLabel() }})</summary>
+        <summary>@if (followUp()) { Schedule the follow-up ({{ nextLabel() }}) } @else { Follow-up: {{ nextAt ? nextLabel() : 'kept as already set' }} }</summary>
         <div class="row2">
           <input class="form-control" type="datetime-local" [(ngModel)]="nextAt" aria-label="Follow-up date" />
           <input class="form-control" [(ngModel)]="nextNote" placeholder="What to do next (optional)" aria-label="Follow-up note" />
@@ -178,6 +179,12 @@ export class ComposerComponent implements OnInit {
   readonly intro = input(false);
   /** A message prepared elsewhere (e.g. the pricing step) to review and send. */
   readonly preset = input<{ subject: string; body: string } | null>(null);
+  /** A line to start the message with, e.g. why we're reaching out (ADR 0017) — inserted after the greeting, still editable. */
+  readonly insert = input<string | null>(null);
+  /** Off when the outcome that opened this email already set what happens next (ADR 0017). */
+  readonly followUp = input(true);
+  /** A courtesy note (thank-you): sending it doesn't move a parked lead back into active outreach. */
+  readonly courtesy = input(false);
   readonly sent = output<Workspace | null>();
   readonly closed = output<void>();
 
@@ -260,6 +267,7 @@ export class ComposerComponent implements OnInit {
 
   ngOnInit(): void {
     this.recipient = this.recipients()[0]?.value ?? '';
+    if (!this.followUp()) this.nextAt = '';
     if (this.intro()) {
       this.sales.templates({ channel: 'email' }).subscribe({ next: (list) => this.templates.set(list), error: () => undefined });
       const saved = this.ws().opportunity.emailDraft;
@@ -284,8 +292,8 @@ export class ComposerComponent implements OnInit {
         if (!preset && !this.restoreDraft()) {
           const match = this.category() ? list.find((t) => t.category === this.category()) : null;
           if (match) this.applyTemplate(match.id);
-          else this.startWithSignature();
-        }
+          else { this.startWithSignature(); this.applyInsert(); }
+        } else this.applyInsert();
       },
       error: () => { if (!preset) this.restoreDraft(); },
     });
@@ -305,6 +313,7 @@ export class ComposerComponent implements OnInit {
       next: (rendered) => {
         this.body = rendered.body;
         if (this.channel() === 'email') this.subject = rendered.subject ?? '';
+        this.applyInsert();
         this.saveDraft();
       },
       error: (err) => this.error.set(err.error?.message || 'The template could not be loaded.'),
@@ -369,6 +378,27 @@ export class ComposerComponent implements OnInit {
     return false;
   }
 
+  /** "Insert why we're reaching out": the first line built from what the qualifier recorded (ADR 0017). */
+  insertReason(): void {
+    this.placeLine(this.ws().briefing.emailOpener);
+  }
+
+  /** A line handed in by the screen that opened this email, placed once the text is ready. */
+  private applyInsert(): void {
+    this.placeLine(this.insert());
+  }
+
+  /** Puts a line after the greeting (or first), once; it stays editable. */
+  private placeLine(text: string | null): void {
+    if (!text || this.body.includes(text)) return;
+    const lines = this.body.split('\n');
+    const greeting = /^(hi|hello|dear|good (morning|afternoon))\b/i.test(lines[0] || '');
+    const at = greeting ? (lines[1] === '' ? 2 : 1) : 0;
+    lines.splice(at, 0, text, '');
+    this.body = lines.join('\n').replace(/\n{3,}/g, '\n\n');
+    this.saveDraft();
+  }
+
   insertLink(): void {
     const url = this.openLink()?.url;
     if (!url) return;
@@ -406,7 +436,7 @@ export class ComposerComponent implements OnInit {
       idempotencyKey: this.key,
       confirmOwner: this.confirmOwner,
       confirmRecent: this.confirmRecent,
-      intent: this.intro() ? 'intro' : null,
+      intent: this.intro() ? 'intro' : (this.courtesy() ? 'courtesy' : null),
       nextAction: this.nextAt ? { at: new Date(this.nextAt).toISOString(), type: 'follow_up', note: this.nextNote || null } : null,
     }).subscribe({
       next: () => {

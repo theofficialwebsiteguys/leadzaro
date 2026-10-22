@@ -3,8 +3,16 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, map, tap } from 'rxjs';
 import { Workspace } from '../models/sales.model';
 import {
-  CreditItem, MyWork, Onboarding, PendingClosing, PersonWork, QualificationResponse, TimerState, WorkSessionItem,
+  CreditItem, DraftSummary, ExistingMatch, MyWork, Onboarding, PendingClosing, PersonWork, QualificationResponse, TimerState, WorkSessionItem,
 } from '../models/workflow.model';
+
+export interface ChainFilterSettings {
+  brands: { key: string; name: string; domains: string[]; aliases: string[]; source: 'default' | 'custom'; enabled: boolean }[];
+  allowedPlaces: { googlePlaceId: string; name: string | null; byName: string | null; at: string }[];
+  canEditBrands: boolean;
+  canAllowPlaces: boolean;
+  limits: string;
+}
 import { tzOffset } from './sales.service';
 
 const API = '/api/v1/sales';
@@ -43,10 +51,30 @@ export class WorkflowService {
   createQualified(body: unknown) { return this.send<QualificationResponse>('post', '/qualification', body); }
   claimResearch(body: { googlePlaceId: string; name: string; takeOver?: boolean }) {
     return this.send<{
-      claimed?: boolean; claimedBy?: { id: string; name: string }; since?: string;
-      existing?: { opportunityId: string; qualificationStatus: string | null; label: string; researcher: { id: string; name: string } | null; assignedTo: { id: string; name: string } | null };
+      claimed?: boolean; claimedBy?: { id: string; name: string }; since?: string; savedProgress?: boolean; draft?: unknown;
+      existing?: ExistingMatch;
     }>('post', '/qualification/claim', body);
   }
+  /** Is this business already in Leadzaro? (read-only) */
+  checkExisting(body: unknown) { return this.send<{ matches: ExistingMatch[] }>('post', '/qualification/check', body); }
+  resolveReview(id: string, body: { action: 'separate' | 'merge' | 'dismiss'; targetOpportunityId?: string; note?: string }) {
+    return this.send<{ resolved: string; opportunityId: string }>('post', `/qualification/${id}/review`, body);
+  }
+  // Saved qualification progress (ADR 0017).
+  drafts() { return this.get<{ items: DraftSummary[] }>('/qualification/drafts'); }
+  draft(key: string) { return this.get<{ key: string; start: unknown; draft: unknown; savedAt: string }>(`/qualification/drafts/${encodeURIComponent(key)}`); }
+  saveDraft(key: string, body: { start: unknown; draft: unknown; takeOver?: boolean }) {
+    return this.send<{ saved: boolean; savedAt?: string; claimedBy?: { id: string; name: string }; since?: string }>('put', `/qualification/drafts/${encodeURIComponent(key)}`, body);
+  }
+  discardDraft(key: string) { return this.http.delete<{ data: unknown }>(`${API}/qualification/drafts/${encodeURIComponent(key)}`).pipe(map((r) => r.data)); }
+  // The sales handoff (ADR 0017).
+  acceptLead(id: string) { return this.send<Workspace>('post', `/leads/${id}/accept`); }
+  addReasonNote(id: string, text: string) { return this.send<Workspace>('post', `/leads/${id}/outreach-reason/notes`, { text }); }
+  // Chain filter for searches (ADR 0017).
+  chainFilter() { return this.get<ChainFilterSettings>('/chain-filter'); }
+  updateChainBrands(body: { action: 'add' | 'remove' | 'disable' | 'enable'; name?: string; domains?: string; key?: string }) { return this.send<ChainFilterSettings>('put', '/chain-filter/brands', body); }
+  allowPlace(googlePlaceId: string, name: string) { return this.send<ChainFilterSettings>('post', '/chain-filter/allowed-places', { googlePlaceId, name }); }
+  removeAllowedPlace(googlePlaceId: string) { return this.http.delete<{ data: ChainFilterSettings }>(`${API}/chain-filter/allowed-places/${encodeURIComponent(googlePlaceId)}`).pipe(map((r) => r.data)); }
   releaseResearch(placeId: string) { return this.http.delete<{ data: unknown }>(`${API}/qualification/claim/${encodeURIComponent(placeId)}`).pipe(map((r) => r.data)); }
   createDraft(body: unknown) { return this.send<{ opportunityId: string; qualificationStatus: string | null }>('post', '/leads', body); }
   qualification(id: string) { return this.get<QualificationResponse>(`/qualification/${id}`); }

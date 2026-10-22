@@ -71,6 +71,7 @@ export class SettingsComponent {
       { path: 'workspace', label: 'Workspace', icon: 'folder', hint: 'Company details and shared defaults', visible: employee },
       { path: 'sales-kit', label: 'Sales kit & goals', icon: 'note', hint: 'Services, prices, portfolio, pitch, client goal', visible: employee },
       { path: 'team', label: 'Team & access', icon: 'users', hint: 'Members, roles and invitations', visible: employee },
+      { path: 'search-filters', label: 'Search filters', icon: 'funnel', hint: 'Chains left out of qualifying searches', visible: employee && ['qualification.work', 'leads.search', 'leads.assign', 'workspace.manage'].some((k) => this.org.hasPermission(k)) },
       { path: 'sales', label: 'Sales preferences', icon: 'target', hint: 'Search defaults, signature, goals', visible: employee && this.org.hasPermission('leads.read') },
       { path: 'integrations', label: 'Integrations', icon: 'zap', hint: 'Stripe, email, texting, domains', visible: employee },
       { path: 'notifications', label: 'Notifications', icon: 'bell', hint: 'What you’re told about', visible: employee && this.org.hasPermission('notifications.manage') },

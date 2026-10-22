@@ -3,6 +3,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { KeyValuePipe } from '@angular/common';
 import { SalesService } from '../../../core/services/sales.service';
+import { NavOriginService } from '../../../core/services/nav-origin.service';
 import { OrganizationContextService } from '../../../core/services/organization-context.service';
 import {
   CHANNEL_LABELS, Channels, Conversation, MessageTemplate, RenderedMessage, TEMPLATE_CATEGORIES,
@@ -33,7 +34,11 @@ export class OutreachPageComponent implements OnInit {
   private readonly sales = inject(SalesService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly origin = inject(NavOriginService);
   readonly org = inject(OrganizationContextService);
+
+  /** "Back" from the lead returns to this list as it is now (ADR 0017). */
+  rememberOrigin(): void { this.origin.remember('conversations', this.router.url); }
 
   readonly channelLabels = CHANNEL_LABELS;
   readonly categories = Object.entries(TEMPLATE_CATEGORIES).map(([key, label]) => ({ key, label }));

@@ -239,6 +239,9 @@
                       @let m = lead.possibleMatch!;
                       <div class="pipeline-status"><span class="tag tag-warning">Possible match</span> <span class="text-xs text-muted">{{ m.name }}{{ m.isClient ? ' (client)' : '' }} — {{ m.reasons.join(', ') }}</span></div>
                     }
+                    @if (!lead.pipeline && (lead.chain?.status === 'excluded' || lead.chain?.status === 'possible')) {
+                      <div class="pipeline-status"><span class="tag" [class.tag-danger]="lead.chain?.status === 'excluded'" [class.tag-warning]="lead.chain?.status === 'possible'">{{ lead.chain?.status === 'excluded' ? 'Chain' : 'Possible chain' }}</span> <span class="text-xs text-muted">{{ lead.chain?.reasons?.[0] }}</span></div>
+                    }
                     @if (observation(lead); as obs) { <div class="observation">{{ obs }}</div> }
                   </td>
 

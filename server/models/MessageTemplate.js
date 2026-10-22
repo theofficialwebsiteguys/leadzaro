@@ -2,7 +2,7 @@ const { DataTypes } = require('sequelize');
 
 const SCOPES = ['personal', 'shared'];
 const CHANNELS = ['email', 'sms', 'call'];
-const CATEGORIES = ['intro', 'voicemail', 'follow_up', 'meeting_confirmation', 'objection', 'payment_reminder', 'welcome', 'other'];
+const CATEGORIES = ['intro', 'voicemail', 'follow_up', 'meeting_confirmation', 'objection', 'payment_reminder', 'welcome', 'thank_you', 'information', 'other'];
 
 // Outreach templates (ADR 0011): personal (owner only) or shared across the
 // agency (managed by templates.manage_shared). Call templates are scripts.

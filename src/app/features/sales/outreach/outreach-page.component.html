@@ -118,7 +118,7 @@
               <footer class="t-foot">
                 <span class="muted">@if (w.opportunity.nextActionAt) { Next: {{ nextActionLabel(w.opportunity.nextActionType) }} {{ w.opportunity.nextActionAt | relativeDay }} } @else { No next step set }</span>
                 <a class="btn btn-ghost btn-sm" [routerLink]="['/app/leads', w.opportunity.id]">Full record</a>
-                <a class="btn btn-primary btn-sm" [routerLink]="['/app/work', w.opportunity.id]">Work this lead →</a>
+                <a class="btn btn-primary btn-sm" [routerLink]="['/app/work', w.opportunity.id]" [queryParams]="{ from: 'conversations' }" (click)="rememberOrigin()">Work this lead →</a>
               </footer>
             }
           </aside>

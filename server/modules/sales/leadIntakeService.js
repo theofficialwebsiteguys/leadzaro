@@ -41,7 +41,7 @@ function siteDomain(value) {
 async function agencyBusinesses(agencyId) {
   const organizations = await Organization.findAll({
     where: { managingAgencyOrganizationId: agencyId, deletedAt: null, type: ['prospect', 'client'] },
-    attributes: ['id', 'name', 'type', 'phone', 'email', 'website'],
+    attributes: ['id', 'name', 'type', 'phone', 'email', 'website', 'city', 'state'],
   });
   if (!organizations.length) return [];
   // ClientProfile is visibility-guarded; this raw read is pinned to the agency.
@@ -71,6 +71,8 @@ async function agencyBusinesses(agencyId) {
       id: o.id,
       name: o.name,
       type: o.type,
+      city: o.city,
+      state: o.state,
       phones: [o.phone, ...more.phones].filter(Boolean),
       emails: [o.email, ...more.emails].filter(Boolean).map((e) => e.toLowerCase()),
       websites: [o.website, ...more.websites].filter(Boolean),
@@ -185,7 +187,15 @@ async function createLead(ctx, input) {
   if (input.existingOrganizationId) {
     const organization = await Organization.findOne({ where: { id: input.existingOrganizationId, managingAgencyOrganizationId: ctx.agencyId, deletedAt: null } });
     if (!organization) throw invalid('Business not found', 404);
+    // A business that asked not to be contacted stays that way for every new deal (ADR 0017).
+    const optedOut = await Opportunity.findOne({
+      where: {
+        agencyOrganizationId: ctx.agencyId, organizationId: organization.id, doNotContact: true, deletedAt: null,
+      },
+      attributes: ['doNotContactAt', 'doNotContactReason'],
+    });
     const created = await Opportunity.create({
+      ...(optedOut ? { doNotContact: true, doNotContactAt: optedOut.doNotContactAt, doNotContactReason: optedOut.doNotContactReason } : {}),
       organizationId: organization.id,
       agencyOrganizationId: ctx.agencyId,
       sourceLeadId: null,
@@ -318,7 +328,7 @@ async function annotateSearchResults(agencyId, items, userId = null) {
   }) : [];
   const businesses = await agencyBusinesses(agencyId);
 
-  return items.map((item) => {
+  const annotated = items.map((item) => {
     const lead = leads.find((l) => l.googlePlaceId === (item.googlePlaceId || item.id));
     const opp = lead ? opportunities.find((o) => o.sourceLeadId === lead.id) : null;
     let pipeline = null;
@@ -355,6 +365,9 @@ async function annotateSearchResults(agencyId, items, userId = null) {
       discovery: pipeline ? null : (contactDiscovery.cachedForPlace(item.googlePlaceId || item.id) || null),
     };
   });
+  // Obvious chains, from the agency's editable list (ADR 0017); only results not already in Leadzaro.
+  // eslint-disable-next-line global-require
+  return require('./chainFilterService').annotate(agencyId, annotated);
 }
 
 /** Old /app/leads/:savedLeadId links resolve to the matching lead. */
@@ -370,5 +383,5 @@ async function resolveSavedLead(ctx, savedLeadId) {
 }
 
 module.exports = {
-  createLead, findPossibleDuplicates, annotateSearchResults, resolveSavedLead,
+  createLead, findPossibleDuplicates, annotateSearchResults, resolveSavedLead, agencyBusinesses, siteDomain, cleanLeadData,
 };

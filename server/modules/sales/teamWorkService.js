@@ -49,6 +49,8 @@ async function report(ctx, query = {}) {
          COUNT(*) FILTER (WHERE c.status = 'rejected')::int AS rejected,
          COUNT(*) FILTER (WHERE c.status = 'paid')::int AS paid,
          COALESCE(SUM(c."correctionCount"), 0)::int AS returned,
+         COUNT(*) FILTER (WHERE o."salesAcceptedAt" IS NOT NULL)::int AS "salesAccepted",
+         COUNT(*) FILTER (WHERE c.note IS NOT NULL)::int AS "addedToExisting",
          COUNT(*) FILTER (WHERE o."lastInteractionAt" IS NOT NULL)::int AS "dContacted",
          COUNT(*) FILTER (WHERE o.meeting IS NOT NULL)::int AS "dMeetings",
          COUNT(*) FILTER (WHERE o."paymentConfirmedAt" IS NOT NULL)::int AS "dPaid",
@@ -113,6 +115,9 @@ async function report(ctx, query = {}) {
         rejected: c.rejected || 0,
         paid: c.paid || 0,
         returned: c.returned || 0,
+        // Research completed vs. sales taking it on (ADR 0017); research added to existing leads counted apart.
+        salesAccepted: c.salesAccepted || 0,
+        addedToExisting: c.addedToExisting || 0,
         unsuitable: byUser(unsuitable)[m.id] || 0,
         duplicates: byUser(duplicates)[m.id] || 0,
         downstream: {
@@ -155,7 +160,7 @@ async function listCredits(ctx, query = {}) {
       {
         model: Opportunity,
         as: 'opportunity',
-        attributes: ['id', 'stage', 'qualificationStatus', 'outreachReason', 'assignedToUserId', 'lastInteractionAt', 'paymentConfirmedAt', 'qualifiedAt'],
+        attributes: ['id', 'stage', 'qualificationStatus', 'outreachReason', 'assignedToUserId', 'lastInteractionAt', 'paymentConfirmedAt', 'qualifiedAt', 'salesAcceptedAt'],
         include: [{ model: Organization, as: 'organization', attributes: ['name', 'city', 'state'] }, { model: User, as: 'assignedTo', attributes: USER_ATTRS }],
       },
     ],
@@ -183,6 +188,8 @@ async function listCredits(ctx, query = {}) {
       salesperson: c.opportunity?.assignedTo || null,
       contacted: Boolean(c.opportunity?.lastInteractionAt),
       paymentConfirmed: Boolean(c.opportunity?.paymentConfirmedAt),
+      salesAcceptedAt: c.opportunity?.salesAcceptedAt || null,
+      note: c.note || null,
     })),
     statuses: WorkCredit.STATUSES,
   };

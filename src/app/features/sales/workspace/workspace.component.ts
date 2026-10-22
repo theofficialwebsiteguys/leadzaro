@@ -518,15 +518,20 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
     this.apply(this.sales.updateQualification(this.id, changes), 'Qualification saved.', () => this.qualEditing.set(false));
   }
 
+  /** Do-not-contact is lifted only by a manager, with a reason (ADR 0017). */
+  readonly dncLifting = signal(false);
+
   toggleDnc(): void {
     const w = this.ws();
     if (!w) return;
-    if (w.opportunity.doNotContact) this.apply(this.sales.setDoNotContact(this.id, false), 'They can be contacted again.');
-    else { this.dncReason = ''; this.dncDialog.set(true); }
+    this.dncReason = '';
+    this.dncLifting.set(w.opportunity.doNotContact);
+    this.dncDialog.set(true);
   }
 
   saveDnc(): void {
-    this.apply(this.sales.setDoNotContact(this.id, true, this.dncReason), 'Marked do not contact. All outreach is stopped.', () => this.dncDialog.set(false));
+    const lifting = this.dncLifting();
+    this.apply(this.sales.setDoNotContact(this.id, !lifting, this.dncReason), lifting ? 'Do-not-contact lifted — they can be contacted again.' : 'Marked do not contact. All outreach is stopped.', () => this.dncDialog.set(false));
   }
 
   assign(userId: string): void {

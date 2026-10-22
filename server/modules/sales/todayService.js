@@ -5,7 +5,7 @@ const {
   Opportunity, Organization, User, PaymentLinkRequest, SalesHandoff, OutreachActivity, SalesPayment, SalesGoal,
 } = require('../../models');
 const {
-  STAGE_LABELS, OUTCOMES, stallInfo, inSalesWhere,
+  STAGE_LABELS, OUTCOMES, stallInfo, inSalesWhere, LIFECYCLE_LABELS, lifecycleOf,
 } = require('../../core/crm/pipelineCatalog');
 const { invalid } = require('./salesCommon');
 const { effectiveOffset } = require('../../core/workspace/timezone');
@@ -50,8 +50,19 @@ const OPP_INCLUDE = [
   { model: User, as: 'assignedTo', attributes: ['id', 'name'] },
 ];
 
+function short(text, max = 140) {
+  const t = String(text || '').trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : (t || null);
+}
+
 function card(o, extra = {}) {
+  const lifecycle = lifecycleOf(o, { isClient: o.organization?.type === 'client' });
   return {
+    lifecycle,
+    lifecycleLabel: LIFECYCLE_LABELS[lifecycle],
+    // Why we're reaching out (ADR 0017), short enough for a row.
+    outreachReason: short(o.outreachReason),
+    pendingAcceptance: o.qualificationStatus === 'assigned' && !o.salesAcceptedAt && Boolean(o.qualifiedByUserId),
     opportunityId: o.id,
     businessName: o.organization?.name,
     city: o.organization?.city || null,
@@ -239,6 +250,14 @@ async function buildQueue(ctx, { scope = 'mine', userId, tzOffset, reasons, stag
       rank: PRIORITY[reason].rank,
       dueAt: o.nextActionAt,
       since: o.replyNeededSince,
+      // What a row needs to be useful on its own (ADR 0017).
+      outreachReason: short(o.outreachReason),
+      lifecycleLabel: LIFECYCLE_LABELS[lifecycleOf(o, { isClient: o.organization?.type === 'client' })],
+      lastInteractionAt: o.lastInteractionAt,
+      lastInteractionSummary: o.lastInteractionSummary,
+      nextActionType: o.nextActionType,
+      nextActionNote: o.nextActionNote,
+      pendingAcceptance: o.qualificationStatus === 'assigned' && !o.salesAcceptedAt && Boolean(o.qualifiedByUserId),
     });
   }
   entries.sort((a, b) => a.rank - b.rank
@@ -283,5 +302,6 @@ async function setGoal(ctx, { userId = null, metric, target }) {
 }
 
 module.exports = {
+  card,
   getToday, getQueue, buildQueue, dayBounds, listGoals, setGoal, CONNECTED_OUTCOMES,
 };
